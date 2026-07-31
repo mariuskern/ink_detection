@@ -1,0 +1,12 @@
+# conda env create -f environment.yml
+# conda env export --no-builds --from-history | grep -v "^prefix: " > env.yml
+# conda env update --file environment.yml --prune
+
+name: ink
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pip
+  - pip:
+    - -r requirements.txt
