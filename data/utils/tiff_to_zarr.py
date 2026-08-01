@@ -6,6 +6,8 @@ import numpy as np
 import tifffile
 import zarr
 
+Image.MAX_IMAGE_PIXELS = None
+
 
 """
 Conversion pipeline for transforming TIFF image stacks into Zarr datasets.
@@ -133,6 +135,10 @@ def main(args):
         print(f"Processing folder: {folder.name}")
 
         output_path = args.output / f"{folder.name}.zarr"
+
+        if output_path.exists():
+            print(f"Zarr archive already exists for folder: {folder.name}. Skipping.")
+            continue
 
         # z = zarr.open(
         #     output_path,
