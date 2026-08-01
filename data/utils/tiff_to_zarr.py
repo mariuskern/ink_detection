@@ -11,16 +11,22 @@ Image.MAX_IMAGE_PIXELS = None
 
 
 """
-Conversion pipeline for transforming TIFF image stacks into Zarr datasets.
+Conversion pipeline for transforming volumetric TIFF image stacks into Zarr datasets.
 
-The script reads volumetric TIFF data from individual sample folders,
-converts the image stacks into NumPy arrays, and stores them as chunked
-Zarr arrays for efficient out-of-core processing. Associated annotation
-data (labels and masks) are included when available.
+The script processes individual sample folders containing 3D TIFF image stacks
+and optional annotation images (labels and masks). Each TIFF stack is loaded as
+a NumPy volume, spatial dimensions are aligned between image and annotation data,
+and the resulting arrays are stored as chunked Zarr datasets.
 
-Zarr storage enables fast partial loading of large 3D volumes, which is
-particularly useful for training deep learning models on large-scale
-microscopy datasets.
+The generated Zarr archives contain separate arrays for:
+    - volume: 3D image data (Z, Y, X)
+    - label: 2D binary annotation map (Y, X), if available
+    - mask: 2D binary mask (Y, X), if available
+
+Additionally, metadata describing original and processed array shapes as well
+as chunk sizes is stored as a JSON file. Chunked Zarr storage enables efficient
+partial loading of large volumetric datasets, making the format suitable for
+out-of-core processing and deep learning workflows on large microscopy volumes.
 
 Usage:
     python tiff_to_zarr.py <input_dir> <output_dir>
@@ -31,9 +37,11 @@ Example:
 Optional arguments:
     --segments SEGMENT [SEGMENT ...]
         Convert only the specified sample folders.
+        By default, all subfolders in the input directory are processed.
 
     --chunks Z Y X
-        Define the Zarr chunk size for the volumetric data.
+        Define the Zarr chunk size for the volumetric image data.
+        The default chunk size is optimized for 3D volume access.
 
 Example with optional arguments:
     python tiff_to_zarr.py ./tiff_data ./zarr_data \
@@ -42,7 +50,7 @@ Example with optional arguments:
 """
 
 
-def get_arguments():
+def _get_arguments():
     parser = argparse.ArgumentParser(
         description="Convert TIFF image stacks in subfolders to Zarr archives"
     )
@@ -240,4 +248,4 @@ def main(args):
 
 
 if __name__ == "__main__":
-    main(get_arguments())
+    main(_get_arguments())

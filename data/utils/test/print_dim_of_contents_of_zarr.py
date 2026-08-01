@@ -3,9 +3,7 @@ from pathlib import Path
 import zarr
 
 
-PATH = Path("./output/")
-
-z = zarr.open(PATH / "20241025145341.zarr", mode="r")
+z = zarr.open(Path("./output/20241025145341/") / "20241025145341.zarr", mode="r")
 
 print(z["volume"].shape)
 print(z["label"].shape)
