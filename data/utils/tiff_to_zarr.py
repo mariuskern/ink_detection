@@ -1,6 +1,7 @@
 import argparse
 from pathlib import Path
 from PIL import Image
+import json
 
 import numpy as np
 import tifffile
@@ -79,7 +80,7 @@ def get_arguments():
     return args
 
 
-def get_volume(folder):
+def _get_volume(folder):
     layers = folder / "layers"
 
     files = sorted(layers.glob("*.tif"))
@@ -92,32 +93,50 @@ def get_volume(folder):
 
     return volume
 
-def get_label(folder):
+def _get_label(folder):
     label_path = folder / f"{folder.name}_inklabels.png"
 
     if not label_path.exists():
         print(f"No label file found for folder: {folder.name}")
         return None
     
-    label = np.array(
-        Image.open(label_path).convert("L")
-    )
+    label = _load_binary_image(label_path)
 
     return label
 
-def get_mask(folder):
+def _get_mask(folder):
     mask_path = folder / f"{folder.name}_inklabels.png"
     
     if not mask_path.exists():
         print(f"No mask file found for folder: {folder.name}")
         return None
     
-    mask = np.array(
-        Image.open(mask_path).convert("L")
-    )
+    mask = _load_binary_image(mask_path)
 
     return mask
 
+def _load_binary_image(path):
+    image = np.array(Image.open(path).convert("L"))
+    binary_image = (image > 127).astype(np.uint8)
+    return binary_image
+
+def _crop_images(volume, label=None, mask=None):
+    arrays = [volume]
+
+    if label is not None:
+        arrays.append(label)
+    
+    if mask is not None:
+        arrays.append(mask)
+
+    h_min = min(arr.shape[-2] for arr in arrays)
+    w_min = min(arr.shape[-1] for arr in arrays)
+
+    volume = volume[:, :h_min, :w_min]
+    label = None if label is None else label[:h_min, :w_min]
+    mask = None if mask is None else mask[:h_min, :w_min]
+
+    return volume, label, mask
 
 def main(args):
     args.output.mkdir(
@@ -134,11 +153,13 @@ def main(args):
     for folder in folders:
         print(f"Processing folder: {folder.name}")
 
-        output_path = args.output / f"{folder.name}.zarr"
+        output_path = args.output / folder.name
 
         if output_path.exists():
             print(f"Zarr archive already exists for folder: {folder.name}. Skipping.")
             continue
+        
+        output_path.mkdir(parents=True)
 
         # z = zarr.open(
         #     output_path,
@@ -148,18 +169,36 @@ def main(args):
         #     dtype=stack.dtype,
         # )
 
-        # volume
+        volume_original = _get_volume(folder)
+        label_original = _get_label(folder)
+        mask_original = _get_mask(folder)
 
-        volume = get_volume(folder)
-
-        if volume is None:
+        if volume_original is None:
             print(f"Skipping folder {folder.name} due to missing image stack.")
             continue
 
+        volume, label, mask = _crop_images(volume_original, label_original, mask_original)
+
+        meta = {
+            "volume_original_shape": volume_original.shape,
+            "label_original_shape": None if label_original is None else label_original.shape,
+            "mask_original_shape": None if mask_original is None else mask_original.shape,
+            "volume_shape": volume.shape,
+            "label_shape": None if label is None else label.shape,
+            "mask_shape": None if mask is None else mask.shape,
+            "chunks": args.chunks
+        }
+
+        with open(output_path / "metadata.json", "w") as f:
+            json.dump(meta, f, indent=4)
+
         z = zarr.open(
-            output_path,
+            output_path / f"{folder.name}.zarr",
             mode="w"
         )
+
+
+        # Save volume
 
         z.create_array(
             "volume",
@@ -171,9 +210,7 @@ def main(args):
         z["volume"][:] = volume
 
 
-        # label
-
-        label = get_label(folder)
+        # Save label
 
         if label is not None:
             z.create_array(
@@ -186,9 +223,7 @@ def main(args):
             z["label"][:] = label
 
 
-        # mask
-
-        mask = get_mask(folder)
+        # Save mask
 
         if mask is not None:
             z.create_array(
@@ -206,25 +241,3 @@ def main(args):
 
 if __name__ == "__main__":
     main(get_arguments())
-
-
-# PATH = Path("D:/Dokumente/Studium/Masterarbeit/omar/data_fei/new_labeled/20241025145341/layers/")
-# OUT = Path("./output.zarr")
-
-# files = sorted(PATH.glob("*.tif"))
-# stack = np.stack([tifffile.imread(f) for f in files])
-
-# z = zarr.open(
-#     OUT,
-#     mode="w",
-#     shape=stack.shape,
-#     chunks=(65, 512, 512),
-#     dtype=stack.dtype,
-# )
-
-# z[:] = stack
-
-# z = zarr.open("output.zarr", mode="r")
-# arr = np.asarray(z)
-
-# print(np.array_equal(arr, stack))
