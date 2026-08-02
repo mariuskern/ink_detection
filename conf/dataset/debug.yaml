@@ -1,6 +1,10 @@
 dir: ${oc.env:DATA}
 tile_size: 64
 stride: 32
+n_layers: 65
+center: 32
+depth: 32
+norm: global
 train:
   - 20241025145341
 val:

@@ -1,2 +1,4 @@
 defaults:
   - dataset: debug
+  - sampler: debug
+  - dataloader: debug

@@ -59,12 +59,23 @@ class InkDataset(Dataset):
         segments=None,
         tile_size=64,
         stride=None,
+        n_layers=65,
+        center=None,
+        depth=32,
+        norm="global",
         transform=None,
     ):
         self.data_dir = Path(data_dir)
         self.tile_size = tile_size
         self.stride = stride if stride is not None else tile_size // 2
+        self.n_layers = n_layers
+        self.center = center if center is not None else n_layers // 2
+        self.depth = depth
+        self.norm = norm
         self.transform = transform
+
+        if self.norm not in ["global", "local"]:
+            raise ValueError(f"Invalid normalization mode: {self.norm}. Must be 'global' or 'local'.")
 
         self.segments_to_paths = {}
         for folder in self.data_dir.iterdir():
@@ -112,6 +123,9 @@ class InkDataset(Dataset):
 
             self.zarr_data[segment] = zarr.open(zarr_path, mode="r")
 
+        self.z0 = self.center - self.depth // 2
+        self.z1 = self.z0 + self.depth
+
     def __len__(self):
         return len(self.tiles)
 
@@ -124,7 +138,7 @@ class InkDataset(Dataset):
 
         zarr_array = self.zarr_data[segment]
 
-        tile = torch.from_numpy(zarr_array["volume"][:, y:y+self.tile_size, x:x+self.tile_size]).float()
+        tile = torch.from_numpy(zarr_array["volume"][self.z0:self.z1, y:y+self.tile_size, x:x+self.tile_size]).float()
         if "label" in zarr_array:
             label = torch.from_numpy(zarr_array["label"][y:y+self.tile_size, x:x+self.tile_size]).float()
         else:
@@ -133,4 +147,19 @@ class InkDataset(Dataset):
         if self.transform:
             tile = self.transform(tile)
 
+        tile = self._normalize(tile, mode=self.norm)
+
+        tile = tile.unsqueeze(0)
+        label = label.unsqueeze(0) if label is not None else None
+
         return tile, label, segment, x, y
+
+    def _normalize(self, tile, mode="global"):
+        match mode:
+            case "global":
+                return tile / 255.0
+            case "local":
+                z = (tile - tile.mean()) / (tile.std() + 1e-8)
+                z = np.clip(z, -3, 3)
+                z = (z + 3) / 6
+                return z
