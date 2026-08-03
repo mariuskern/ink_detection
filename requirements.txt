@@ -13,3 +13,9 @@ numcodecs
 hydra-core
 tqdm
 python-dotenv
+monai
+lightning
+wandb
+timm
+einops
+triton; platform_system != "Windows"

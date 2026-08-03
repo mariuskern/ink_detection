@@ -1,4 +1,4 @@
-dir: ${oc.env:DATA}
+dir: ${oc.env:DATA_DIR}
 tile_size: 64
 stride: 32
 n_layers: 65

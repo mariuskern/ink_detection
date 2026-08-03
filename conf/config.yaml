@@ -1,4 +1,17 @@
 defaults:
   - dataset: debug
-  - sampler: debug
-  - dataloader: debug
+  - sampler: default
+  - dataloader: default
+  - model: unetrpp
+  - loss: dice_bce
+  - paths: default
+  - wandb: debug
+  - train: default
+  - _self_
+
+experiment:
+  name: ${model.name}_${now:%Y-%m-%d_%H-%M-%S}
+
+hydra:
+  run:
+    dir: outputs/${experiment.name}

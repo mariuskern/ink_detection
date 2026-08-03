@@ -1,0 +1,3 @@
+name: "dice_bce"
+w: 0.5
+eps: 1e-6

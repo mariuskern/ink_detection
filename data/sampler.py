@@ -2,7 +2,7 @@ import torch
 from torch.utils.data import WeightedRandomSampler
 
 
-def create_balanced_sampler(dataset, alpha=5.0):
+def create_balanced_sampler(dataset, num_samples=None, alpha=5.0, pos_threshold=0.05):
     """
     Creates a weighted sampler that samples approximately
     50% positive and 50% negative tiles.
@@ -18,7 +18,7 @@ def create_balanced_sampler(dataset, alpha=5.0):
         alpha=0 -> all positive tiles equally likely.
     """
 
-    positive = torch.tensor([tile["positive_fraction"] > 0 for tile in dataset.tiles], dtype=torch.bool)
+    positive = torch.tensor([tile["positive_fraction"] > pos_threshold for tile in dataset.tiles], dtype=torch.bool)
 
     positive_fraction = torch.tensor([tile["positive_fraction"] for tile in dataset.tiles], dtype=torch.float)
 
@@ -36,7 +36,7 @@ def create_balanced_sampler(dataset, alpha=5.0):
 
     sampler = WeightedRandomSampler(
         weights=weights,
-        num_samples=len(dataset),
+        num_samples=num_samples if num_samples is not None else len(dataset),
         replacement=True,
     )
 

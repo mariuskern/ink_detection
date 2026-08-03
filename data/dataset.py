@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 
 import numpy as np
 import torch
@@ -75,7 +76,9 @@ class InkDataset(Dataset):
         self.transform = transform
 
         if self.norm not in ["global", "local"]:
-            raise ValueError(f"Invalid normalization mode: {self.norm}. Must be 'global' or 'local'.")
+            raise ValueError(
+                f"Invalid normalization mode: {self.norm}. Must be 'global' or 'local'."
+            )
 
         self.segments_to_paths = {}
         for folder in self.data_dir.iterdir():
@@ -91,11 +94,16 @@ class InkDataset(Dataset):
 
         self.tiles = []
         self.zarr_data = {}
+        self.segment_shapes = {}
 
         for segment in self.segments:
             # Load tiles
 
-            tiles_path = self.segments_to_paths[segment] / "tiles" / f"tile_size_{self.tile_size}_stride_{self.stride}.npy"
+            tiles_path = (
+                self.segments_to_paths[segment]
+                / "tiles"
+                / f"tile_size_{self.tile_size}_stride_{self.stride}.npy"
+            )
 
             if not tiles_path.exists():
                 raise FileNotFoundError(f"Missing tile index: {tiles_path}")
@@ -113,7 +121,6 @@ class InkDataset(Dataset):
                     }
                 )
 
-
             # Load zarr
 
             zarr_path = self.segments_to_paths[segment] / f"{segment}.zarr"
@@ -122,6 +129,18 @@ class InkDataset(Dataset):
                 raise FileNotFoundError(f"Missing zarr archive: {zarr_path}")
 
             self.zarr_data[segment] = zarr.open(zarr_path, mode="r")
+
+            # Load meta
+
+            meta_path = self.segments_to_paths[segment] / "metadata.json"
+
+            if not meta_path.exists():
+                raise FileNotFoundError(f"Missing metadata file: {meta_path}")
+
+            with open(meta_path, "r") as f:
+                meta = json.load(f)
+
+            self.segment_shapes[segment] = meta["volume_shape"]
 
         self.z0 = self.center - self.depth // 2
         self.z1 = self.z0 + self.depth
@@ -138,9 +157,15 @@ class InkDataset(Dataset):
 
         zarr_array = self.zarr_data[segment]
 
-        tile = torch.from_numpy(zarr_array["volume"][self.z0:self.z1, y:y+self.tile_size, x:x+self.tile_size]).float()
+        tile = torch.from_numpy(
+            zarr_array["volume"][
+                self.z0 : self.z1, y : y + self.tile_size, x : x + self.tile_size
+            ]
+        ).float()
         if "label" in zarr_array:
-            label = torch.from_numpy(zarr_array["label"][y:y+self.tile_size, x:x+self.tile_size]).float()
+            label = torch.from_numpy(
+                zarr_array["label"][y : y + self.tile_size, x : x + self.tile_size]
+            ).float()
         else:
             label = None
 
@@ -152,7 +177,7 @@ class InkDataset(Dataset):
         tile = tile.unsqueeze(0)
         label = label.unsqueeze(0) if label is not None else None
 
-        return tile, label, segment, x, y
+        return tile, label, segment, x, y, torch.tensor(self.segment_shapes[segment])
 
     def _normalize(self, tile, mode="global"):
         match mode:
