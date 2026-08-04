@@ -10,26 +10,46 @@ from tqdm import tqdm
 Generate 2D tile indices from Zarr datasets.
 
 The script processes individual sample folders containing previously generated
-Zarr archives. For each segment, the image volume and optionally available
-annotation arrays (label and mask) are loaded. The spatial dimensions of the
-volume are divided into square tiles with configurable sizes and strides.
+Zarr archives. For each segment, the Zarr archive is opened and the spatial
+dimensions of the image volume are used to generate tile coordinates.
+Optional annotation arrays (label and mask) are used to calculate statistics
+for each tile.
 
 For each generated tile, the script stores:
     - segment: name of the processed sample or segment
     - y: vertical tile position in the original image
     - x: horizontal tile position in the original image
-    - positive_fraction: fraction of positive label pixels within the tile
-    - mask_fraction: fraction of valid mask pixels within the tile
+    - positive_fraction: fraction of non-zero label pixels within the tile
+    - mask_fraction: fraction of non-zero mask pixels within the tile
 
-Tiles are not extracted as image patches. Instead, the script creates an index
-containing the spatial coordinates and annotation statistics of each tile. This
-allows efficient sampling of regions from large Zarr datasets during later
-processing steps.
+Tiles are not extracted or stored as image patches. Instead, the script creates
+an index containing spatial coordinates and annotation statistics. This allows
+efficient sampling of regions from large Zarr datasets during later processing
+steps.
 
-The generated tile indices are stored as NumPy binary files (.npy) for fast
-loading and additionally exported as CSV files for inspection and analysis.
-Multiple tile sizes and strides can be generated in a single run, enabling
-multi-scale analysis of large microscopy datasets.
+The generated tile indices are stored as NumPy binary files (.npy) and exported
+as CSV files for inspection and analysis. Multiple tile sizes and strides can
+be generated in a single run.
+
+Input:
+    A dataset directory containing one subdirectory per segment. Each segment
+    directory must contain a corresponding Zarr archive:
+
+        <segment>/<segment>.zarr
+
+The Zarr archive should contain:
+        - volume: image data
+        - label: optional annotation mask
+        - mask: optional validity mask
+
+Output:
+    For each processed segment, a "tiles" directory is created containing:
+
+        - tile_size_<size>_stride_<stride>.npy
+            Binary tile index containing tile coordinates and metadata.
+
+        - tile_size_<size>_stride_<stride>.csv
+            Human-readable version of the tile index.
 
 Usage:
     python zarr_to_tiles.py <input_dir>
@@ -54,30 +74,6 @@ Optional arguments:
         Example:
             --tile-sizes 64 128 \
             --strides 32 64
-
-Input:
-    A dataset directory containing one subdirectory per segment. Each segment
-    directory must contain a corresponding Zarr archive:
-
-        <segment>/<segment>.zarr
-
-    The Zarr archive should contain:
-        - volume: image data
-        - label: optional annotation mask
-        - mask: optional validity mask
-
-Output:
-    For each processed segment, a "tiles" directory is created containing:
-
-        - tile_size_<size>_stride_<stride>.npy
-            Binary tile index containing tile coordinates and metadata.
-
-        - tile_size_<size>_stride_<stride>.csv
-            Human-readable version of the tile index.
-
-The generated tile indices enable efficient spatial sampling, visualization,
-and selection of image regions for downstream analysis and machine learning
-workflows without repeatedly scanning the complete high-resolution Zarr data.
 """
 
 
@@ -167,15 +163,22 @@ def main(args):
             print(f"Segment {segment_name}: no mask found")
 
         output_path = segment_folder / "tiles"
-        if output_path.exists():
-            print(f"Tiles already exist for segment: {segment_name}. Skipping.")
-            continue
-        output_path.mkdir(parents=True)
+        # if output_path.exists():
+        #     print(f"Tiles already exist for segment: {segment_name}. Skipping.")
+        #     continue
+        output_path.mkdir(parents=True, exists=True)
 
         # h, w = label.shape
-        h, w = volume.shape[1], volume.shape[2]
+        h, w = volume.shape[-2:]
 
         for size, stride in zip(tile_sizes, strides):
+            npy_file = segment_folder / "tiles" / f"tile_size_{size}_stride_{stride}.npy"
+            csv_file = segment_folder / "tiles" / f"tile_size_{size}_stride_{stride}.csv"
+        
+            if npy_file.exists():
+                print(f"Tile (size: {size}, stride: {stride}) already exists for segment: {segment_name}. Skipping.")
+                continue
+            
             l = []
 
             with tqdm(total=((h - size) // stride + 1) * ((w - size) // stride + 1), desc=f"Tile size {size}, stride {stride}") as pbar:
@@ -209,11 +212,8 @@ def main(args):
                         pbar.update(1)
 
             l = np.asarray(l, dtype=TILE_DTYPE)
-
-            npy_file = segment_folder / "tiles" / f"tile_size_{size}_stride_{stride}.npy"
             np.save(npy_file, l)
 
-            csv_file = segment_folder / "tiles" / f"tile_size_{size}_stride_{stride}.csv"
             np.savetxt(
                 csv_file,
                 l,

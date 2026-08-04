@@ -7,7 +7,7 @@ from omegaconf import DictConfig, OmegaConf
 from dotenv import load_dotenv
 load_dotenv()
 
-sys.path.append(os.getenv("CODE"))
+sys.path.append(os.getenv("CODE_DIR"))
 
 from data import InkDataset, create_balanced_sampler, create_dataloader
 

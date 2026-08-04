@@ -1,7 +1,7 @@
 defaults:
   - dataset: debug
   - sampler: default
-  - dataloader: default
+  - dataloader: debug
   - model: unetrpp
   - loss: dice_bce
   - paths: default

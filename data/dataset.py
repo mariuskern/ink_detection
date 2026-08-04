@@ -64,6 +64,7 @@ class InkDataset(Dataset):
         center=None,
         depth=32,
         norm="global",
+        min_mask_fraction=0.5,
         transform=None,
     ):
         self.data_dir = Path(data_dir)
@@ -111,6 +112,9 @@ class InkDataset(Dataset):
             tiles = np.load(tiles_path, allow_pickle=False)
 
             for entry in tiles:
+                if entry["mask_fraction"] < min_mask_fraction:
+                    continue
+                
                 self.tiles.append(
                     {
                         "segment": segment,

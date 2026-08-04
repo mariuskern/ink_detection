@@ -13,6 +13,7 @@ def build_dataloader(cfg):
         center=cfg.dataset.center,
         depth=cfg.dataset.depth,
         norm=cfg.dataset.norm,
+        min_mask_fraction=cfg.dataset.min_mask_fraction,
     )
     dataset_val = InkDataset(
         cfg.dataset.dir,
@@ -23,9 +24,10 @@ def build_dataloader(cfg):
         center=cfg.dataset.center,
         depth=cfg.dataset.depth,
         norm=cfg.dataset.norm,
+        min_mask_fraction=cfg.dataset.min_mask_fraction,
     )
 
-    sampler = create_balanced_sampler(dataset, cfg.sampler.num_samples, cfg.sampler.alpha)
+    sampler = create_balanced_sampler(dataset, num_samples=cfg.sampler.num_samples, alpha=cfg.sampler.alpha, pos_threshold=cfg.sampler.pos_threshold)
 
     loader = create_dataloader(
         dataset,
@@ -37,7 +39,7 @@ def build_dataloader(cfg):
     )
 
     loader_val = create_dataloader(
-        dataset,
+        dataset_val,
         sampler=None,
         batch_size=cfg.dataloader.batch_size,
         shuffle=False,

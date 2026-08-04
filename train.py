@@ -53,6 +53,7 @@ def main(cfg):
         gradient_clip_val=cfg.train.gradient_clip_val,
         gradient_clip_algorithm=cfg.train.gradient_clip_algorithm,
         log_every_n_steps=10,
+        precision=cfg.train.precision,
         callbacks=[
             ModelCheckpoint(
                 monitor="train/loss",

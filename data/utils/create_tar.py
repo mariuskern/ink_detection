@@ -36,11 +36,11 @@ def main(args):
         if not subfolder.is_dir():
             continue
 
-        output_tar = args.output_dir / f"{subfolder.name}.tar"
+        output_tar = args.output_dir / f"{subfolder.name}.tar.gz"
 
         print(f"Creating archive: {output_tar}")
 
-        with tarfile.open(output_tar, "w") as tar:
+        with tarfile.open(output_tar, "w:gz") as tar:
             tar.add(
                 subfolder,
                 arcname=subfolder.name,

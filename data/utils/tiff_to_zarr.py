@@ -16,9 +16,7 @@ Image.MAX_IMAGE_PIXELS = None
 Conversion pipeline for transforming volumetric TIFF image stacks into Zarr datasets.
 
 The script processes individual sample folders containing 3D TIFF image stacks
-and optional annotation images (labels and masks). Each TIFF stack is loaded as
-a NumPy volume, spatial dimensions are aligned between image and annotation data,
-and the resulting arrays are stored as chunked Zarr datasets.
+and optional annotation images (labels and masks). Each TIFF slice is loaded sequentially and written to a chunked Zarr array, while spatial dimensions are aligned between image and annotation data.
 
 The generated Zarr archives contain separate arrays for:
     - volume: 3D image data (Z, Y, X)
@@ -199,13 +197,13 @@ def main(args):
         if output_path.exists():
             print(f"Zarr archive already exists for folder: {folder.name}. Skipping.")
             continue
-        
-        output_path.mkdir(parents=True)
 
         # volume_original = _get_volume(folder)
         volume_files = _get_volume_files(folder)
         label_original = _get_label(folder)
         mask_original = _get_mask(folder)
+
+        output_path.mkdir(parents=True)
 
         # if volume_original is None:
         #     print(f"Skipping folder {folder.name} due to missing image stack.")
@@ -239,7 +237,7 @@ def main(args):
         mask = None if mask_original is None else mask_original[:h_min, :w_min]
 
         meta = {
-            "volume_original_shape": (d, h, w),
+            "volume_original_shape": [d, h, w],
             "label_original_shape": None if label_original is None else label_original.shape,
             "mask_original_shape": None if mask_original is None else mask_original.shape,
             "volume_shape": volume_shape,

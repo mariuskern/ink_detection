@@ -1,10 +1,11 @@
 dir: ${oc.env:DATA_DIR}
-tile_size: 128
+tile_size: 192
 stride: 64
 n_layers: 65
 center: 32
 depth: 32
 norm: global
+min_mask_fraction: 0.5
 train:
   - 20241025145341
   - 20241025145701
