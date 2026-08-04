@@ -19,3 +19,4 @@ wandb
 timm
 einops
 triton; platform_system != "Windows"
+matplotlib

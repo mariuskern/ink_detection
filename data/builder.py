@@ -5,7 +5,7 @@ from .loader import create_dataloader
 
 def build_dataloader(cfg):
     dataset = InkDataset(
-        cfg.dataset.dir,
+        cfg.path.data_dir,
         segments=cfg.dataset.train,
         tile_size=cfg.dataset.tile_size,
         stride=cfg.dataset.stride,
@@ -16,7 +16,7 @@ def build_dataloader(cfg):
         min_mask_fraction=cfg.dataset.min_mask_fraction,
     )
     dataset_val = InkDataset(
-        cfg.dataset.dir,
+        cfg.path.data_dir,
         segments=cfg.dataset.val,
         tile_size=cfg.dataset.tile_size,
         stride=cfg.dataset.stride,

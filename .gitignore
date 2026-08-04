@@ -1,6 +1,7 @@
 .vscode
-outputs
-wandb
+/outputs
+/wandb
+/logs
 
 
 # https://github.com/github/gitignore/blob/main/Python.gitignore

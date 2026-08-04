@@ -1,5 +1,7 @@
+import os
 from pathlib import Path
 
+import torch
 import hydra
 from omegaconf import DictConfig, OmegaConf
 import lightning as pl
@@ -12,11 +14,17 @@ from lightning_module import LitModel, DiceBCELoss
 
 from dotenv import load_dotenv
 load_dotenv()
+for key in ["DATA_DIR", "CODE_DIR", "OUTPUT_DIR"]:
+    if key in os.environ:
+        os.environ[key] = os.path.expandvars(os.environ[key])
+
+
+torch.set_float32_matmul_precision("high")
 
 
 @hydra.main(version_base=None, config_path="conf/", config_name="-provide_as_argument-")
 def main(cfg):
-    output_dir = Path(cfg.paths.output_dir)
+    output_dir = Path(cfg.path.output_dir)
 
     checkpoint_dir = output_dir / "checkpoints"
     lightning_dir = output_dir / "lightning"
@@ -38,7 +46,8 @@ def main(cfg):
         warmup_epochs=cfg.train.warmup_epochs,
         max_epochs=cfg.train.max_epochs,
         weight_decay=cfg.train.weight_decay,
-        val_img_dir=val_image_dir
+        val_img_dir=val_image_dir,
+        batch_size=cfg.dataloader.batch_size
     )
 
     logger = WandbLogger(project=cfg.wandb.project, name=cfg.experiment.name)

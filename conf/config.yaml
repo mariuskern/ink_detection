@@ -1,11 +1,11 @@
 defaults:
-  - dataset: debug
+  - dataset: default
   - sampler: default
-  - dataloader: debug
+  - dataloader: default
   - model: unetrpp
   - loss: dice_bce
-  - paths: default
-  - wandb: debug
+  - path: alex
+  - wandb: default
   - train: default
   - _self_
 

@@ -10,15 +10,14 @@ import matplotlib.pyplot as plt
 
 
 class LitModel(pl.LightningModule):
-    def __init__(
-        self, model, loss, lr, warmup_epochs, max_epochs, weight_decay, val_img_dir
-    ):
+    def __init__(self, model, loss, lr, warmup_epochs, max_epochs, weight_decay, val_img_dir, batch_size):
         super().__init__()
 
         self.lr = lr
         self.warmup_epochs = warmup_epochs
         self.max_epochs = max_epochs
         self.weight_decay = weight_decay
+        self.batch_size = batch_size
 
         # self.save_hyperparameters(ignore=["model"])
         self.save_hyperparameters(ignore=["model", "loss"])
@@ -37,7 +36,7 @@ class LitModel(pl.LightningModule):
         tile, label, segment, x, y, segment_shape = batch
         output = self(tile)
         loss = self.loss(output, label)
-        self.log("train/loss", loss, on_step=True, on_epoch=True, prog_bar=True)
+        self.log("train/loss", loss, batch_size=self.batch_size, on_step=True, on_epoch=True, prog_bar=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -56,7 +55,7 @@ class LitModel(pl.LightningModule):
                 segment_shape=segment_shape[i].tolist(),
             )
 
-        self.log("val/loss", loss, on_step=True, on_epoch=True, prog_bar=True)
+        self.log("val/loss", loss, batch_size=self.batch_size, on_step=True, on_epoch=True, prog_bar=True)
         return loss
 
     def on_validation_epoch_end(self):

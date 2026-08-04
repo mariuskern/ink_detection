@@ -1,0 +1,3 @@
+stage_dir: ${oc.env:DATA_DIR}/data_tar
+data_dir: ${oc.env:TMPDIR}/data_zarr
+output_dir: ${oc.env:OUTPUT_DIR}/${experiment.name}

@@ -1,1 +1,0 @@
-output_dir: ${oc.env:OUTPUT_DIR}/${experiment.name}

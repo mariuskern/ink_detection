@@ -33,18 +33,22 @@ def main(args):
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
     for subfolder in args.input_dir.iterdir():
-        if not subfolder.is_dir():
-            continue
+        for segment_folder in subfolder.iterdir():
+            if not segment_folder.is_dir():
+                continue
 
-        output_tar = args.output_dir / f"{subfolder.name}.tar.gz"
+            output_subdir = args.output_dir / subfolder.name
+            output_subdir.mkdir(parents=True, exist_ok=True)
 
-        print(f"Creating archive: {output_tar}")
+            output_tar = output_subdir / f"{segment_folder.name}.tar.gz"
 
-        with tarfile.open(output_tar, "w:gz") as tar:
-            tar.add(
-                subfolder,
-                arcname=subfolder.name,
-            )
+            print(f"Creating archive: {output_tar}")
+
+            with tarfile.open(output_tar, "w:gz") as tar:
+                tar.add(
+                    segment_folder,
+                    arcname=segment_folder.name,
+                )
 
     print("Finished creating all archives.")
 

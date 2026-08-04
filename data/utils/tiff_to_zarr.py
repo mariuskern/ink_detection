@@ -16,17 +16,42 @@ Image.MAX_IMAGE_PIXELS = None
 Conversion pipeline for transforming volumetric TIFF image stacks into Zarr datasets.
 
 The script processes individual sample folders containing 3D TIFF image stacks
-and optional annotation images (labels and masks). Each TIFF slice is loaded sequentially and written to a chunked Zarr array, while spatial dimensions are aligned between image and annotation data.
+and optional annotation images (labels and masks). TIFF slices are read
+sequentially and written directly into a chunked Zarr array, avoiding loading
+the complete volume into memory. Spatial dimensions are aligned between image
+and annotation data by cropping all arrays to the common minimum height and
+width.
 
-The generated Zarr archives contain separate arrays for:
-    - volume: 3D image data (Z, Y, X)
-    - label: 2D binary annotation map (Y, X), if available
-    - mask: 2D binary mask (Y, X), if available
+The generated Zarr stores contain separate arrays for:
+    - volume: 3D image data with shape (Z, Y, X)
+    - label: 2D binary annotation map with shape (Y, X), if available
+    - mask: 2D binary mask with shape (Y, X), if available
 
 Additionally, metadata describing original and processed array shapes as well
 as chunk sizes is stored as a JSON file. Chunked Zarr storage enables efficient
 partial loading of large volumetric datasets, making the format suitable for
 out-of-core processing and deep learning workflows on large microscopy volumes.
+
+The input directory is expected to contain sample folders with the following
+structure:
+
+    data/
+    └── labeled/
+        └── segment/
+            ├── layers/
+            │   ├── 000.tif
+            │   ├── 001.tif
+            │   └── ...
+            ├── segment_inklabels.png   (optional)
+            └── segment_mask.png        (optional)
+
+The output directory will contain one Zarr store per processed segment:
+
+    data/
+    └── labeled/
+        └── segment/
+            ├── metadata.json
+            └── segment.zarr/
 
 Usage:
     python tiff_to_zarr.py <input_dir> <output_dir>
@@ -37,7 +62,7 @@ Example:
 Optional arguments:
     --segments SEGMENT [SEGMENT ...]
         Convert only the specified sample folders.
-        By default, all subfolders in the input directory are processed.
+        By default, all available segments in the input directory are processed.
 
     --chunks Z Y X
         Define the Zarr chunk size for the volumetric image data.
@@ -46,7 +71,7 @@ Optional arguments:
 Example with optional arguments:
     python tiff_to_zarr.py ./tiff_data ./zarr_data \
         --segments sample_1 sample_2 \
-        --chunks 65 512 512
+        --chunks 1 512 512
 """
 
 
@@ -178,32 +203,45 @@ def _load_binary_image(path):
 
 
 def main(args):
-    args.output.mkdir(
-        parents=True,
-        exist_ok=True
-    )
+    if args.input.resolve() == args.output.resolve():
+        raise ValueError("Input and output directory must be different.")
+
+    args.output.mkdir(parents=True, exist_ok=True)
+
+    segment_roots = [p for p in args.input.iterdir() if p.is_dir()]
 
     if args.segments:
-        folders = [args.input / segment for segment in args.segments]
-        folders = [f for f in folders if f.is_dir()]
+        folders = []
+        for segment in args.segments:
+            found = False
+
+            for root in segment_roots:
+                segment_path = root / segment
+
+                if segment_path.is_dir():
+                    folders.append(segment_path)
+                    found = True
+
+            if not found:
+                print(f"Warning: Segment '{segment}' was not found in any subfolder of '{args.input}'. Skipping.")
     else:
-        folders = [p for p in args.input.iterdir() if p.is_dir()]
+        folders = []
+        for root in segment_roots:
+            folders.extend([p for p in root.iterdir() if p.is_dir()])
 
     for folder in folders:
         print(f"Processing folder: {folder.name}")
 
-        output_path = args.output / folder.name
+        output_path = args.output / folder.parent.name / folder.name
 
         if output_path.exists():
-            print(f"Zarr archive already exists for folder: {folder.name}. Skipping.")
+            print(f"Folder already exists for segment: {folder.name}. Skipping.")
             continue
 
         # volume_original = _get_volume(folder)
         volume_files = _get_volume_files(folder)
         label_original = _get_label(folder)
         mask_original = _get_mask(folder)
-
-        output_path.mkdir(parents=True)
 
         # if volume_original is None:
         #     print(f"Skipping folder {folder.name} due to missing image stack.")
@@ -212,6 +250,8 @@ def main(args):
         if volume_files is None:
             print(f"Skipping folder {folder.name} due to missing image stack.")
             continue
+
+        output_path.mkdir(parents=True, exist_ok=False)
 
         first_slice = tifffile.imread(volume_files[0])
         d = len(volume_files)
@@ -317,7 +357,7 @@ def main(args):
 
             z["mask"][:] = mask
 
-        print(f"Saved Zarr archive to: {output_path.name}")
+        print(f"Saved Zarr archive to: {output_path}")
         print("")
 
 
