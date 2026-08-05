@@ -27,7 +27,7 @@ def build_dataloader(cfg):
         min_mask_fraction=cfg.dataset.min_mask_fraction,
     )
 
-    sampler = create_balanced_sampler(dataset, num_samples=cfg.sampler.num_samples, alpha=cfg.sampler.alpha, pos_threshold=cfg.sampler.pos_threshold)
+    sampler = create_balanced_sampler(dataset, mode=cfg.sampler.mode, num_samples=cfg.sampler.num_samples, alpha=cfg.sampler.alpha, pos_threshold=cfg.sampler.pos_threshold)
 
     loader = create_dataloader(
         dataset,

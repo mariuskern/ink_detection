@@ -2,7 +2,7 @@ import torch
 from torch.utils.data import WeightedRandomSampler
 
 
-def create_balanced_sampler(dataset, num_samples=None, alpha=5.0, pos_threshold=0.05):
+def create_balanced_sampler(dataset, mode="normal", num_samples=None, alpha=5.0, pos_threshold=0.05):
     """
     Creates a weighted sampler that samples approximately
     50% positive and 50% negative tiles.
@@ -24,8 +24,14 @@ def create_balanced_sampler(dataset, num_samples=None, alpha=5.0, pos_threshold=
 
     weights = torch.ones(len(dataset), dtype=torch.float)
 
-    # Increase weights of positive samples according to their ink fraction
-    weights[positive] = 1.0 + alpha * positive_fraction[positive]
+    match mode:
+        case "balanced":
+            pass
+        case "normal":
+            # Increase weights of positive samples according to their ink fraction
+            weights[positive] = 1.0 + alpha * positive_fraction[positive]
+        case "sparse_positive":
+            weights[positive] = 1.0 + alpha * (1.0 - positive_fraction[positive])
 
     # Normalize each class separately so both classes have equal total weight
     pos_sum = weights[positive].sum()
