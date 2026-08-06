@@ -1,0 +1,17 @@
+defaults:
+  - dataset: debug
+  - sampler: debug
+  - dataloader: debug
+  - model: unetrpp
+  - loss: dice_bce
+  - path: local
+  - wandb: debug
+  - train: noisy_student_debug
+  - _self_
+
+experiment:
+  name: ${now:%Y-%m-%d_%H-%M-%S} # ${model.name}_${now:%Y-%m-%d_%H-%M-%S}
+
+hydra:
+  run:
+    dir: outputs/${train.name}/${model.name}/${experiment.name}

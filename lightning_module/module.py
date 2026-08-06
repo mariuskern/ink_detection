@@ -40,14 +40,24 @@ class LitModel(pl.LightningModule):
         return self.model(x)
 
     def training_step(self, batch, batch_idx):
-        tile, label, mask, is_pseudo, segment, x, y, segment_shape = batch
+        # tile, label, mask, is_pseudo, segment, x, y, segment_shape = batch
+        tile = batch["tile"]
+        label = batch["label"]
+        mask = batch["mask"]
         output = self(tile)
         loss = self.loss(output, label, mask)
         self.log("train/loss", loss, batch_size=self.batch_size, on_step=True, on_epoch=True, prog_bar=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
-        tile, label, mask, is_pseudo, segment, x, y, segment_shape = batch
+        # tile, label, mask, is_pseudo, segment, x, y, segment_shape = batch
+        tile = batch["tile"]
+        label = batch["label"]
+        mask = batch["mask"]
+        segment = batch["segment"]
+        x = batch["x"]
+        y = batch["y"]
+        shape = batch["shape"]
         output = self(tile)
         loss = self.loss(output, label, mask)
 
@@ -59,7 +69,7 @@ class LitModel(pl.LightningModule):
                 x=int(x[i]),
                 y=int(y[i]),
                 prediction=probs[i],
-                segment_shape=segment_shape[i].tolist(),
+                shape=shape[i].tolist(),
             )
 
         self.log("val/loss", loss, batch_size=self.batch_size, on_step=True, on_epoch=True, prog_bar=True)
@@ -84,25 +94,25 @@ class LitModel(pl.LightningModule):
         self.prediction_merger.clear()
 
     def configure_optimizers(self):
-        optimizer = torch.optim.AdamW(
-            self.parameters(), lr=self.lr, weight_decay=self.weight_decay
-        )
+        optimizer = torch.optim.AdamW(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)
+
+        total_steps = self.trainer.estimated_stepping_batches
+        warmup_steps = self.warmup_epochs * (total_steps // self.max_epochs)
 
         warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
             optimizer,
             start_factor=0.01,  # startet bei 1% der LR
             end_factor=1.0,
-            total_iters=self.warmup_epochs,
+            total_iters=warmup_steps, # self.warmup_epochs
         )
 
-        cosine_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer, T_max=self.max_epochs - self.warmup_epochs, eta_min=1e-6
-        )
+        # cosine_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=self.max_epochs - self.warmup_epochs, eta_min=1e-6)
+        cosine_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=total_steps - warmup_steps, eta_min=1e-6)
 
         scheduler = torch.optim.lr_scheduler.SequentialLR(
             optimizer,
             schedulers=[warmup_scheduler, cosine_scheduler],
-            milestones=[self.warmup_epochs],
+            milestones=[warmup_steps], # [self.warmup_epochs]
         )
 
         return {
@@ -112,34 +122,3 @@ class LitModel(pl.LightningModule):
                 "interval": "step",
             },
         }
-
-
-    # def configure_optimizers(self):
-    #     optimizer = torch.optim.AdamW(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)
-
-    #     total_steps = self.trainer.estimated_stepping_batches
-    #     warmup_steps = self.warmup_epochs * (total_steps // self.max_epochs)
-
-    #     warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
-    #         optimizer,
-    #         start_factor=0.01,  # startet bei 1% der LR
-    #         end_factor=1.0,
-    #         total_iters=warmup_steps, # self.warmup_epochs
-    #     )
-
-    #     # cosine_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=self.max_epochs - self.warmup_epochs, eta_min=1e-6)
-    #     cosine_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=total_steps - warmup_steps, eta_min=1e-6)
-
-    #     scheduler = torch.optim.lr_scheduler.SequentialLR(
-    #         optimizer,
-    #         schedulers=[warmup_scheduler, cosine_scheduler],
-    #         milestones=[warmup_steps], # [self.warmup_epochs]
-    #     )
-
-    #     return {
-    #         "optimizer": optimizer,
-    #         "lr_scheduler": {
-    #             "scheduler": scheduler,
-    #             "interval": "step",
-    #         },
-    #     }

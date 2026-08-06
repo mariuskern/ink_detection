@@ -28,7 +28,8 @@ def main(cfg : DictConfig) -> None:
     print("Loader created")
 
     for i, batch in list(enumerate(loader))[:25]:
-        tile, label, mask, is_pseudo, segment, x, y, _ = batch
+        # tile, label, mask, is_pseudo, segment, x, y, _ = batch
+        tile = batch["tile"]
         tile = tile.to(device)
         out = model(tile)
         print(out.shape)

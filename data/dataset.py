@@ -10,6 +10,25 @@ from torchvision import tv_tensors
 from utils import get_tiles, save_tiles
 
 
+def collate_fn(batch):
+    result = {}
+
+    result["tile"] = torch.stack([b["tile"] for b in batch])
+
+    for key in ["label", "mask"]:
+        values = [b[key] for b in batch]
+        result[key] = (torch.stack(values) if values[0] is not None else None)
+
+    result["is_pseudo"] = torch.tensor([b["is_pseudo"] for b in batch])
+
+    result["segment"] = [b["segment"] for b in batch]
+    result["x"] = [b["x"] for b in batch]
+    result["y"] = [b["y"] for b in batch]
+    result["shape"] = torch.stack([b["shape"] for b in batch])
+
+    return result
+
+
 class CombinedInkDataset(ConcatDataset):
     @property
     def tiles(self):
@@ -149,7 +168,17 @@ class InkDataset(Dataset):
         label = label.unsqueeze(0) if label is not None else None
         mask = mask.unsqueeze(0) if mask is not None else None
 
-        return tile, label, mask, is_pseudo, segment, x, y, self.segment_shapes[segment]
+        # return tile, label, mask, is_pseudo, segment, x, y, self.segment_shapes[segment]
+        return {
+            "tile": tile,
+            "label": label,
+            "mask": mask,
+            "is_pseudo": is_pseudo,
+            "segment": segment,
+            "x": x,
+            "y": y,
+            "shape": self.segment_shapes[segment],
+        }
 
     def _normalize(self, tile, mode="global"):
         match mode:

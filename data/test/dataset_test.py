@@ -44,7 +44,8 @@ def main(cfg : DictConfig) -> None:
     # print(tile.shape)
 
     for i, batch in list(enumerate(loader))[:25]:
-        tile, label, segment, x, y = batch
+        # tile, label, segment, x, y = batch
+        tile = batch["tile"]
         print(tile.shape)
 
 if __name__ == "__main__":

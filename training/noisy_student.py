@@ -68,7 +68,12 @@ def predict_and_save_pseudo_labels(model, dataloader, data_dir, output_dir, thre
 
     with torch.no_grad():
         for batch in tqdm(dataloader):
-            tile, _, _, _, segment, x, y, segment_shape = batch
+            # tile, _, _, _, segment, x, y, segment_shape = batch
+            tile = batch["tile"]
+            segment = batch["segment"]
+            x = batch["x"]
+            y = batch["y"]
+            shape = batch["shape"]
             
             tile = tile.to(device)
             output = model(tile)
@@ -81,7 +86,7 @@ def predict_and_save_pseudo_labels(model, dataloader, data_dir, output_dir, thre
                     x=int(x[i]),
                     y=int(y[i]),
                     prediction=probs[i],
-                    segment_shape=segment_shape[i].tolist(),
+                    shape=shape[i].tolist(),
                 )
 
     results = prediction_merger.get_predictions()

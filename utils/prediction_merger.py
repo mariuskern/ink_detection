@@ -5,9 +5,9 @@ class PredictionMerger:
     def __init__(self):
         self.buffers = {}
 
-    def add(self, segment, x, y, prediction, segment_shape):
+    def add(self, segment, x, y, prediction, shape):
         if segment not in self.buffers:
-            H, W = segment_shape[1], segment_shape[2]
+            H, W = shape[1], shape[2]
 
             self.buffers[segment] = {
                 "prob_sum": np.zeros((H, W), dtype=np.float32),
