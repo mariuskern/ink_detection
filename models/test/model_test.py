@@ -12,7 +12,7 @@ load_dotenv()
 sys.path.append(os.getenv("CODE_DIR"))
 
 from models import build_model
-from data import build_dataloader
+from data import build_dataloader, build_augmentation
 
 
 @hydra.main(version_base=None, config_path="../../conf", config_name="config")
@@ -22,12 +22,13 @@ def main(cfg : DictConfig) -> None:
 
     print("Model created")
 
-    loader, _ = build_dataloader(cfg)
+    # loader, _ = build_dataloader(cfg)
+    loader, _ = build_dataloader(cfg, aug=cfg.train.student.aug)
 
     print("Loader created")
 
     for i, batch in list(enumerate(loader))[:25]:
-        tile, label, segment, x, y, _ = batch
+        tile, label, mask, is_pseudo, segment, x, y, _ = batch
         tile = tile.to(device)
         out = model(tile)
         print(out.shape)

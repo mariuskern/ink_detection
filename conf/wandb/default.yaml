@@ -1,4 +1,4 @@
-project: "ink"
+project: ink_${train.name}
 group: null
 name: null
 notes: null

@@ -1,17 +1,17 @@
 defaults:
-  - dataset: default
-  - sampler: default
-  - dataloader: default
+  - dataset: debug
+  - sampler: debug
+  - dataloader: debug
   - model: unetrpp
   - loss: dice_bce
-  - path: alex
-  - wandb: default
-  - train: default
+  - path: default
+  - wandb: debug
+  - train: noisy_student_debug
   - _self_
 
 experiment:
-  name: ${model.name}_${now:%Y-%m-%d_%H-%M-%S}
+  name: ${now:%Y-%m-%d_%H-%M-%S} # ${model.name}_${now:%Y-%m-%d_%H-%M-%S}
 
 hydra:
   run:
-    dir: outputs/${experiment.name}
+    dir: outputs/${train.name}/${model.name}/${experiment.name}

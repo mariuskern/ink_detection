@@ -1,4 +1,5 @@
 import os
+import sys
 from PIL import Image
 from pathlib import Path
 
@@ -7,6 +8,12 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 import matplotlib.pyplot as plt
+
+# print("moduel:")
+# print(os.getenv("CODE_DIR"))
+# sys.path.append(os.getenv("CODE_DIR"))
+
+from utils import PredictionMerger
 
 
 class LitModel(pl.LightningModule):
@@ -25,7 +32,7 @@ class LitModel(pl.LightningModule):
         self.model = model
         self.loss = loss
 
-        self.segment_buffers = {}
+        self.prediction_merger = PredictionMerger()
 
         self.val_img_dir = val_img_dir
 
@@ -33,21 +40,21 @@ class LitModel(pl.LightningModule):
         return self.model(x)
 
     def training_step(self, batch, batch_idx):
-        tile, label, segment, x, y, segment_shape = batch
+        tile, label, mask, is_pseudo, segment, x, y, segment_shape = batch
         output = self(tile)
-        loss = self.loss(output, label)
+        loss = self.loss(output, label, mask)
         self.log("train/loss", loss, batch_size=self.batch_size, on_step=True, on_epoch=True, prog_bar=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
-        tile, label, segment, x, y, segment_shape = batch
+        tile, label, mask, is_pseudo, segment, x, y, segment_shape = batch
         output = self(tile)
-        loss = self.loss(output, label)
+        loss = self.loss(output, label, mask)
 
         probs = torch.sigmoid(output).squeeze(1).detach().to("cpu").numpy()
 
         for i in range(len(segment)):
-            self._accumulate_prediction(
+            self.prediction_merger.add(
                 segment=segment[i],
                 x=int(x[i]),
                 y=int(y[i]),
@@ -62,31 +69,19 @@ class LitModel(pl.LightningModule):
         if self.global_rank != 0:
             return
 
-        for segment, buffer in self.segment_buffers.items():
-            prediction = buffer["prob_sum"] / np.maximum(buffer["weight_sum"], 1e-6)
+        results = self.prediction_merger.get_predictions()
 
-            # [0,1] -> [0,255]
-            prediction_uint8 = (np.clip(prediction, 0, 1) * 255).astype(np.uint8)
+        for segment, data in results.items():
+            prediction = data["prediction"]
+            path = Path(self.val_img_dir) / f"{segment}_epoch_{self.current_epoch:04d}_prediction.png"
 
-            path = (
-                Path(self.val_img_dir)
-                / f"{segment}_epoch_{self.current_epoch:04d}_prediction.png"
-            )
-
-            # Image.fromarray(prediction_uint8).save(path)
             plt.figure(figsize=(10, 10))
-            plt.imshow(prediction, cmap="turbo", vmin=0, vmax=1)
+            plt.imshow(prediction, cmap="magma", vmin=0, vmax=1)
             plt.axis("off")
-
-            plt.savefig(
-                path,
-                bbox_inches="tight",
-                pad_inches=0,
-                dpi=300
-            )
+            plt.savefig(path, bbox_inches="tight", pad_inches=0, dpi=300)
             plt.close()
 
-        self.segment_buffers.clear()
+        self.prediction_merger.clear()
 
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(
@@ -117,43 +112,3 @@ class LitModel(pl.LightningModule):
                 "interval": "step",
             },
         }
-
-    def _accumulate_prediction(
-        self,
-        segment,
-        x,
-        y,
-        prediction,
-        segment_shape,
-    ):
-
-        def gaussian_weight(size, sigma_scale=1 / 6):
-            ax = np.arange(size) - (size - 1) / 2
-            xx, yy = np.meshgrid(ax, ax)
-            sigma = size * sigma_scale
-            g = np.exp(-(xx**2 + yy**2) / (2 * sigma**2))
-            return (g / g.max()).astype(np.float32)
-
-        h, w = prediction.shape
-
-        if segment not in self.segment_buffers:
-            H, W = segment_shape[1], segment_shape[2]
-
-            self.segment_buffers[segment] = {
-                "prob_sum": np.zeros((H, W), dtype=np.float32),
-                "weight_sum": np.zeros((H, W), dtype=np.float32),
-            }
-
-        buffer = self.segment_buffers[segment]
-        H, W = buffer["prob_sum"].shape
-
-        h_valid = min(h, H - y)
-        w_valid = min(w, W - x)
-
-        if h_valid <= 0 or w_valid <= 0:
-            return
-
-        prediction = prediction[:h_valid, :w_valid]
-        weight = gaussian_weight(h)[:h_valid, :w_valid]
-        buffer["prob_sum"][y : y + h_valid, x : x + w_valid] += prediction * weight
-        buffer["weight_sum"][y : y + h_valid, x : x + w_valid] += weight

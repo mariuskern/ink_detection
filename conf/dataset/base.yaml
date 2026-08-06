@@ -1,0 +1,7 @@
+tile_size: 192
+stride: 96
+n_layers: 65
+center: 32
+depth: 32
+norm: global
+min_mask_fraction: 0.5

@@ -1,4 +1,4 @@
-batch_size: 16
+batch_size: 4
 shuffle: False
 num_workers: 4
 pin_memory: True

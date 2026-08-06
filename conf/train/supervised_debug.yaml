@@ -1,0 +1,10 @@
+defaults:
+  - base
+
+max_epochs: 5
+
+name: supervised
+labeled:
+  - 20241025145341
+val:
+  - 20241025145701

@@ -1,4 +1,4 @@
-project: "ink_debug"
+project: ink_debug_${train.name}
 group: null
 name: null
 notes: null
