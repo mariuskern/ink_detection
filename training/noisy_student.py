@@ -35,7 +35,7 @@ def train_noisy_student(cfg, logger):
         model = train_one_iteration(cfg, logger, output_dir=output_dir_iteration, use_unlabeled_data=use_unlabeled_data, aug=cfg.train.student.aug)
 
         # Create pseudo labels
-        unlabeled_dataloader = build_unlabeled_dataloader(cfg, aug=None, stride=48)
+        unlabeled_dataloader = build_unlabeled_dataloader(cfg, aug=None, stride=cfg.dataset.stride) # stride=int(cfg.dataset.tile_size) // 4
         predict_and_save_pseudo_labels(model, unlabeled_dataloader, cfg.path.data_dir, output_dir_iteration, cfg.train.threshold, cfg.train.confidence_threshold, cfg.train.uncertainty_threshold, iteration, cfg.dataset.tile_size, cfg.dataset.stride)
 
 

@@ -17,9 +17,9 @@ TILE_DTYPE = np.dtype(
 )
 
 
-def get_tiles(label, mask, size, stride, segment_name):
+def get_tiles(label, mask, size, stride, segment_name, h, w):
     l = []
-    h, w = label.shape[-2:]
+    # h, w = label.shape[-2:]
 
     with tqdm(total=((h - size) // stride + 1) * ((w - size) // stride + 1), desc=f"Tile size {size}, stride {stride}") as pbar:
         for y in range(0, h - size + 1, stride):

@@ -140,7 +140,8 @@ def main(args):
 
             z = zarr.open(segment_folder / f"{segment_folder.name}.zarr", mode="r")
 
-            # volume = z["volume"]
+            volume_shape = z["volume"].shape
+            h, w = volume_shape[-2:]
             label = z["label"] if "label" in z else None
             mask = z["mask"] if "mask" in z else None
 
@@ -160,7 +161,7 @@ def main(args):
                     print(f"Tile (size: {size}, stride: {stride}) already exists for segment: {segment_folder.name}. Skipping.")
                     continue
                 
-                l = get_tiles(label, mask, size, stride, segment_folder.name)
+                l = get_tiles(label, mask, size, stride, segment_folder.name, h, w)
                 save_tiles(l, npy_file, csv_file)
 
                 print(f"Saved {len(l)} tiles")

@@ -41,7 +41,8 @@ def main():
     stage_dir = Path(cfg.path.stage_dir) # data_tar
     data_dir = Path(cfg.path.data_dir) # data_zarr
 
-    segments = set(map(str, cfg.dataset.train)) | set(map(str, cfg.dataset.val))
+    # segments = set(map(str, cfg.dataset.train)) | set(map(str, cfg.dataset.val))
+    segments = set(map(str, cfg.train.labeled)) | set(map(str, cfg.train.val)) | set(map(str, getattr(cfg.train, "unlabeled", []) or []))
 
     tasks = []
     for category in stage_dir.iterdir():  # labeled/, unlabeled/, ...

@@ -5,7 +5,7 @@
 #SBATCH --gres=gpu:a100:1
 #SBATCH --cpus-per-task=16
 # #SBATCH --mail-type=all
-#SBATCH --time=08:00:00 # 23:59:00
+#SBATCH --time=23:59:00 # 08:00:00 23:59:00
 #SBATCH --export=NONE
 #SBATCH --output=logs/%x_%j.out # logs/<job-name>_<job-id>.out
 #SBATCH --error=logs/%x_%j.err # logs/<job-name>_<job-id>.err

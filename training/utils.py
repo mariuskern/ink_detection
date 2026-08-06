@@ -2,7 +2,7 @@ from pathlib import Path
 
 import lightning as pl
 from lightning.pytorch.loggers import WandbLogger
-from lightning.pytorch.callbacks import ModelCheckpoint
+from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor
 from omegaconf import OmegaConf
 
 from data import build_dataloader
@@ -51,7 +51,8 @@ def train_one_iteration(cfg, logger, output_dir, aug, use_unlabeled_data=False):
                 dirpath=checkpoint_dir,
                 filename=cfg.model.name + "_{epoch}_{val_loss:.3f}",
                 every_n_epochs=cfg.train.checkpoint_every_n_epochs
-            )
+            ),
+            LearningRateMonitor(logging_interval="step")
         ]
     )
 

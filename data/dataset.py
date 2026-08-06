@@ -205,8 +205,6 @@ class InkDataset(Dataset):
         else:
             tile_path = segment_path / "tiles" / f"tile_size_{self.tile_size}_stride_{self.stride}.npy"
             csv_path = segment_path / "tiles" / f"tile_size_{self.tile_size}_stride_{self.stride}.csv"
-
-        print(tile_path)
         
         # if not tile_path.exists():
         #     raise FileNotFoundError(f"Missing tile index: {tile_path}")
@@ -217,11 +215,27 @@ class InkDataset(Dataset):
             print(f"Missing tile index: {tile_path}. Creating tiles.")
 
             zarr_data = self.zarr_data[segment_path.name]
+            volume_shape = zarr_data["volume"].shape
+            h, w = volume_shape[-2:]
+
+            # if self.use_pseudo_labels:
+            #     version = str(self.pseudo_label_version)
+            #     label = np.asarray(zarr_data["pseudo_labels"][version])
+            #     mask = np.asarray(zarr_data["pseudo_masks"][version])
+            # else:
+            #     label = np.asarray(zarr_data["label"]) if "label" in zarr_data else None
+            #     mask = np.asarray(zarr_data["mask"]) if "mask" in zarr_data else None
 
             if self.use_pseudo_labels:
                 version = str(self.pseudo_label_version)
                 label = np.asarray(zarr_data["pseudo_labels"][version])
-                mask = np.asarray(zarr_data["pseudo_masks"][version])
+                pseudo_mask = np.asarray(zarr_data["pseudo_masks"][version])
+
+                if "mask" in zarr_data:
+                    true_mask = np.asarray(zarr_data["mask"])
+                    mask = true_mask * pseudo_mask
+                else:
+                    mask = pseudo_mask
             else:
                 label = np.asarray(zarr_data["label"]) if "label" in zarr_data else None
                 mask = np.asarray(zarr_data["mask"]) if "mask" in zarr_data else None
@@ -231,7 +245,9 @@ class InkDataset(Dataset):
                 mask,
                 self.tile_size,
                 self.stride,
-                segment_path.name
+                segment_path.name,
+                h,
+                w
             )
 
             tile_path.parent.mkdir(parents=True, exist_ok=True)

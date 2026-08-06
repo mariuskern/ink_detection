@@ -1,5 +1,5 @@
-lr: 1.0e-4
-max_epochs: 60
+lr: 1.0e-4 # 1.0e-4
+max_epochs: 50
 weight_decay: 3.0e-5
 warmup_epochs: 3
 accelerator: auto
@@ -7,4 +7,4 @@ devices: 1
 gradient_clip_val: 1.0
 gradient_clip_algorithm: "norm"
 checkpoint_every_n_epochs: 6
-precision: 16-mixed # bf16-mixed 16-mixed
+precision: 16-mixed # 16-mixed bf16-mixed 16-mixed
