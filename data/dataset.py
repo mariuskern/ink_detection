@@ -15,9 +15,22 @@ def collate_fn(batch):
 
     result["tile"] = torch.stack([b["tile"] for b in batch])
 
+    # for key in ["label", "mask"]:
+    #     values = [b[key] for b in batch]
+    #     result[key] = (torch.stack(values) if values[0] is not None else None)
+
     for key in ["label", "mask"]:
         values = [b[key] for b in batch]
-        result[key] = (torch.stack(values) if values[0] is not None else None)
+
+        exists = torch.tensor([v is not None for v in values], dtype=torch.bool)
+        result[f"{key}_exists"] = exists
+
+        if exists.all():
+            result[key] = torch.stack(values)
+        elif exists.any():
+            result[key] = values
+        else:
+            result[key] = None
 
     result["is_pseudo"] = torch.tensor([b["is_pseudo"] for b in batch])
 
