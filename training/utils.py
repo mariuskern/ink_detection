@@ -50,7 +50,7 @@ def train_one_iteration(cfg, logger, output_dir, aug, use_unlabeled_data=False, 
                 mode="min",
                 save_top_k=-1,
                 dirpath=checkpoint_dir,
-                filename=cfg.model.name + "_{epoch}_{val_loss:.3f}",
+                filename=cfg.model.name + "_{epoch}_{train/loss:.3f}",
                 every_n_epochs=cfg.train.checkpoint_every_n_epochs
             ),
             LearningRateMonitor(logging_interval="step")

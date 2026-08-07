@@ -47,7 +47,13 @@ class LitModel(pl.LightningModule):
         mask = batch["mask"]
         output = self(tile)
         loss = self.loss(output, label, mask)
-        self.log(f"train/{str(self.iteration) + '_' if self.iteration is not None else ''}loss", loss, batch_size=self.batch_size, on_step=True, on_epoch=True, prog_bar=True)
+        # self.log(f"train/{str(self.iteration) + '_' if self.iteration is not None else ''}loss", loss, batch_size=self.batch_size, on_step=True, on_epoch=True, prog_bar=True)
+        if self.iteration is not None:
+            self.log(f"train/{str(self.iteration)}_loss", loss, batch_size=self.batch_size, on_step=True, on_epoch=True, prog_bar=True)
+            self.log(f"train/loss", loss, batch_size=self.batch_size, on_step=True, on_epoch=True, prog_bar=True)
+        else:
+            self.log(f"train/loss", loss, batch_size=self.batch_size, on_step=True, on_epoch=True, prog_bar=True)
+            
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -73,7 +79,13 @@ class LitModel(pl.LightningModule):
                 shape=shape[i].tolist(),
             )
 
-        self.log(f"val/{str(self.iteration) + '_' if self.iteration is not None else ''}loss", loss, batch_size=self.batch_size, on_step=True, on_epoch=True, prog_bar=True)
+        # self.log(f"val/{str(self.iteration) + '_' if self.iteration is not None else ''}loss", loss, batch_size=self.batch_size, on_step=True, on_epoch=True, prog_bar=True)
+        if self.iteration is not None:
+            self.log(f"val/{str(self.iteration)}_loss", loss, batch_size=self.batch_size, on_step=True, on_epoch=True, prog_bar=True)
+            self.log(f"val/loss", loss, batch_size=self.batch_size, on_step=True, on_epoch=True, prog_bar=True)
+        else:
+            self.log(f"val/loss", loss, batch_size=self.batch_size, on_step=True, on_epoch=True, prog_bar=True)
+
         return loss
 
     def on_validation_epoch_end(self):

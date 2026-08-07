@@ -6,5 +6,5 @@ accelerator: auto
 devices: 1
 gradient_clip_val: 1.0
 gradient_clip_algorithm: "norm"
-checkpoint_every_n_epochs: 6
+checkpoint_every_n_epochs: 10
 precision: 16-mixed # 16-mixed bf16-mixed 16-mixed
