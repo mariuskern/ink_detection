@@ -32,7 +32,7 @@ def train_noisy_student(cfg, logger):
             use_unlabeled_data = True
 
         # Training
-        model = train_one_iteration(cfg, logger, output_dir=output_dir_iteration, use_unlabeled_data=use_unlabeled_data, aug=cfg.train.student.aug)
+        model = train_one_iteration(cfg, logger, output_dir=output_dir_iteration, use_unlabeled_data=use_unlabeled_data, aug=cfg.train.student.aug, iteration=iteration)
 
         # Create pseudo labels
         unlabeled_dataloader = build_unlabeled_dataloader(cfg, aug=None, stride=cfg.dataset.stride) # stride=int(cfg.dataset.tile_size) // 4

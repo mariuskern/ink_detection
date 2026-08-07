@@ -10,7 +10,7 @@ from models import build_model, build_loss
 from lightning_module import LitModel
 
 
-def train_one_iteration(cfg, logger, output_dir, aug, use_unlabeled_data=False):
+def train_one_iteration(cfg, logger, output_dir, aug, use_unlabeled_data=False, iteration=None):
     checkpoint_dir = output_dir / "checkpoints"
     lightning_dir = output_dir / "lightning"
     val_image_dir = output_dir / "val_images"
@@ -30,7 +30,8 @@ def train_one_iteration(cfg, logger, output_dir, aug, use_unlabeled_data=False):
         max_epochs=cfg.train.max_epochs,
         weight_decay=cfg.train.weight_decay,
         val_img_dir=val_image_dir,
-        batch_size=cfg.dataloader.batch_size
+        batch_size=cfg.dataloader.batch_size,
+        iteration=iteration,
     )
 
     trainer = pl.Trainer(

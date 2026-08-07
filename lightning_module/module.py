@@ -17,7 +17,7 @@ from utils import PredictionMerger
 
 
 class LitModel(pl.LightningModule):
-    def __init__(self, model, loss, lr, warmup_epochs, max_epochs, weight_decay, val_img_dir, batch_size):
+    def __init__(self, model, loss, lr, warmup_epochs, max_epochs, weight_decay, val_img_dir, batch_size, iteration=None):
         super().__init__()
 
         self.lr = lr
@@ -25,6 +25,7 @@ class LitModel(pl.LightningModule):
         self.max_epochs = max_epochs
         self.weight_decay = weight_decay
         self.batch_size = batch_size
+        self.iteration = iteration
 
         # self.save_hyperparameters(ignore=["model"])
         self.save_hyperparameters(ignore=["model", "loss"])
@@ -46,7 +47,7 @@ class LitModel(pl.LightningModule):
         mask = batch["mask"]
         output = self(tile)
         loss = self.loss(output, label, mask)
-        self.log("train/loss", loss, batch_size=self.batch_size, on_step=True, on_epoch=True, prog_bar=True)
+        self.log(f"train/{str(self.iteration) + '_' if self.iteration is not None else ''}loss", loss, batch_size=self.batch_size, on_step=True, on_epoch=True, prog_bar=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -72,7 +73,7 @@ class LitModel(pl.LightningModule):
                 shape=shape[i].tolist(),
             )
 
-        self.log("val/loss", loss, batch_size=self.batch_size, on_step=True, on_epoch=True, prog_bar=True)
+        self.log(f"val/{str(self.iteration) + '_' if self.iteration is not None else ''}loss", loss, batch_size=self.batch_size, on_step=True, on_epoch=True, prog_bar=True)
         return loss
 
     def on_validation_epoch_end(self):
