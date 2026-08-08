@@ -16,6 +16,16 @@ import matplotlib.pyplot as plt
 from utils import PredictionMerger, save_predictions_as_images
 
 
+def _require_finite(name, value, batch_idx):
+    """Fail at the first non-finite tensor instead of corrupting a run."""
+    if value is not None and not torch.isfinite(value).all():
+        non_finite = (~torch.isfinite(value)).sum().item()
+        raise RuntimeError(
+            f"Non-finite values in {name} at batch {batch_idx}: "
+            f"{non_finite} of {value.numel()} values are NaN or Inf."
+        )
+
+
 class LitModel(pl.LightningModule):
     def __init__(self, model, loss, lr, warmup_epochs, max_epochs, weight_decay, val_img_dir, batch_size, iteration=None):
         super().__init__()
@@ -45,8 +55,13 @@ class LitModel(pl.LightningModule):
         tile = batch["tile"]
         label = batch["label"]
         mask = batch["mask"]
+        _require_finite("training input", tile, batch_idx)
+        _require_finite("training label", label, batch_idx)
+        _require_finite("training mask", mask, batch_idx)
         output = self(tile)
+        _require_finite("training model output", output, batch_idx)
         loss = self.loss(output, label, mask)
+        _require_finite("training loss", loss, batch_idx)
         # self.log(f"train/{str(self.iteration) + '_' if self.iteration is not None else ''}loss", loss, batch_size=self.batch_size, on_step=True, on_epoch=True, prog_bar=True)
         if self.iteration is not None:
             self.log(f"train/{str(self.iteration)}_loss", loss, batch_size=self.batch_size, on_step=True, on_epoch=True, prog_bar=True)
@@ -65,10 +80,15 @@ class LitModel(pl.LightningModule):
         x = batch["x"]
         y = batch["y"]
         shape = batch["shape"]
+        _require_finite("validation input", tile, batch_idx)
+        _require_finite("validation label", label, batch_idx)
+        _require_finite("validation mask", mask, batch_idx)
         output = self(tile)
+        _require_finite("validation model output", output, batch_idx)
         loss = self.loss(output, label, mask)
+        _require_finite("validation loss", loss, batch_idx)
 
-        probs = torch.sigmoid(output).squeeze(1).detach().to("cpu").numpy()
+        probs = torch.sigmoid(output).squeeze(1).detach().float().to("cpu").numpy()
 
         for i in range(len(segment)):
             self.prediction_merger.add(
@@ -111,7 +131,22 @@ class LitModel(pl.LightningModule):
         optimizer = torch.optim.AdamW(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)
 
         total_steps = self.trainer.estimated_stepping_batches
-        warmup_steps = self.warmup_epochs * (total_steps // self.max_epochs)
+        steps_per_epoch = max(total_steps // self.max_epochs, 1)
+        requested_warmup_steps = self.warmup_epochs * steps_per_epoch
+        # A warmup cannot consume the entire run; otherwise the subsequent
+        # cosine scheduler receives a non-positive T_max (e.g. debug runs).
+        warmup_steps = min(requested_warmup_steps, max(total_steps - 1, 0))
+
+        if warmup_steps == 0:
+            return {
+                "optimizer": optimizer,
+                "lr_scheduler": {
+                    "scheduler": torch.optim.lr_scheduler.CosineAnnealingLR(
+                        optimizer, T_max=max(total_steps, 1), eta_min=1e-6
+                    ),
+                    "interval": "step",
+                },
+            }
 
         warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
             optimizer,
@@ -121,7 +156,9 @@ class LitModel(pl.LightningModule):
         )
 
         # cosine_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=self.max_epochs - self.warmup_epochs, eta_min=1e-6)
-        cosine_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=total_steps - warmup_steps, eta_min=1e-6)
+        cosine_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=max(total_steps - warmup_steps, 1), eta_min=1e-6
+        )
 
         scheduler = torch.optim.lr_scheduler.SequentialLR(
             optimizer,
