@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 # print(os.getenv("CODE_DIR"))
 # sys.path.append(os.getenv("CODE_DIR"))
 
-from utils import PredictionMerger
+from utils import PredictionMerger, save_predictions_as_images
 
 
 class LitModel(pl.LightningModule):
@@ -93,16 +93,17 @@ class LitModel(pl.LightningModule):
             return
 
         results = self.prediction_merger.get_predictions()
+        save_predictions_as_images(self.val_img_dir, results, save_probability=True, name_suffix=f"epoch_{self.current_epoch:04d}", create_subfolders=False)
 
-        for segment, data in results.items():
-            prediction = data["prediction"]
-            path = Path(self.val_img_dir) / f"{segment}_epoch_{self.current_epoch:04d}_prediction.png"
+        # for segment, data in results.items():
+        #     prediction = data["prediction"]
+        #     path = Path(self.val_img_dir) / f"{segment}_epoch_{self.current_epoch:04d}_prediction.png"
 
-            plt.figure(figsize=(10, 10))
-            plt.imshow(prediction, cmap="magma", vmin=0, vmax=1)
-            plt.axis("off")
-            plt.savefig(path, bbox_inches="tight", pad_inches=0, dpi=300)
-            plt.close()
+        #     plt.figure(figsize=(10, 10))
+        #     plt.imshow(prediction, cmap="magma", vmin=0, vmax=1)
+        #     plt.axis("off")
+        #     plt.savefig(path, bbox_inches="tight", pad_inches=0, dpi=300)
+        #     plt.close()
 
         self.prediction_merger.clear()
 

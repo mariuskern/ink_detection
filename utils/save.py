@@ -1,0 +1,162 @@
+from pathlib import Path
+
+from PIL import Image
+import numpy as np
+import zarr
+
+from .get_segment_paths import get_segment_paths
+
+
+def save_predictions_as_images(
+    output_dir,
+    predictions,
+    save_probability=False,
+    save_confidence=False,
+    save_uncertainty=False,
+    save_label=False,
+    save_mask=False,
+    name_suffix=None,
+    create_subfolders=True,
+):
+    for prediction in predictions:
+        if save_probability:
+            _save_image(
+                output_dir,
+                "prediction",
+                prediction.segment,
+                prediction.probability,
+                name_suffix,
+                create_subfolders
+            )
+
+        if save_confidence and prediction.confidence is not None:
+            _save_image(
+                output_dir,
+                "confidence",
+                prediction.segment,
+                prediction.confidence,
+                name_suffix="",
+                create_subfolders=True,
+            )
+
+        if save_uncertainty and prediction.uncertainty is not None:
+            _save_image(
+                output_dir,
+                "uncertainty",
+                prediction.segment,
+                prediction.uncertainty,
+                name_suffix="",
+                create_subfolders=True,
+            )
+
+        if save_label and prediction.pseudo_label is not None:
+            _save_image(
+                output_dir,
+                "pseudo_label",
+                prediction.segment,
+                prediction.pseudo_label,
+                name_suffix="",
+                create_subfolders=True,
+            )
+
+        if save_mask and prediction.pseudo_mask is not None:
+            _save_image(
+                output_dir,
+                "pseudo_mask",
+                prediction.segment,
+                prediction.pseudo_mask,
+                name_suffix="",
+                create_subfolders=True,
+            )
+
+
+def _save_image(output_dir, name, segment, image, name_suffix, create_subfolders):
+    if create_subfolders:
+        path = output_dir / name
+    else:
+        path = output_dir
+    path.mkdir(parents=True, exist_ok=True)
+
+    if image.dtype == bool:
+        image = image.astype(np.uint8) * 255
+    else:
+        image = (image * 255).clip(0, 255).astype(np.uint8)
+
+    Image.fromarray(image).save(path / f"{segment}_{name}{'_' + name_suffix if name_suffix is not None else ''}.png")
+
+    # plt.figure(figsize=(10, 10))
+    # plt.imshow(image, cmap="magma", vmin=0, vmax=1)
+    # plt.axis("off")
+    # plt.savefig(path, bbox_inches="tight", pad_inches=0, dpi=300)
+    # plt.close()
+
+
+def save_predictions_as_zarr(data_dir, predictions, iteration, save_probability=False, save_confidence=False, save_uncertainty=False, save_label=False, save_mask=False):
+    segment_paths = get_segment_paths(data_dir)
+    
+    for prediction in predictions:
+        if save_probability:
+            _save_zarr(
+                segment_paths[prediction.segment],
+                "prediction",
+                prediction.segment,
+                prediction.probability,
+                iteration
+            )
+
+        if save_confidence and prediction.confidence is not None:
+            _save_zarr(
+                segment_paths[prediction.segment],
+                "confidence",
+                prediction.segment,
+                prediction.confidence,
+                iteration
+            )
+
+        if save_uncertainty and prediction.uncertainty is not None:
+            _save_zarr(
+                segment_paths[prediction.segment],
+                "uncertainty",
+                prediction.segment,
+                prediction.uncertainty,
+                iteration
+            )
+
+        if save_label and prediction.pseudo_label is not None:
+            _save_zarr(
+                segment_paths[prediction.segment],
+                "pseudo_labels",
+                prediction.segment,
+                prediction.pseudo_label,
+                iteration
+            )
+
+        if save_mask and prediction.pseudo_mask is not None:
+            _save_zarr(
+                segment_paths[prediction.segment],
+                "pseudo_masks",
+                prediction.segment,
+                prediction.pseudo_mask,
+                iteration
+            )
+
+
+def _save_zarr(segment_path, group_name, segment, array, iteration):
+    zarr_path = segment_path / f"{segment}.zarr"
+
+    z = zarr.open(zarr_path, mode="a")
+
+    if iteration == 0 and group_name in z:
+        del z[group_name]
+
+    group = z.require_group(group_name)
+
+    group.create_array(
+        str(iteration),
+        shape=array.shape,
+        chunks="auto",
+        dtype=array.dtype,
+        overwrite=True
+    )
+
+    group[str(iteration)][:] = array

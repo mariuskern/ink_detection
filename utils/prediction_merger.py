@@ -1,4 +1,16 @@
 import numpy as np
+from dataclasses import dataclass
+import numpy as np
+
+
+@dataclass
+class Prediction:
+    segment: str
+    probability: np.ndarray
+    confidence: np.ndarray | None = None
+    uncertainty: np.ndarray | None = None
+    pseudo_label: np.ndarray | None = None
+    pseudo_mask: np.ndarray | None = None
 
 
 class PredictionMerger:
@@ -34,7 +46,7 @@ class PredictionMerger:
         buffer["weight_sum"][y:y+h_valid, x:x+w_valid] += weight
 
     def get_predictions(self):
-        results = {}
+        results = []
 
         for segment, buffer in self.buffers.items():
             prediction = buffer["prob_sum"] / np.maximum(buffer["weight_sum"], 1e-6)
@@ -45,11 +57,20 @@ class PredictionMerger:
 
             confidence = np.maximum(prediction, 1 - prediction)
 
-            results[segment] = {
-                "prediction": prediction,
-                "uncertainty": uncertainty,
-                "confidence": confidence,
-            }
+            # results[segment] = {
+            #     "prediction": prediction,
+            #     "uncertainty": uncertainty,
+            #     "confidence": confidence,
+            # }
+
+            results.append(
+                Prediction(
+                    segment=segment,
+                    probability=prediction,
+                    uncertainty=uncertainty,
+                    confidence=confidence,
+                )
+            )
 
         return results
 

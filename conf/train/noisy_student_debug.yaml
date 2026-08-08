@@ -4,6 +4,7 @@ defaults:
   - /aug@student.aug: strong
 
 max_epochs: 1
+checkpoint_every_n_epochs: 1
 
 name: noisy_student
 threshold: 0.5
