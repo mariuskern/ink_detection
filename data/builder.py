@@ -93,6 +93,8 @@ def build_dataloader(cfg, use_unlabeled_data=False, aug=None):
         shuffle=cfg.dataloader.shuffle,
         num_workers=cfg.dataloader.num_workers,
         pin_memory=cfg.dataloader.pin_memory,
+        prefetch_factor=cfg.dataloader.prefetch_factor,
+        persistent_workers=cfg.dataloader.persistent_workers,
     )
 
     val_loader = create_dataloader(
@@ -102,6 +104,8 @@ def build_dataloader(cfg, use_unlabeled_data=False, aug=None):
         shuffle=False,
         num_workers=cfg.dataloader.num_workers,
         pin_memory=cfg.dataloader.pin_memory,
+        prefetch_factor=cfg.dataloader.prefetch_factor,
+        persistent_workers=cfg.dataloader.persistent_workers,
     )
 
     return train_loader, val_loader
@@ -122,6 +126,8 @@ def build_unlabeled_dataloader(cfg, aug=None, stride=None):
         shuffle=False,
         num_workers=cfg.dataloader.num_workers,
         pin_memory=cfg.dataloader.pin_memory,
+        prefetch_factor=cfg.dataloader.prefetch_factor,
+        persistent_workers=cfg.dataloader.persistent_workers,
     )
 
     return pseudo_loader

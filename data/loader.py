@@ -10,6 +10,8 @@ def create_dataloader(
     shuffle=False,
     num_workers=4,
     pin_memory=True,
+    prefetch_factor=None,
+    persistent_workers=None,
 ):
     """
     Creates a PyTorch DataLoader from a given dataset.
@@ -46,6 +48,17 @@ def create_dataloader(
     if sampler is not None and shuffle is True:
         raise ValueError("Cannot use both a sampler and shuffle=True.")
 
+    if persistent_workers is None:
+        persistent_workers = num_workers > 0
+
+    loader_kwargs = {}
+    if num_workers > 0:
+        loader_kwargs["persistent_workers"] = persistent_workers
+        if prefetch_factor is not None:
+            if prefetch_factor < 1:
+                raise ValueError("prefetch_factor must be at least 1 when num_workers > 0.")
+            loader_kwargs["prefetch_factor"] = prefetch_factor
+
     loader = DataLoader(
         dataset,
         batch_size=batch_size,
@@ -53,8 +66,8 @@ def create_dataloader(
         sampler=sampler,
         num_workers=num_workers,
         pin_memory=pin_memory,
-        persistent_workers=num_workers > 0,
-        collate_fn=collate_fn
+        collate_fn=collate_fn,
+        **loader_kwargs,
     )
 
     return loader
