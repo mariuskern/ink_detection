@@ -27,7 +27,7 @@ def _require_finite(name, value, batch_idx):
 
 
 class LitModel(pl.LightningModule):
-    def __init__(self, model, loss, lr, warmup_epochs, max_epochs, weight_decay, val_img_dir, batch_size, iteration=None):
+    def __init__(self, model, loss, lr, warmup_epochs, max_epochs, weight_decay, val_img_dir, val_image_every_n_epochs, batch_size, iteration=None):
         super().__init__()
 
         self.lr = lr
@@ -36,6 +36,7 @@ class LitModel(pl.LightningModule):
         self.weight_decay = weight_decay
         self.batch_size = batch_size
         self.iteration = iteration
+        self.val_image_every_n_epochs = val_image_every_n_epochs
 
         # self.save_hyperparameters(ignore=["model"])
         self.save_hyperparameters(ignore=["model", "loss"])
@@ -49,6 +50,16 @@ class LitModel(pl.LightningModule):
 
     def forward(self, x):
         return self.model(x)
+
+    def transfer_batch_to_device(self, batch, device, dataloader_idx):
+        """Keep metadata on CPU and make pinned-memory transfers asynchronous."""
+        for key in ("tile", "label", "mask"):
+            if batch[key] is not None:
+                batch[key] = batch[key].to(device, non_blocking=True)
+        return batch
+
+    def _export_validation_predictions_this_epoch(self):
+        return self.current_epoch % self.val_image_every_n_epochs == 0
 
     def training_step(self, batch, batch_idx):
         # tile, label, mask, is_pseudo, segment, x, y, segment_shape = batch
@@ -88,16 +99,17 @@ class LitModel(pl.LightningModule):
         loss = self.loss(output, label, mask)
         _require_finite("validation loss", loss, batch_idx)
 
-        probs = torch.sigmoid(output).squeeze(1).detach().float().to("cpu").numpy()
+        if self._export_validation_predictions_this_epoch():
+            probs = torch.sigmoid(output).squeeze(1).detach().float().cpu().numpy()
 
-        for i in range(len(segment)):
-            self.prediction_merger.add(
-                segment=segment[i],
-                x=int(x[i]),
-                y=int(y[i]),
-                prediction=probs[i],
-                shape=shape[i].tolist(),
-            )
+            for i in range(len(segment)):
+                self.prediction_merger.add(
+                    segment=segment[i],
+                    x=int(x[i]),
+                    y=int(y[i]),
+                    prediction=probs[i],
+                    shape=shape[i].tolist(),
+                )
 
         # self.log(f"val/{str(self.iteration) + '_' if self.iteration is not None else ''}loss", loss, batch_size=self.batch_size, on_step=True, on_epoch=True, prog_bar=True)
         if self.iteration is not None:
@@ -110,10 +122,12 @@ class LitModel(pl.LightningModule):
 
     def on_validation_epoch_end(self):
         if self.global_rank != 0:
+            self.prediction_merger.clear()
             return
 
-        results = self.prediction_merger.get_predictions()
-        save_predictions_as_images(self.val_img_dir, results, save_probability=True, name_suffix=f"epoch_{self.current_epoch:04d}", create_subfolders=False)
+        if self._export_validation_predictions_this_epoch():
+            results = self.prediction_merger.get_predictions()
+            save_predictions_as_images(self.val_img_dir, results, save_probability=True, name_suffix=f"epoch_{self.current_epoch:04d}", create_subfolders=False)
 
         # for segment, data in results.items():
         #     prediction = data["prediction"]

@@ -108,6 +108,7 @@ class InkDataset(Dataset):
         min_mask_fraction=0.5,
         use_pseudo_labels=False,
         pseudo_label_version=None,
+        pseudo_target="hard",
         transform=None,
     ):
         self.data_dir = Path(data_dir)
@@ -119,10 +120,13 @@ class InkDataset(Dataset):
         self.norm = norm
         self.use_pseudo_labels = use_pseudo_labels
         self.pseudo_label_version = pseudo_label_version
+        self.pseudo_target = pseudo_target
         self.transform = transform
 
         if self.norm not in ["global", "local"]:
             raise ValueError(f"Invalid normalization mode: {self.norm}. Must be 'global' or 'local'.")
+        if self.pseudo_target not in ["hard", "soft"]:
+            raise ValueError(f"Invalid pseudo target '{self.pseudo_target}'. Must be 'hard' or 'soft'.")
 
         segments_to_paths = {}
         for folder in self.data_dir.iterdir():
@@ -216,7 +220,8 @@ class InkDataset(Dataset):
     def _get_label(self, zarr_array, x, y):
         if self.use_pseudo_labels:
             version = str(self.pseudo_label_version)
-            label = torch.from_numpy(zarr_array["pseudo_labels"][version][y:y+self.tile_size, x:x+self.tile_size]).float()
+            group = "pseudo_labels" if self.pseudo_target == "hard" else "prediction"
+            label = torch.from_numpy(zarr_array[group][version][y:y+self.tile_size, x:x+self.tile_size]).float()
         elif "label" in zarr_array:
             label = torch.from_numpy(zarr_array["label"][y:y+self.tile_size, x:x+self.tile_size]).float()
         else:
@@ -242,8 +247,9 @@ class InkDataset(Dataset):
 
     def _get_tiles_for_segment(self, segment_path, min_mask_fraction):
         if self.use_pseudo_labels:
-            tile_path = segment_path / "pseudo_tiles" / str(self.pseudo_label_version) / f"tile_size_{self.tile_size}_stride_{self.stride}.npy"
-            csv_path = segment_path / "pseudo_tiles" / str(self.pseudo_label_version) / f"tile_size_{self.tile_size}_stride_{self.stride}.csv"
+            tile_dir = segment_path / "pseudo_tiles" / str(self.pseudo_label_version) / self.pseudo_target
+            tile_path = tile_dir / f"tile_size_{self.tile_size}_stride_{self.stride}.npy"
+            csv_path = tile_dir / f"tile_size_{self.tile_size}_stride_{self.stride}.csv"
         else:
             tile_path = segment_path / "tiles" / f"tile_size_{self.tile_size}_stride_{self.stride}.npy"
             csv_path = segment_path / "tiles" / f"tile_size_{self.tile_size}_stride_{self.stride}.csv"
@@ -270,7 +276,8 @@ class InkDataset(Dataset):
 
             if self.use_pseudo_labels:
                 version = str(self.pseudo_label_version)
-                label = np.asarray(zarr_data["pseudo_labels"][version])
+                group = "pseudo_labels" if self.pseudo_target == "hard" else "prediction"
+                label = np.asarray(zarr_data[group][version])
                 pseudo_mask = np.asarray(zarr_data["pseudo_masks"][version])
 
                 if "mask" in zarr_data:
@@ -322,18 +329,19 @@ class InkDataset(Dataset):
         zarr_data = zarr.open(zarr_path, mode="r")
 
         if self.use_pseudo_labels:
-            if "pseudo_labels" not in zarr_data:
-                raise KeyError(f"Missing pseudo labels in {zarr_path}.")
+            group = "pseudo_labels" if self.pseudo_target == "hard" else "prediction"
+            if group not in zarr_data:
+                raise KeyError(f"Missing {self.pseudo_target} pseudo targets ('{group}') in {zarr_path}.")
 
-            pseudo_labels = zarr_data["pseudo_labels"]
-            available_versions = list(pseudo_labels.keys())
+            pseudo_targets = zarr_data[group]
+            available_versions = list(pseudo_targets.keys())
 
             if self.pseudo_label_version is None:
                 self.pseudo_label_version = int(available_versions[-1])
             else:
                 version = str(self.pseudo_label_version)
-                if version not in pseudo_labels:
-                    raise KeyError(f"Missing pseudo label version '{version}'. Available versions: {available_versions}")
+                if version not in pseudo_targets:
+                    raise KeyError(f"Missing pseudo target version '{version}'. Available versions: {available_versions}")
 
             # if self.pseudo_label_version is None:
             #     raise ValueError("pseudo_label_version must be specified when use_pseudo_labels=True")

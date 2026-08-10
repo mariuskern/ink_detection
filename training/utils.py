@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import lightning as pl
+import torch
 from lightning.pytorch.loggers import WandbLogger
 from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor
 from omegaconf import OmegaConf
@@ -20,6 +21,8 @@ def train_one_iteration(cfg, logger, output_dir, aug, use_unlabeled_data=False, 
     val_image_dir.mkdir(parents=True, exist_ok=True)
     
     model = build_model(cfg)
+    if cfg.train.get("compile", False):
+        model = torch.compile(model, mode=cfg.train.get("compile_mode", "reduce-overhead"))
     loss = build_loss(cfg)
 
     lit_model = LitModel(
@@ -30,6 +33,7 @@ def train_one_iteration(cfg, logger, output_dir, aug, use_unlabeled_data=False, 
         max_epochs=cfg.train.max_epochs,
         weight_decay=cfg.train.weight_decay,
         val_img_dir=val_image_dir,
+        val_image_every_n_epochs=cfg.train.get("val_image_every_n_epochs", 1),
         batch_size=cfg.dataloader.batch_size,
         iteration=iteration,
     )
@@ -44,6 +48,7 @@ def train_one_iteration(cfg, logger, output_dir, aug, use_unlabeled_data=False, 
         gradient_clip_algorithm=cfg.train.gradient_clip_algorithm,
         log_every_n_steps=10,
         precision=cfg.train.precision,
+        benchmark=True,
         callbacks=[
             ModelCheckpoint(
                 monitor="train/loss",

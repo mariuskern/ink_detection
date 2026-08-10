@@ -1,4 +1,4 @@
-batch_size: 8 # 12
+batch_size: 10 # 8 12
 shuffle: False
 num_workers: 4 # 16
 pin_memory: True

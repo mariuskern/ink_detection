@@ -21,7 +21,7 @@ def predict(model, dataloader, device=None):
         y = batch["y"]
         shape = batch["shape"]
     
-        tile = tile.to(device)
+        tile = tile.to(device, non_blocking=True)
         output = model(tile)
         probs = torch.sigmoid(output).squeeze(1).cpu().numpy()
     

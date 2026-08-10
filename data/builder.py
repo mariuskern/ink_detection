@@ -23,6 +23,11 @@ class AddGaussianNoise(torch.nn.Module):
 def build_augmentation(aug):
     transforms = []
 
+    def add_with_probability(transform, spec):
+        """Apply non-flip transforms only with the probability from the YAML."""
+        p = getattr(spec, "p", 1.0)
+        transforms.append(v2.RandomApply([transform], p=p) if p < 1.0 else transform)
+
     for t in aug.transforms:
         match t.name:
             case "random_horizontal_flip":
@@ -30,17 +35,17 @@ def build_augmentation(aug):
             case "random_vertical_flip":
                 transforms.append(v2.RandomVerticalFlip(p=t.p))
             case "random_rotation":
-                transforms.append(v2.RandomRotation(degrees=t.degrees))
+                add_with_probability(v2.RandomRotation(degrees=t.degrees), t)
             case "random_affine":
-                transforms.append(v2.RandomAffine(degrees=t.degrees, translate=t.translate, scale=t.scale, shear=t.shear))
+                add_with_probability(v2.RandomAffine(degrees=t.degrees, translate=t.translate, scale=t.scale, shear=t.shear), t)
             case "random_resized_crop":
-                transforms.append(v2.RandomResizedCrop(size=t.size, scale=t.scale, ratio=t.ratio))
+                add_with_probability(v2.RandomResizedCrop(size=t.size, scale=t.scale, ratio=t.ratio), t)
             case "color_jitter":
-                transforms.append(v2.ColorJitter(brightness=t.brightness, contrast=t.contrast, saturation=t.saturation, hue=t.hue))
+                add_with_probability(v2.ColorJitter(brightness=t.brightness, contrast=t.contrast, saturation=t.saturation, hue=t.hue), t)
             case "gaussian_blur":
-                transforms.append(v2.GaussianBlur(kernel_size=t.kernel_size, sigma=t.sigma))
+                add_with_probability(v2.GaussianBlur(kernel_size=t.kernel_size, sigma=t.sigma), t)
             case "gaussian_noise":
-                transforms.append(AddGaussianNoise(mean=t.mean, sigma=t.sigma))
+                add_with_probability(AddGaussianNoise(mean=t.mean, sigma=t.sigma), t)
             case _:
                 raise ValueError(f"Unknown transform: {t.name}")
 
@@ -60,6 +65,7 @@ def build_dataset(cfg, segments, transform=None, use_pseudo_labels=False, stride
         min_mask_fraction=cfg.dataset.min_mask_fraction,
         use_pseudo_labels=use_pseudo_labels,
         pseudo_label_version=None,
+        pseudo_target=cfg.train.pseudo_target if use_pseudo_labels else "hard",
         transform=transform,
     )
 

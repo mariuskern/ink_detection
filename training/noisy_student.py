@@ -28,7 +28,21 @@ def train_noisy_student(cfg, logger):
         unlabeled_dataloader = build_unlabeled_dataloader(cfg, aug=None, stride=cfg.dataset.stride)
 
         results = predict(model, unlabeled_dataloader, device=cfg.train.devices)
-        results = postprocess_predictions(results, cfg.train.threshold, cfg.train.confidence_threshold, cfg.train.uncertainty_threshold)
+        results = postprocess_predictions(
+            results,
+            cfg.train.threshold,
+            cfg.train.confidence_threshold,
+            cfg.train.uncertainty_threshold,
+            use_confidence_mask=cfg.train.use_confidence_mask,
+            use_uncertainty_mask=cfg.train.use_uncertainty_mask,
+        )
 
         save_predictions_as_images(output_dir_iteration, results, save_probability=True, save_confidence=True, save_uncertainty=True, save_label=True, save_mask=True)
-        save_predictions_as_zarr(Path(cfg.path.data_dir), results, iteration, save_label=True, save_mask=True)
+        save_predictions_as_zarr(
+            Path(cfg.path.data_dir),
+            results,
+            iteration,
+            save_probability=True,
+            save_label=True,
+            save_mask=True,
+        )
