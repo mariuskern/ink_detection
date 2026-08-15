@@ -7,6 +7,12 @@ import numpy as np
 import zarr
 from tqdm import tqdm
 
+from dotenv import load_dotenv
+load_dotenv()
+for key in ["DATA_DIR", "CODE_DIR", "OUTPUT_DIR"]:
+    if key in os.environ:
+        os.environ[key] = os.path.expandvars(os.environ[key])
+
 sys.path.append(os.getenv("CODE_DIR"))
 
 from utils import get_tiles, save_tiles

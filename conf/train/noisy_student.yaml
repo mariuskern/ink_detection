@@ -11,6 +11,8 @@ confidence_threshold: 0.7 # 0.9
 use_uncertainty_mask: True
 uncertainty_threshold: 0.2 # 0.05
 iterations: 8
+pseudo_loss_weight: 1.0
+pseudo_loss_rampup_epochs: 0
 labeled:
   - 20241025145341
   - 20241025145701

@@ -46,6 +46,8 @@ def fit(cfg, logger, output_dir, *, pseudo_label_version=None, augmentation=None
         val_image_every_n_epochs=cfg.train.val_image_every_n_epochs,
         batch_size=cfg.dataloader.batch_size,
         iteration=str(pseudo_label_version) if pseudo_label_version is not None else None,
+        pseudo_loss_weight=cfg.train.get("pseudo_loss_weight", 0.0),
+        pseudo_loss_rampup_epochs=cfg.train.get("pseudo_loss_rampup_epochs", 0),
     )
 
     checkpoint_callback = ModelCheckpoint(

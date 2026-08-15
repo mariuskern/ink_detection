@@ -21,9 +21,9 @@ def prepare_pseudo_tile_manifests(data_dir, segments, *, version, tile_size, str
         if npy_path.exists():
             continue
 
-        archive = zarr.open(segment / f"{segment.name}.zarr", mode="r")
+        archive = zarr.open(segment_path / f"{segment}.zarr", mode="r")
         if group not in archive or str(version) not in archive[group]:
-            raise KeyError(f"Missing pseudo targets '{group}/{version}' for {segment.name}")
+            raise KeyError(f"Missing pseudo targets '{group}/{version}' for {segment}")
         
         label = np.asarray(archive[group][str(version)])
         pseudo_mask = np.asarray(archive["pseudo_masks"][str(version)])
