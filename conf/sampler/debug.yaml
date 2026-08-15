@@ -1,4 +1,0 @@
-mode: balanced
-alpha: 5.0
-num_samples: 1000
-pos_threshold: 0.05

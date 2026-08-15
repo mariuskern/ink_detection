@@ -1,29 +1,7 @@
-import os
-import sys
-from PIL import Image
-from pathlib import Path
-
 import lightning as pl
 import torch
-import torch.nn.functional as F
-import numpy as np
-import matplotlib.pyplot as plt
-
-# print("moduel:")
-# print(os.getenv("CODE_DIR"))
-# sys.path.append(os.getenv("CODE_DIR"))
 
 from utils import PredictionMerger, save_predictions_as_images
-
-
-def _require_finite(name, value, batch_idx):
-    """Fail at the first non-finite tensor instead of corrupting a run."""
-    if value is not None and not torch.isfinite(value).all():
-        non_finite = (~torch.isfinite(value)).sum().item()
-        raise RuntimeError(
-            f"Non-finite values in {name} at batch {batch_idx}: "
-            f"{non_finite} of {value.numel()} values are NaN or Inf."
-        )
 
 
 class LitModel(pl.LightningModule):
@@ -66,19 +44,17 @@ class LitModel(pl.LightningModule):
         tile = batch["tile"]
         label = batch["label"]
         mask = batch["mask"]
-        _require_finite("training input", tile, batch_idx)
-        _require_finite("training label", label, batch_idx)
-        _require_finite("training mask", mask, batch_idx)
+
         output = self(tile)
-        _require_finite("training model output", output, batch_idx)
         loss = self.loss(output, label, mask)
-        _require_finite("training loss", loss, batch_idx)
-        # self.log(f"train/{str(self.iteration) + '_' if self.iteration is not None else ''}loss", loss, batch_size=self.batch_size, on_step=True, on_epoch=True, prog_bar=True)
+
         if self.iteration is not None:
             self.log(f"train/{str(self.iteration)}_loss", loss, batch_size=self.batch_size, on_step=True, on_epoch=True, prog_bar=True)
             self.log(f"train/loss", loss, batch_size=self.batch_size, on_step=True, on_epoch=True, prog_bar=True)
         else:
             self.log(f"train/loss", loss, batch_size=self.batch_size, on_step=True, on_epoch=True, prog_bar=True)
+
+        self._log_tile_dice("train", output, label, mask, self.batch_size)
             
         return loss
 
@@ -91,16 +67,14 @@ class LitModel(pl.LightningModule):
         x = batch["x"]
         y = batch["y"]
         shape = batch["shape"]
-        _require_finite("validation input", tile, batch_idx)
-        _require_finite("validation label", label, batch_idx)
-        _require_finite("validation mask", mask, batch_idx)
+
         output = self(tile)
-        _require_finite("validation model output", output, batch_idx)
         loss = self.loss(output, label, mask)
-        _require_finite("validation loss", loss, batch_idx)
 
         if self._export_validation_predictions_this_epoch():
             probs = torch.sigmoid(output).squeeze(1).detach().float().cpu().numpy()
+            targets = label.squeeze(1).detach().float().cpu().numpy()
+            valid_masks = mask.squeeze(1).detach().float().cpu().numpy()
 
             for i in range(len(segment)):
                 self.prediction_merger.add(
@@ -109,16 +83,27 @@ class LitModel(pl.LightningModule):
                     y=int(y[i]),
                     prediction=probs[i],
                     shape=shape[i].tolist(),
+                    target=targets[i],
+                    valid_mask=valid_masks[i],
                 )
 
-        # self.log(f"val/{str(self.iteration) + '_' if self.iteration is not None else ''}loss", loss, batch_size=self.batch_size, on_step=True, on_epoch=True, prog_bar=True)
         if self.iteration is not None:
             self.log(f"val/{str(self.iteration)}_loss", loss, batch_size=self.batch_size, on_step=True, on_epoch=True, prog_bar=True)
             self.log(f"val/loss", loss, batch_size=self.batch_size, on_step=True, on_epoch=True, prog_bar=True)
         else:
             self.log(f"val/loss", loss, batch_size=self.batch_size, on_step=True, on_epoch=True, prog_bar=True)
 
+        self._log_tile_dice("val", output, label, mask, self.batch_size)
+
         return loss
+
+    def _log_tile_dice(self, stage, logits, target, valid_mask, batch_size):
+        prediction = (torch.sigmoid(logits) >= 0.5).to(target.dtype) * valid_mask
+        target = target * valid_mask
+        intersection = (prediction * target).sum()
+        dice = (2 * intersection + 1e-6) / (prediction.sum() + target.sum() + 1e-6)
+
+        self.log(f"{stage}/tile_dice", dice, batch_size=batch_size, on_step=False, on_epoch=True, prog_bar=(stage == "val"))
 
     def on_validation_epoch_end(self):
         if self.global_rank != 0:
@@ -126,18 +111,13 @@ class LitModel(pl.LightningModule):
             return
 
         if self._export_validation_predictions_this_epoch():
+            metrics = self.prediction_merger.get_binary_metrics()
+            if metrics is not None:
+                self.log("val/segment_dice", metrics["dice"], prog_bar=True)
+                self.log("val/segment_iou", metrics["iou"])
+
             results = self.prediction_merger.get_predictions()
             save_predictions_as_images(self.val_img_dir, results, save_probability=True, name_suffix=f"epoch_{self.current_epoch:04d}", create_subfolders=False)
-
-        # for segment, data in results.items():
-        #     prediction = data["prediction"]
-        #     path = Path(self.val_img_dir) / f"{segment}_epoch_{self.current_epoch:04d}_prediction.png"
-
-        #     plt.figure(figsize=(10, 10))
-        #     plt.imshow(prediction, cmap="magma", vmin=0, vmax=1)
-        #     plt.axis("off")
-        #     plt.savefig(path, bbox_inches="tight", pad_inches=0, dpi=300)
-        #     plt.close()
 
         self.prediction_merger.clear()
 

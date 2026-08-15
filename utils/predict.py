@@ -11,7 +11,6 @@ def predict(model, dataloader, device=None):
     model.to(device)
     model.eval()
 
-    
     prediction_merger = PredictionMerger()
 
     for batch in tqdm(dataloader, desc="Predicting"):
@@ -20,11 +19,11 @@ def predict(model, dataloader, device=None):
         x = batch["x"]
         y = batch["y"]
         shape = batch["shape"]
-    
+
         tile = tile.to(device, non_blocking=True)
         output = model(tile)
         probs = torch.sigmoid(output).squeeze(1).cpu().numpy()
-    
+
         for i, segment in enumerate(segments):
             prediction_merger.add(
                 segment=segment,
@@ -35,6 +34,7 @@ def predict(model, dataloader, device=None):
             )
 
     return prediction_merger.get_predictions()
+
     
 
 

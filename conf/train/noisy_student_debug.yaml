@@ -3,9 +3,11 @@ defaults:
   - /aug@teacher.aug: null
   - /aug@student.aug: strong
 
-max_epochs: 1
+max_epochs: 2
 warmup_epochs: 0
 checkpoint_every_n_epochs: 1
+compile: false
+val_image_every_n_epochs: 1
 
 name: noisy_student
 threshold: 0.5

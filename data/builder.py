@@ -2,7 +2,7 @@ import torch
 from torchvision.transforms import v2
 
 from .dataset import InkDataset, CombinedInkDataset
-from .sampler import create_balanced_sampler
+from .sampler import create_sampler
 from .loader import create_dataloader
 
 
@@ -52,7 +52,17 @@ def build_augmentation(aug):
     return v2.Compose(transforms)
 
 
-def build_dataset(cfg, segments, transform=None, use_pseudo_labels=False, stride=None):
+def build_dataset(
+    cfg,
+    segments,
+    *,
+    transform=None,
+    pseudo_label_version=None,
+    stride=None,
+    min_mask_fraction=None,
+):
+    use_pseudo_labels = pseudo_label_version is not None
+
     return InkDataset(
         cfg.path.data_dir,
         segments=segments,
@@ -62,78 +72,61 @@ def build_dataset(cfg, segments, transform=None, use_pseudo_labels=False, stride
         center=cfg.dataset.center,
         depth=cfg.dataset.depth,
         norm=cfg.dataset.norm,
-        min_mask_fraction=cfg.dataset.min_mask_fraction,
+        min_mask_fraction=cfg.dataset.min_mask_fraction if min_mask_fraction is None else min_mask_fraction,
         use_pseudo_labels=use_pseudo_labels,
-        pseudo_label_version=None,
+        pseudo_label_version=pseudo_label_version,
         pseudo_target=cfg.train.pseudo_target if use_pseudo_labels else "hard",
         transform=transform,
     )
 
 
-def build_dataloader(cfg, use_unlabeled_data=False, aug=None):
-    if aug is not None:
-        transform = build_augmentation(aug)
-    else:
-        transform = None
+def build_train_dataset(cfg, pseudo_label_version=None):
+    transform = build_augmentation(cfg.train.student.aug) if cfg.train.student.aug is not None else None
 
-    train_dataset = build_dataset(cfg, cfg.train.labeled, transform=transform, use_pseudo_labels=False)
+    dataset = build_dataset(cfg, cfg.train.labeled, transform=transform)
 
-    if use_unlabeled_data:
-        pseudo_dataset = build_dataset(cfg, segments=cfg.train.unlabeled, transform=transform, use_pseudo_labels=True)
-        train_dataset = CombinedInkDataset([train_dataset, pseudo_dataset])
+    if pseudo_label_version is None:
+        return dataset
 
-    val_dataset = build_dataset(cfg, segments=cfg.train.val, use_pseudo_labels=False)
+    pseudo_dataset = build_dataset(
+        cfg,
+        cfg.train.unlabeled,
+        transform=transform,
+        pseudo_label_version=pseudo_label_version,
+    )
 
-    sampler = create_balanced_sampler(
-        train_dataset,
+    return CombinedInkDataset([dataset, pseudo_dataset])
+
+
+# def build_val_dataset(cfg):
+#     return build_dataset(cfg, cfg.train.val, min_mask_fraction=0.0)
+
+
+# def build_predict_dataset(cfg, segments):
+#     return build_dataset(cfg, segments, min_mask_fraction=0.0)
+
+
+def build_sampler(cfg, dataset):
+    return create_sampler(
+        dataset,
         mode=cfg.sampler.mode,
         num_samples=cfg.sampler.num_samples,
         alpha=cfg.sampler.alpha,
         pos_threshold=cfg.sampler.pos_threshold,
+        real_fraction=cfg.sampler.real_fraction,
     )
 
-    train_loader = create_dataloader(
-        train_dataset,
+
+def build_dataloader(cfg, dataset, sampler, shuffle=None):
+    shuffle = cfg.dataloader.shuffle if shuffle is None else shuffle
+
+    return create_dataloader(
+        dataset,
         sampler=sampler,
         batch_size=cfg.dataloader.batch_size,
-        shuffle=cfg.dataloader.shuffle,
+        shuffle=shuffle,
         num_workers=cfg.dataloader.num_workers,
         pin_memory=cfg.dataloader.pin_memory,
         prefetch_factor=cfg.dataloader.prefetch_factor,
         persistent_workers=cfg.dataloader.persistent_workers,
     )
-
-    val_loader = create_dataloader(
-        val_dataset,
-        sampler=None,
-        batch_size=cfg.dataloader.batch_size,
-        shuffle=False,
-        num_workers=cfg.dataloader.num_workers,
-        pin_memory=cfg.dataloader.pin_memory,
-        prefetch_factor=cfg.dataloader.prefetch_factor,
-        persistent_workers=cfg.dataloader.persistent_workers,
-    )
-
-    return train_loader, val_loader
-
-
-def build_unlabeled_dataloader(cfg, aug=None, stride=None):
-    if aug is not None:
-        transform = build_augmentation(aug)
-    else:
-        transform = None
-
-    pseudo_dataset = build_dataset(cfg, segments=cfg.train.unlabeled, transform=transform, stride=stride)
-
-    pseudo_loader = create_dataloader(
-        pseudo_dataset,
-        sampler=None,
-        batch_size=cfg.dataloader.batch_size,
-        shuffle=False,
-        num_workers=cfg.dataloader.num_workers,
-        pin_memory=cfg.dataloader.pin_memory,
-        prefetch_factor=cfg.dataloader.prefetch_factor,
-        persistent_workers=cfg.dataloader.persistent_workers,
-    )
-
-    return pseudo_loader

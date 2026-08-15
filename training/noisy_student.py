@@ -1,9 +1,9 @@
 from pathlib import Path
 
-from .utils import train_one_iteration
+from training.supervised import fit
 
 from utils import predict, postprocess_predictions, save_predictions_as_images, save_predictions_as_zarr
-from data import build_unlabeled_dataloader
+from data import build_dataset, build_dataloader, prepare_pseudo_tile_manifests
 
 
 def train_noisy_student(cfg, logger):
@@ -14,20 +14,23 @@ def train_noisy_student(cfg, logger):
 
         output_dir_iteration = output_dir / "iteration" / str(iteration)
 
-        if iteration == 0:
-            use_unlabeled_data = False
-        else:
-            use_unlabeled_data = True
-
         # Training
-        model = train_one_iteration(cfg, logger, output_dir=output_dir_iteration, use_unlabeled_data=use_unlabeled_data, aug=cfg.train.student.aug, iteration=iteration)
+        result = fit(
+            cfg,
+            logger,
+            output_dir=output_dir_iteration,
+            pseudo_label_version=iteration - 1 if iteration > 0 else None,
+            augmentation=cfg.train.student.aug,
+        )
+
+        generate_pseudo_labels(cfg, result.model, iteration, output_dir_iteration)
 
 
-        # Create pseudo labels
+def generate_pseudo_labels(cfg, model, iteration, output_dir):
+        predict_dataset = build_dataset(cfg, cfg.train.unlabeled, min_mask_fraction=0.0)
+        predict_loader = build_dataloader(cfg, predict_dataset, None)
 
-        unlabeled_dataloader = build_unlabeled_dataloader(cfg, aug=None, stride=cfg.dataset.stride)
-
-        results = predict(model, unlabeled_dataloader, device=cfg.train.devices)
+        results = predict(model, predict_loader, device=cfg.train.devices)
         results = postprocess_predictions(
             results,
             cfg.train.threshold,
@@ -37,7 +40,16 @@ def train_noisy_student(cfg, logger):
             use_uncertainty_mask=cfg.train.use_uncertainty_mask,
         )
 
-        save_predictions_as_images(output_dir_iteration, results, save_probability=True, save_confidence=True, save_uncertainty=True, save_label=True, save_mask=True)
+        save_predictions_as_images(
+            output_dir,
+            results,
+            save_probability=True,
+            save_confidence=True,
+            save_uncertainty=True,
+            save_label=True,
+            save_mask=True
+        )
+
         save_predictions_as_zarr(
             Path(cfg.path.data_dir),
             results,
@@ -45,4 +57,13 @@ def train_noisy_student(cfg, logger):
             save_probability=True,
             save_label=True,
             save_mask=True,
+        )
+
+        prepare_pseudo_tile_manifests(
+            cfg.path.data_dir,
+            cfg.train.unlabeled,
+            version=iteration,
+            tile_size=cfg.dataset.tile_size,
+            stride=cfg.dataset.stride,
+            target=cfg.train.pseudo_target,
         )

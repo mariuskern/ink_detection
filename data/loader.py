@@ -1,8 +1,5 @@
 from torch.utils.data import DataLoader
 
-from .dataset import collate_fn
-
-
 def create_dataloader(
     dataset,
     sampler=None,
@@ -66,7 +63,6 @@ def create_dataloader(
         sampler=sampler,
         num_workers=num_workers,
         pin_memory=pin_memory,
-        collate_fn=collate_fn,
         **loader_kwargs,
     )
 

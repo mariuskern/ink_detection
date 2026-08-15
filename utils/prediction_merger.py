@@ -17,7 +17,7 @@ class PredictionMerger:
     def __init__(self):
         self.buffers = {}
 
-    def add(self, segment, x, y, prediction, shape):
+    def add(self, segment, x, y, prediction, shape, target=None, valid_mask=None):
         if segment not in self.buffers:
             H, W = shape[1], shape[2]
 
@@ -25,6 +25,8 @@ class PredictionMerger:
                 "prob_sum": np.zeros((H, W), dtype=np.float32),
                 "prob_sq_sum": np.zeros((H, W), dtype=np.float32),
                 "weight_sum": np.zeros((H, W), dtype=np.float32),
+                "target_sum": np.zeros((H, W), dtype=np.float32),
+                "valid_weight_sum": np.zeros((H, W), dtype=np.float32),
             }
 
         buffer = self.buffers[segment]
@@ -44,6 +46,11 @@ class PredictionMerger:
         buffer["prob_sum"][y:y+h_valid, x:x+w_valid] += prediction * weight
         buffer["prob_sq_sum"][y:y+h_valid, x:x+w_valid] += (prediction ** 2) * weight
         buffer["weight_sum"][y:y+h_valid, x:x+w_valid] += weight
+        if target is not None and valid_mask is not None:
+            target = target[:h_valid, :w_valid]
+            valid_mask = valid_mask[:h_valid, :w_valid]
+            buffer["target_sum"][y:y+h_valid, x:x+w_valid] += target * valid_mask * weight
+            buffer["valid_weight_sum"][y:y+h_valid, x:x+w_valid] += valid_mask * weight
 
     def get_predictions(self):
         results = []
@@ -76,6 +83,26 @@ class PredictionMerger:
 
     def clear(self):
         self.buffers.clear()
+
+    def get_binary_metrics(self, threshold=0.5):
+        """Return a pixel-weighted Dice/IoU after overlapping tiles are merged."""
+        intersection = prediction_sum = target_sum = 0.0
+        for buffer in self.buffers.values():
+            valid = buffer["valid_weight_sum"] > 0
+            if not valid.any():
+                continue
+            probability = buffer["prob_sum"] / np.maximum(buffer["weight_sum"], 1e-6)
+            target = buffer["target_sum"] / np.maximum(buffer["valid_weight_sum"], 1e-6)
+            prediction = probability >= threshold
+            target = target >= 0.5
+            intersection += np.logical_and(prediction, target)[valid].sum()
+            prediction_sum += prediction[valid].sum()
+            target_sum += target[valid].sum()
+        if prediction_sum + target_sum == 0:
+            return None
+        dice = (2 * intersection) / (prediction_sum + target_sum)
+        iou = intersection / (prediction_sum + target_sum - intersection)
+        return {"dice": float(dice), "iou": float(iou)}
 
 
     @staticmethod

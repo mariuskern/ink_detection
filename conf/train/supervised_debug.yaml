@@ -2,6 +2,7 @@ defaults:
   - base
 
 max_epochs: 5
+compile: false
 
 name: supervised
 labeled:

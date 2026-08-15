@@ -7,39 +7,7 @@ import zarr
 from torch.utils.data import Dataset, ConcatDataset
 from torchvision import tv_tensors
 
-from utils import get_tiles, save_tiles
-
-
-def collate_fn(batch):
-    result = {}
-
-    result["tile"] = torch.stack([b["tile"] for b in batch])
-
-    # for key in ["label", "mask"]:
-    #     values = [b[key] for b in batch]
-    #     result[key] = (torch.stack(values) if values[0] is not None else None)
-
-    for key in ["label", "mask"]:
-        values = [b[key] for b in batch]
-
-        exists = torch.tensor([v is not None for v in values], dtype=torch.bool)
-        result[f"{key}_exists"] = exists
-
-        if exists.all():
-            result[key] = torch.stack(values)
-        elif exists.any():
-            result[key] = values
-        else:
-            result[key] = None
-
-    result["is_pseudo"] = torch.tensor([b["is_pseudo"] for b in batch])
-
-    result["segment"] = [b["segment"] for b in batch]
-    result["x"] = [b["x"] for b in batch]
-    result["y"] = [b["y"] for b in batch]
-    result["shape"] = torch.stack([b["shape"] for b in batch])
-
-    return result
+from utils import get_tiles, save_tiles, get_segment_paths
 
 
 class CombinedInkDataset(ConcatDataset):
@@ -128,14 +96,10 @@ class InkDataset(Dataset):
         if self.pseudo_target not in ["hard", "soft"]:
             raise ValueError(f"Invalid pseudo target '{self.pseudo_target}'. Must be 'hard' or 'soft'.")
 
-        segments_to_paths = {}
-        for folder in self.data_dir.iterdir():
-            for segment in folder.iterdir():
-                if segment.is_dir():
-                    segments_to_paths[segment.name] = segment
+        self.segment_paths = get_segment_paths(self.data_dir)
 
         if segments is None:
-            self.segments = sorted(segments_to_paths.keys())
+            self.segments = sorted(self.segment_paths.keys())
         else:
             self.segments = list(map(str, segments))
 
@@ -145,13 +109,13 @@ class InkDataset(Dataset):
 
         for segment in self.segments:
             # Load zarr data
-            self.zarr_data[segment] = self._get_zarr_data_for_segment(segments_to_paths[segment])
+            self.zarr_data[segment] = self._get_zarr_data_for_segment(self.segment_paths[segment])
 
             # Load tiles
-            self.tiles.extend(self._get_tiles_for_segment(segments_to_paths[segment], min_mask_fraction))
+            self.tiles.extend(self._get_tiles_for_segment(self.segment_paths[segment], min_mask_fraction))
 
             # Load meta
-            self.segment_shapes[segment] = torch.tensor(self._get_meta_for_segment(segments_to_paths[segment])["volume_shape"])
+            self.segment_shapes[segment] = torch.tensor(self._get_meta_for_segment(self.segment_paths[segment])["volume_shape"])
 
         self.z0 = self.center - self.depth // 2
         self.z1 = self.z0 + self.depth
@@ -175,17 +139,21 @@ class InkDataset(Dataset):
         is_pseudo = self.use_pseudo_labels
 
         tile = tv_tensors.Image(tile)
-        label = tv_tensors.Mask(label) if label is not None else None
-        mask = tv_tensors.Mask(mask) if mask is not None else None
+        if label is None:
+            label = torch.zeros((self.tile_size, self.tile_size), dtype=torch.float32)
+            mask = torch.zeros_like(label)
+        elif mask is None:
+            mask = torch.ones_like(label)
+        label = tv_tensors.Mask(label)
+        mask = tv_tensors.Mask(mask)
 
         if self.transform is not None:
             tile, label, mask = self.transform(tile, label, mask)
 
         tile = tile.unsqueeze(0)
-        label = label.unsqueeze(0) if label is not None else None
-        mask = mask.unsqueeze(0) if mask is not None else None
+        label = label.unsqueeze(0)
+        mask = mask.unsqueeze(0)
 
-        # return tile, label, mask, is_pseudo, segment, x, y, self.segment_shapes[segment]
         return {
             "tile": tile,
             "label": label,
@@ -211,9 +179,6 @@ class InkDataset(Dataset):
         tile = torch.from_numpy(zarr_array["volume"][self.z0:self.z1, y:y+self.tile_size, x:x+self.tile_size]).float()
 
         tile = self._normalize(tile, mode=self.norm)
-
-        # if self.transform:
-        #     tile = self.transform(tile)
 
         return tile
 
@@ -265,14 +230,6 @@ class InkDataset(Dataset):
             zarr_data = self.zarr_data[segment_path.name]
             volume_shape = zarr_data["volume"].shape
             h, w = volume_shape[-2:]
-
-            # if self.use_pseudo_labels:
-            #     version = str(self.pseudo_label_version)
-            #     label = np.asarray(zarr_data["pseudo_labels"][version])
-            #     mask = np.asarray(zarr_data["pseudo_masks"][version])
-            # else:
-            #     label = np.asarray(zarr_data["label"]) if "label" in zarr_data else None
-            #     mask = np.asarray(zarr_data["mask"]) if "mask" in zarr_data else None
 
             if self.use_pseudo_labels:
                 version = str(self.pseudo_label_version)
@@ -333,23 +290,15 @@ class InkDataset(Dataset):
             if group not in zarr_data:
                 raise KeyError(f"Missing {self.pseudo_target} pseudo targets ('{group}') in {zarr_path}.")
 
+            if self.pseudo_label_version is None:
+                raise ValueError("pseudo_label_version must be specified when use_pseudo_labels=True")
+
             pseudo_targets = zarr_data[group]
             available_versions = list(pseudo_targets.keys())
 
-            if self.pseudo_label_version is None:
-                self.pseudo_label_version = int(available_versions[-1])
-            else:
-                version = str(self.pseudo_label_version)
-                if version not in pseudo_targets:
-                    raise KeyError(f"Missing pseudo target version '{version}'. Available versions: {available_versions}")
-
-            # if self.pseudo_label_version is None:
-            #     raise ValueError("pseudo_label_version must be specified when use_pseudo_labels=True")
-
-            # version = str(self.pseudo_label_version)
-
-            # if version not in pseudo_labels:
-            #     raise KeyError(f"Missing pseudo label version '{version}'. Available versions: {available_versions}")
+            version = str(self.pseudo_label_version)
+            if version not in pseudo_targets:
+                raise KeyError(f"Missing pseudo target version '{version}'. Available versions: {available_versions}")
 
         return zarr_data
 

@@ -3,6 +3,7 @@ from pathlib import Path
 
 import torch
 import hydra
+import lightning as pl
 from lightning.pytorch.loggers import WandbLogger
 from omegaconf import OmegaConf
 
@@ -18,15 +19,10 @@ for key in ["DATA_DIR", "CODE_DIR", "OUTPUT_DIR"]:
 torch.set_float32_matmul_precision("high")
 
 
-# import sys
-
-# print("None in sys.path:", None in sys.path)
-# for i, p in enumerate(sys.path):
-#     print(i, repr(p), type(p))
-
-
 @hydra.main(version_base=None, config_path="conf/", config_name="-provide_as_argument-")
 def main(cfg):
+    pl.seed_everything(cfg.train.seed, workers=True)
+
     logger = WandbLogger(project=cfg.wandb.project, name=cfg.experiment.name)
     logger.experiment.config.update(OmegaConf.to_container(cfg, resolve=True))
     

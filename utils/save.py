@@ -1,10 +1,11 @@
 from pathlib import Path
 
 from PIL import Image
+import matplotlib.pyplot as plt
 import numpy as np
 import zarr
 
-from .get_segment_paths import get_segment_paths
+from .segment_paths import get_segment_paths
 
 
 def save_predictions_as_images(
@@ -71,24 +72,19 @@ def save_predictions_as_images(
 
 
 def _save_image(output_dir, name, segment, image, name_suffix, create_subfolders):
-    if create_subfolders:
-        path = output_dir / name
-    else:
-        path = output_dir
-    path.mkdir(parents=True, exist_ok=True)
+    directory = output_dir / name if create_subfolders else output_dir
+    directory.mkdir(parents=True, exist_ok=True)
 
-    if image.dtype == bool:
-        image = image.astype(np.uint8) * 255
-    else:
-        image = (image * 255).clip(0, 255).astype(np.uint8)
+    filename = f"{segment}_{name}{'_' + name_suffix if name_suffix is not None else ''}.png"
+    filepath = directory / filename
 
-    Image.fromarray(image).save(path / f"{segment}_{name}{'_' + name_suffix if name_suffix is not None else ''}.png")
+    # Image.fromarray(image).save(filename)
 
-    # plt.figure(figsize=(10, 10))
-    # plt.imshow(image, cmap="magma", vmin=0, vmax=1)
-    # plt.axis("off")
-    # plt.savefig(path, bbox_inches="tight", pad_inches=0, dpi=300)
-    # plt.close()
+    fig, ax = plt.subplots(figsize=(10, 10))
+    ax.imshow(image, cmap="magma")
+    ax.axis("off")
+    fig.savefig(filepath, bbox_inches="tight", pad_inches=0, dpi=300)
+    plt.close(fig)
 
 
 def save_predictions_as_zarr(data_dir, predictions, iteration, save_probability=False, save_confidence=False, save_uncertainty=False, save_label=False, save_mask=False):
