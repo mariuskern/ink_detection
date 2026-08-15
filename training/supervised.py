@@ -7,8 +7,7 @@ from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor
 
 from data import build_dataloader
 from data.builder import build_train_dataset, build_dataset, build_sampler, build_dataloader
-from models import build_model, build_loss
-from lightning_module import LitModel
+from models import build_model, build_loss, LitModel
 
 
 def train_supervised(cfg, logger):
@@ -77,7 +76,7 @@ def fit(cfg, logger, output_dir, *, pseudo_label_version=None, augmentation=None
         ]
     )
 
-    train_dataset = build_train_dataset(cfg, pseudo_label_version=pseudo_label_version)
+    train_dataset = build_train_dataset(cfg, pseudo_label_version=pseudo_label_version, augmentation=augmentation)
     val_dataset = build_dataset(cfg, cfg.train.val, min_mask_fraction=0.0)
     train_sampler = build_sampler(cfg, train_dataset)
     train_loader = build_dataloader(cfg, train_dataset, train_sampler)

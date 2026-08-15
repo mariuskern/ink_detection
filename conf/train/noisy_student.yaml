@@ -7,9 +7,9 @@ name: noisy_student
 threshold: 0.5
 pseudo_target: soft # hard | soft
 use_confidence_mask: True
-confidence_threshold: 0.95 # 0.9
+confidence_threshold: 0.7 # 0.9
 use_uncertainty_mask: True
-uncertainty_threshold: 0.05 # 0.05
+uncertainty_threshold: 0.2 # 0.05
 iterations: 8
 labeled:
   - 20241025145341

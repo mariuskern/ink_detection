@@ -80,8 +80,8 @@ def build_dataset(
     )
 
 
-def build_train_dataset(cfg, pseudo_label_version=None):
-    transform = build_augmentation(cfg.train.student.aug) if cfg.train.student.aug is not None else None
+def build_train_dataset(cfg, pseudo_label_version=None, augmentation=None):
+    transform = build_augmentation(augmentation) if augmentation is not None else None
 
     dataset = build_dataset(cfg, cfg.train.labeled, transform=transform)
 
