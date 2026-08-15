@@ -4,3 +4,4 @@ from .postprocess import postprocess_predictions
 from .tiles import get_tiles, save_tiles
 from .prediction_merger import PredictionMerger
 from .segment_paths import get_segment_paths
+from .evaluation import calculate_dice, calculate_iou

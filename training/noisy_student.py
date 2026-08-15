@@ -20,6 +20,7 @@ def train_noisy_student(cfg, logger):
             logger,
             output_dir=output_dir_iteration,
             pseudo_label_version=iteration - 1 if iteration > 0 else None,
+            iteration=iteration,
             augmentation=cfg.train.student.aug,
         )
 

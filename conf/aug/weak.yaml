@@ -1,3 +1,7 @@
 name: weak
 transforms:
-  - name: normalize
+  - name: random_horizontal_flip
+    p: 0.5
+
+  - name: random_vertical_flip
+    p: 0.5

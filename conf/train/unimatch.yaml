@@ -1,0 +1,44 @@
+defaults:
+  - base
+  - /aug@weak_aug: weak
+  - /aug@strong_aug: strong
+
+name: unimatch
+
+# Optimization (aligned with LiheYoung/UniMatch)
+lr: 1.0e-3
+weight_decay: 1.0e-4
+warmup_epochs: 0
+backbone_lr_multiplier: 10.0
+
+# UniMatch hyperparameters (see unimatch.py in the original repo)
+confidence_threshold: 0.95
+lambda_u: 1.0
+strong_loss_weight: 0.25
+fp_loss_weight: 0.5
+feature_dropout_p: 0.5
+threshold: 0.5
+
+# # CutMix
+# use_cutmix: true
+# cutmix_alpha: 1.0
+# cutmix_probability: 0.5
+
+# Data splits
+labeled:
+  - 20241025145341
+  - 20241025145701
+  - 20241030152031
+  - 20241108111522
+unlabeled:
+  - 20241108115232
+  - 20241108120732
+  - 20241113070770
+  - 20241113080880
+  - 20251115002740-auto_grown_20251115002740308_0_flatboi
+val:
+  - 20241113090990
+
+# sampler:
+#   real_fraction: 0.5
+#   mode: normal

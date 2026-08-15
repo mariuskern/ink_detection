@@ -67,12 +67,36 @@ class UNetRpp(nn.Module):
 
         self.head = Head(feat_ch, out_ch=head_classes)
 
-    def forward(self, x):
+    # def forward(self, x):
+    #     if self.stem is not None:
+    #         x = self.stem(x)
+
+    #     feat = self.backbone(x) # [B,C,D,H,W]
+    #     s_hat = getattr(self.backbone, "last_s_hat", None)
+    #     x2d = self.collapse(feat, s_hat) # [B,C,H,W]
+    #     out = self.head(x2d) # [B,1,H,W]
+    #     return out
+
+    def encode(self, x):
         if self.stem is not None:
             x = self.stem(x)
 
-        feat = self.backbone(x) # [B,C,D,H,W]
+        # Encoder des UNETR++
+        return self.backbone.encode(x)
+
+    def decode(self, features):
+        # UNETR++ Decoder
+        feat = self.backbone.decode(*features)  # [B, C, D, H, W]
+
+        # 3D -> 2D
         s_hat = getattr(self.backbone, "last_s_hat", None)
-        x2d = self.collapse(feat, s_hat) # [B,C,H,W]
-        out = self.head(x2d) # [B,1,H,W]
+        x2d = self.collapse(feat, s_hat)        # [B, C, H, W]
+
+        # 2D segmentation head
+        out = self.head(x2d)                    # [B, 1, H, W]
+
         return out
+
+    def forward(self, x):
+        features = self.encode(x)
+        return self.decode(features)

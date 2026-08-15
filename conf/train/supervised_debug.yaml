@@ -1,5 +1,5 @@
 defaults:
-  - base
+  - supervised
 
 max_epochs: 2
 warmup_epochs: 0
@@ -7,7 +7,6 @@ checkpoint_every_n_epochs: 1
 compile: false
 val_image_every_n_epochs: 1
 
-name: supervised
 labeled:
   - 20241025145341
 val:

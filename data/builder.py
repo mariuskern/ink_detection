@@ -73,19 +73,18 @@ def build_dataset(
         depth=cfg.dataset.depth,
         norm=cfg.dataset.norm,
         min_mask_fraction=cfg.dataset.min_mask_fraction if min_mask_fraction is None else min_mask_fraction,
-        use_pseudo_labels=use_pseudo_labels,
         pseudo_label_version=pseudo_label_version,
         pseudo_target=cfg.train.pseudo_target if use_pseudo_labels else "hard",
         transform=transform,
     )
 
 
-def build_train_dataset(cfg, pseudo_label_version=None, augmentation=None):
+def build_train_dataset(cfg, use_unlabeled_data=False, pseudo_label_version=None, augmentation=None):
     transform = build_augmentation(augmentation) if augmentation is not None else None
 
     dataset = build_dataset(cfg, cfg.train.labeled, transform=transform)
 
-    if pseudo_label_version is None:
+    if not use_unlabeled_data:
         return dataset
 
     pseudo_dataset = build_dataset(

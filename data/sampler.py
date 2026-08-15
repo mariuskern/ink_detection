@@ -57,7 +57,13 @@ def create_sampler(
     if real_fraction is not None and isinstance(dataset, ConcatDataset):
         if not 0 < real_fraction < 1:
             raise ValueError("real_fraction must be strictly between 0 and 1.")
-        is_pseudo = torch.cat([torch.full((len(child),), bool(getattr(child, "use_pseudo_labels", False))) for child in dataset.datasets])
+        is_pseudo = torch.cat([
+            torch.full(
+                (len(child),),
+                bool(getattr(child, "use_pseudo_labels", False) or getattr(child, "mark_as_pseudo", False)),
+            )
+            for child in dataset.datasets
+        ])
         # Explicitly reserve sampling mass for real and pseudo-labelled data.
         # This avoids the larger source silently dominating a ConcatDataset.
         if is_pseudo.any() and (~is_pseudo).any():

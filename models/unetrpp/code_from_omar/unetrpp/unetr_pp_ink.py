@@ -150,19 +150,39 @@ class UNETR_PP_Ink(nn.Module):
         x = x.permute(0, 4, 1, 2, 3).contiguous()
         return x
 
-    def forward(self, x_in):
-        # x_in: [B, in_channels, D, H, W]
-        _, hidden_states = self.unetr_pp_encoder(x_in)
+    # def forward(self, x_in):
+    #     # x_in: [B, in_channels, D, H, W]
+    #     _, hidden_states = self.unetr_pp_encoder(x_in)
+    #     conv_block = self.encoder1(x_in)
+
+    #     enc1, enc2, enc3, enc4 = hidden_states  # res0,res1,res2 volumes; enc4 tokens
+
+    #     dec4 = self.proj_feat(enc4)             # bottleneck volume
+    #     dec3 = self.decoder5(dec4, enc3)
+    #     dec2 = self.decoder4(dec3, enc2)
+    #     dec1 = self.decoder3(dec2, enc1)
+    #     out = self.decoder2(dec1, conv_block)   # [B, feature_size, D, H, W]
+    #     return out
+
+    def encode(self, x_in):
+        x, hidden_states = self.unetr_pp_encoder(x_in)
         conv_block = self.encoder1(x_in)
 
-        enc1, enc2, enc3, enc4 = hidden_states  # res0,res1,res2 volumes; enc4 tokens
+        enc1, enc2, enc3, _ = hidden_states
 
-        dec4 = self.proj_feat(enc4)             # bottleneck volume
+        return x, conv_block, enc1, enc2, enc3
+
+    def decode(self, x, conv_block, enc1, enc2, enc3):
+        dec4 = self.proj_feat(x)
         dec3 = self.decoder5(dec4, enc3)
         dec2 = self.decoder4(dec3, enc2)
         dec1 = self.decoder3(dec2, enc1)
-        out = self.decoder2(dec1, conv_block)   # [B, feature_size, D, H, W]
+        out = self.decoder2(dec1, conv_block)
         return out
+
+    def forward(self, x):
+        features = self.encode(x)
+        return self.decode(*features)
 
 
 def build_unetrpp_ink(in_ch: int = 1, img_size=(32, 64, 64), feature_size: int = 16,

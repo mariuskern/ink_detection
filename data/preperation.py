@@ -30,7 +30,7 @@ def prepare_pseudo_tile_manifests(data_dir, segments, *, version, tile_size, str
         mask = np.asarray(archive["mask"]) * pseudo_mask if "mask" in archive else pseudo_mask
 
         h, w = archive["volume"].shape[-2:]
-        tiles = get_tiles(label, mask, tile_size, stride, segment.name, h, w)
+        tiles = get_tiles(label, mask, tile_size, stride, segment, h, w)
 
         output_dir.mkdir(parents=True, exist_ok=True)
         save_tiles(tiles, npy_path, output_dir / f"tile_size_{tile_size}_stride_{stride}.csv")

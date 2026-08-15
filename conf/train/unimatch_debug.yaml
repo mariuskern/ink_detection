@@ -1,0 +1,21 @@
+defaults:
+  - unimatch
+  - /data/dataset@dataset: debug
+  - /data/sampler@sampler: debug
+  - /data/dataloader@dataloader: debug
+
+max_epochs: 2
+compile: false
+val_image_every_n_epochs: 1
+
+# sampler:
+#   num_samples: 32
+#   real_fraction: 0.5
+
+labeled:
+  - 20241025145341
+unlabeled:
+  - 20241113090990
+  # - 20251115002740-auto_grown_20251115002740308_0_flatboi
+val:
+  - 20241025145701

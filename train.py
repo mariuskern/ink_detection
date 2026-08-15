@@ -7,7 +7,7 @@ import lightning as pl
 from lightning.pytorch.loggers import WandbLogger
 from omegaconf import OmegaConf
 
-from training import train_supervised, train_noisy_student
+from training import train_supervised, train_noisy_student, train_unimatch
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -31,6 +31,8 @@ def main(cfg):
             train_supervised(cfg, logger)
         case "noisy_student":
             train_noisy_student(cfg, logger)
+        case "unimatch":
+            train_unimatch(cfg, logger)
 
 
 if __name__ == "__main__":

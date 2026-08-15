@@ -6,7 +6,7 @@ defaults:
   - loss: dice_bce
   - path: local
   - wandb: debug
-  - train: noisy_student_debug
+  - train: unimatch_debug
   - _self_
 
 experiment:

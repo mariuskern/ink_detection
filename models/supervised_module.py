@@ -1,11 +1,11 @@
 import lightning as pl
 import torch
 
-from utils import PredictionMerger, save_predictions_as_images
+from utils import PredictionMerger, save_predictions_as_images, calculate_dice, calculate_iou
 
 
-class LitModel(pl.LightningModule):
-    def __init__(self, model, loss, lr, warmup_epochs, max_epochs, weight_decay, val_img_dir, val_image_every_n_epochs, batch_size, iteration=None, pseudo_loss_weight=0.0, pseudo_loss_rampup_epochs=0):
+class SupervisedModule(pl.LightningModule):
+    def __init__(self, model, loss, lr, warmup_epochs, max_epochs, weight_decay, val_img_dir, val_image_every_n_epochs, batch_size, iteration=None, pseudo_loss_weight=0.0, pseudo_loss_rampup_epochs=0, threshold=0.5):
         super().__init__()
 
         self.lr = lr
@@ -14,82 +14,111 @@ class LitModel(pl.LightningModule):
         self.weight_decay = weight_decay
         self.batch_size = batch_size
         self.iteration = iteration
+        self.val_img_dir = val_img_dir
         self.val_image_every_n_epochs = val_image_every_n_epochs
         self.pseudo_loss_weight = pseudo_loss_weight
         self.pseudo_loss_rampup_epochs = pseudo_loss_rampup_epochs
-
-        # self.save_hyperparameters(ignore=["model"])
-        self.save_hyperparameters(ignore=["model", "loss"])
+        self.threshold = threshold
 
         self.model = model
         self.loss = loss
 
         self.prediction_merger = PredictionMerger()
 
-        self.val_img_dir = val_img_dir
+        self.save_hyperparameters(ignore=["model", "loss"])
 
     def forward(self, x):
         return self.model(x)
 
-    def transfer_batch_to_device(self, batch, device, dataloader_idx):
-        """Keep metadata on CPU and make pinned-memory transfers asynchronous."""
-        for key in ("tile", "label", "mask"):
-            if batch[key] is not None:
-                batch[key] = batch[key].to(device, non_blocking=True)
-        return batch
-
-    def _export_validation_predictions_this_epoch(self):
-        return self.current_epoch % self.val_image_every_n_epochs == 0
+    # def transfer_batch_to_device(self, batch, device, dataloader_idx):
+    #     """Keep metadata on CPU and make pinned-memory transfers asynchronous."""
+    #     for key in ("tile", "label", "mask"):
+    #         if batch[key] is not None:
+    #             batch[key] = batch[key].to(device, non_blocking=True)
+    #     return batch
 
     def training_step(self, batch, batch_idx):
-        # tile, label, mask, is_pseudo, segment, x, y, segment_shape = batch
         tile = batch["tile"]
+
         label = batch["label"]
+        pseudo_label = batch["pseudo_label"]
         mask = batch["mask"]
-        is_pseudo = batch["is_pseudo"]
+        pseudo_mask = batch["pseudo_mask"]
+
+        has_label = batch["has_label"]
+        has_pseudo_label = batch["has_pseudo_label"]
+        # has_mask = batch["has_mask"]
+        # has_pseudo_mask = batch["has_pseudo_mask"]
 
         output = self(tile)
 
-        labeled = ~is_pseudo
-        pseudo = is_pseudo
+        pseudo_mask = mask * pseudo_mask
 
-        labeled_loss = self.loss(output[labeled], label[labeled], mask[labeled]) if labeled.any() else torch.tensor(0.0, device=self.device)
-        pseudo_loss = self.loss(output[pseudo], label[pseudo], mask[pseudo]) if pseudo.any() else torch.tensor(0.0, device=self.device)
+        labeled_loss = self.loss(output[has_label], label[has_label], mask[has_label]) if has_label.any() else torch.tensor(0.0, device=self.device)
+        pseudo_loss = self.loss(output[has_pseudo_label], pseudo_label[has_pseudo_label], pseudo_mask[has_pseudo_label]) if has_pseudo_label.any() else torch.tensor(0.0, device=self.device)
 
         pseudo_weight = self._pseudo_loss_weight()
 
         loss = labeled_loss + pseudo_weight * pseudo_loss
-
-        loss = self.loss(output, label, mask)
 
         self._log_metric("train", "loss", loss, batch_size=self.batch_size, on_step=True, on_epoch=True, prog_bar=True)
         self._log_metric("train", "labeled_loss", labeled_loss, batch_size=self.batch_size, on_step=True, on_epoch=True, prog_bar=True)
         self._log_metric("train", "pseudo_loss", pseudo_loss, batch_size=self.batch_size, on_step=True, on_epoch=True, prog_bar=True)
         self._log_metric("train", "pseudo_weight", pseudo_weight, batch_size=self.batch_size, on_step=True, on_epoch=True, prog_bar=True)
 
-        self._log_tile_dice("train", output, label, mask, self.batch_size)
+        if has_label.any():
+            num_labeled = has_label.sum().item()
+
+            self._log_tile_dice("train", "tile_dice", output[has_label], label[has_label], mask[has_label], num_labeled)
+            self._log_tile_iou("train", "tile_iou", output[has_label], label[has_label], mask[has_label], num_labeled)
+
+        if has_pseudo_label.any():
+            num_pseudo = has_pseudo_label.sum().item()
+
+            self._log_tile_dice("train", "pseudo_tile_dice", output[has_pseudo_label], pseudo_label[has_pseudo_label], pseudo_mask[has_pseudo_label], num_pseudo)
+            self._log_tile_iou("train", "pseudo_tile_iou", output[has_pseudo_label], pseudo_label[has_pseudo_label], pseudo_mask[has_pseudo_label], num_pseudo)
+
+        logits_combined = torch.cat([output[has_label], output[has_pseudo_label]])
+        targets_combined = torch.cat([label[has_label], pseudo_label[has_pseudo_label]])
+        masks_combined = torch.cat([mask[has_label], pseudo_mask[has_pseudo_label]])
+
+        self._log_tile_dice("train", "combined_tile_dice", logits_combined, targets_combined, masks_combined, self.batch_size)
+        self._log_tile_iou("train", "combined_tile_iou", logits_combined, targets_combined, masks_combined, self.batch_size)
             
         return loss
 
     def validation_step(self, batch, batch_idx):
-        # tile, label, mask, is_pseudo, segment, x, y, segment_shape = batch
         tile = batch["tile"]
         label = batch["label"]
         mask = batch["mask"]
+        has_label = batch["has_label"]
         segment = batch["segment"]
         x = batch["x"]
         y = batch["y"]
         shape = batch["shape"]
 
         output = self(tile)
-        loss = self.loss(output, label, mask)
+
+        if has_label.any():
+            loss = self.loss(output[has_label], label[has_label], mask[has_label]) if has_label.any() else torch.tensor(0.0, device=self.device)
+            self._log_tile_dice("val", "tile_dice", output[has_label], label[has_label], mask[has_label], has_label.sum().item())
+            self._log_tile_iou("val", "tile_iou", output[has_label], label[has_label], mask[has_label], has_label.sum().item())
+        else:
+            loss = output.sum() * 0.0
+
+        self._log_metric("val", "loss", loss, batch_size=self.batch_size, on_step=True, on_epoch=True, prog_bar=True)
 
         if self._export_validation_predictions_this_epoch():
             probs = torch.sigmoid(output).squeeze(1).detach().float().cpu().numpy()
             targets = label.squeeze(1).detach().float().cpu().numpy()
             valid_masks = mask.squeeze(1).detach().float().cpu().numpy()
 
+            has_label_cpu = has_label.cpu().numpy()
+
             for i in range(len(segment)):
+                if not has_label_cpu[i]:
+                    continue
+
                 self.prediction_merger.add(
                     segment=segment[i],
                     x=int(x[i]),
@@ -99,10 +128,6 @@ class LitModel(pl.LightningModule):
                     target=targets[i],
                     valid_mask=valid_masks[i],
                 )
-
-        self._log_metric("val", "loss", loss, batch_size=self.batch_size, on_step=True, on_epoch=True, prog_bar=True)
-
-        self._log_tile_dice("val", output, label, mask, self.batch_size)
 
         return loss
 
@@ -169,25 +194,29 @@ class LitModel(pl.LightningModule):
             },
         }
 
-    def _log_tile_dice(self, stage, logits, target, valid_mask, batch_size):
-        prediction = (torch.sigmoid(logits) >= 0.5).to(target.dtype) * valid_mask
-        target = target * valid_mask
-        intersection = (prediction * target).sum()
-        dice = (2 * intersection + 1e-6) / (prediction.sum() + target.sum() + 1e-6)
+    def _log_tile_dice(self, stage, name, logits, target, valid_mask, batch_size):
+        # prediction = (torch.sigmoid(logits) >= 0.5).to(target.dtype) * valid_mask
+        # target = target * valid_mask
+        # intersection = (prediction * target).sum()
+        # dice = (2 * intersection + 1e-6) / (prediction.sum() + target.sum() + 1e-6)
+
+        dice = calculate_dice(logits, target, valid_mask, threshold=self.threshold)
 
         # self.log(f"{stage}/tile_dice", dice, batch_size=batch_size, on_step=False, on_epoch=True, prog_bar=(stage == "val"))
-        self._log_metric(stage, "tile_dice", dice, batch_size=batch_size, on_step=False, on_epoch=True, prog_bar=(stage == "val"))
+        self._log_metric(stage, name, dice, batch_size=batch_size, on_step=True, on_epoch=True, prog_bar=(stage == "val"))
 
-    def _log_tile_iou(self, stage, logits, target, valid_mask, batch_size):
-        prediction = (torch.sigmoid(logits) >= 0.5).to(target.dtype) * valid_mask
-        target = target * valid_mask
+    def _log_tile_iou(self, stage, name, logits, target, valid_mask, batch_size):
+        # prediction = (torch.sigmoid(logits) >= 0.5).to(target.dtype) * valid_mask
+        # target = target * valid_mask
 
-        intersection = (prediction * target).sum()
-        union = prediction.sum() + target.sum() - intersection
+        # intersection = (prediction * target).sum()
+        # union = prediction.sum() + target.sum() - intersection
 
-        iou = (intersection + 1e-6) / (union + 1e-6)
+        # iou = (intersection + 1e-6) / (union + 1e-6)
 
-        self._log_metric(stage, "tile_iou", iou, batch_size=batch_size, on_step=False, on_epoch=True, prog_bar=(stage == "val"))
+        iou = calculate_iou(logits, target, valid_mask, threshold=self.threshold)
+
+        self._log_metric(stage, name, iou, batch_size=batch_size, on_step=True, on_epoch=True, prog_bar=(stage == "val"))
 
     def _log_metric(self, stage: str, name: str, value, **kwargs):
         if self.iteration is not None:
@@ -204,3 +233,6 @@ class LitModel(pl.LightningModule):
         factor = min(self.current_epoch / self.pseudo_loss_rampup_epochs, 1.0)
 
         return weight * factor
+
+    def _export_validation_predictions_this_epoch(self):
+            return self.current_epoch % self.val_image_every_n_epochs == 0

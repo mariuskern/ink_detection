@@ -7,7 +7,7 @@ from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor
 
 from data import build_dataloader
 from data.builder import build_train_dataset, build_dataset, build_sampler, build_dataloader
-from models import build_model, build_loss, LitModel
+from models import build_model, build_loss, SupervisedModule
 
 
 def train_supervised(cfg, logger):
@@ -18,12 +18,12 @@ def train_supervised(cfg, logger):
 
 @dataclass(frozen=True)
 class TrainingResult:
-    model: LitModel
+    model: SupervisedModule
     best_checkpoint: Path | None
     best_score: float | None
 
 
-def fit(cfg, logger, output_dir, *, pseudo_label_version=None, augmentation=None):
+def fit(cfg, logger, output_dir, *, pseudo_label_version=None, iteration=None, augmentation=None):
     checkpoint_dir = output_dir / "checkpoints"
     val_image_dir = output_dir / "val_images"
 
@@ -35,7 +35,7 @@ def fit(cfg, logger, output_dir, *, pseudo_label_version=None, augmentation=None
         model = torch.compile(model, mode=cfg.train.compile_mode)
     loss = build_loss(cfg)
 
-    lit_model = LitModel(
+    lit_model = SupervisedModule(
         model,
         loss,
         lr=cfg.train.lr,
@@ -45,9 +45,10 @@ def fit(cfg, logger, output_dir, *, pseudo_label_version=None, augmentation=None
         val_img_dir=val_image_dir,
         val_image_every_n_epochs=cfg.train.val_image_every_n_epochs,
         batch_size=cfg.dataloader.batch_size,
-        iteration=str(pseudo_label_version) if pseudo_label_version is not None else None,
+        iteration=str(iteration) if iteration is not None else None,
         pseudo_loss_weight=cfg.train.get("pseudo_loss_weight", 0.0),
         pseudo_loss_rampup_epochs=cfg.train.get("pseudo_loss_rampup_epochs", 0),
+        threshold=cfg.train.get("threshold", 0.5)
     )
 
     checkpoint_callback = ModelCheckpoint(
