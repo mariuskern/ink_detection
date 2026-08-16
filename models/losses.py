@@ -46,9 +46,14 @@ class DiceBCELoss(nn.Module):
         probs = probs * valid
         targets = targets * valid
 
-        intersection = (probs * targets).sum()
+        # intersection = (probs * targets).sum()
+        # dice_score = (2 * intersection + self.eps) / (probs.sum() + targets.sum() + self.eps)
 
-        dice_score = (2 * intersection + self.eps) / (probs.sum() + targets.sum() + self.eps)
+        dims = tuple(range(1, logits.ndim))
+        intersection = (probs * targets).sum(dim=dims)
+        union = probs.sum(dim=dims) + targets.sum(dim=dims)
+        dice = (2 * intersection + self.eps) / (union + self.eps)
+        dice_score = dice.mean()
 
         dice_loss = 1 - dice_score
 

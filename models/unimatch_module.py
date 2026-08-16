@@ -152,18 +152,33 @@ class UniMatchModule(pl.LightningModule):
             Prediction from perturbed features.
         """
 
-        if not hasattr(self.model, "encode"):
-            raise AttributeError("The model must implement `encode()` for feature perturbation.")
+        # if not hasattr(self.model, "encode"):
+        #     raise AttributeError("The model must implement `encode()` for feature perturbation.")
 
-        if not hasattr(self.model, "decode"):
-            raise AttributeError("The model must implement `decode()` for feature perturbation.")
+        # if not hasattr(self.model, "decode"):
+        #     raise AttributeError("The model must implement `decode()` for feature perturbation.")
+
+        # features = self.model.encode(x)
+        # logits = self.model.decode(features)
+
+        # features_fp = self._dropout_features(features)
+        # logits_fp = self.model.decode(features_fp)
+
+        # return logits, logits_fp
 
         features = self.model.encode(x)
         logits = self.model.decode(features)
 
         x_f, conv_block, enc1, enc2, enc3 = features
 
-        features_fp = self._dropout_features(x_f)
+        features_fp = (
+            self._dropout_features(x_f),
+            conv_block,
+            enc1,
+            enc2,
+            enc3,
+        )
+
         logits_fp = self.model.decode(features_fp)
 
         return logits, logits_fp
@@ -219,9 +234,13 @@ class UniMatchModule(pl.LightningModule):
 
         # valid_mask = torch.ones_like(confidence, dtype=torch.bool)
 
-        pseudo_label = (logits >= self.threshold).astype(np.uint8)
-        confidence = np.maximum(logits, 1 - logits)
-        mask = np.ones_like(pseudo_label, dtype=bool)
+        # pseudo_label = (logits >= self.threshold).astype(np.uint8)
+        # confidence = np.maximum(logits, 1 - logits)
+        # mask = np.ones_like(pseudo_label, dtype=bool)
+        prob = torch.sigmoid(logits)
+        pseudo_label = (prob >= self.threshold).to(torch.uint8)
+        confidence = torch.maximum(prob, 1 - prob)
+        mask = torch.ones_like(pseudo_label, dtype=torch.bool)
 
         return pseudo_label, confidence, mask
 
@@ -265,42 +284,42 @@ class UniMatchModule(pl.LightningModule):
     # Consistency loss
     # ======================================================================
 
-    def consistency_loss(self, logits: torch.Tensor, pseudo_label: torch.Tensor, confidence: torch.Tensor, valid_mask: torch.Tensor) -> torch.Tensor:
-        """
-        Consistency loss against pseudo labels.
+    # def consistency_loss(self, logits: torch.Tensor, pseudo_label: torch.Tensor, confidence: torch.Tensor, valid_mask: torch.Tensor) -> torch.Tensor:
+    #     """
+    #     Consistency loss against pseudo labels.
 
-        A pixel contributes to the loss only if:
+    #     A pixel contributes to the loss only if:
 
-            confidence >= conf_thresh
+    #         confidence >= conf_thresh
 
-        and
+    #     and
 
-            valid_mask == True
+    #         valid_mask == True
 
-        This is the binary equivalent of UniMatch's pixel-wise
-        CrossEntropy loss with confidence masking.
-        """
+    #     This is the binary equivalent of UniMatch's pixel-wise
+    #     CrossEntropy loss with confidence masking.
+    #     """
 
-        # logits = self._prepare_logits(logits)
-        # pseudo_label = self._prepare_target(pseudo_label)
-        # loss = self.bce(logits, pseudo_label.float())
-        # confidence_mask = (confidence >= self.conf_thresh)
-        # mask = confidence_mask & valid_mask
+    #     # logits = self._prepare_logits(logits)
+    #     # pseudo_label = self._prepare_target(pseudo_label)
+    #     # loss = self.bce(logits, pseudo_label.float())
+    #     # confidence_mask = (confidence >= self.conf_thresh)
+    #     # mask = confidence_mask & valid_mask
 
-        # loss = loss * mask
+    #     # loss = loss * mask
 
-        # # Same normalization idea as the official implementation:
-        # #
-        # # loss.sum() / number of valid pixels
-        # #
-        # # rather than dividing by the number of confident pixels.
-        # denominator = valid_mask.sum().clamp_min(1)
+    #     # # Same normalization idea as the official implementation:
+    #     # #
+    #     # # loss.sum() / number of valid pixels
+    #     # #
+    #     # # rather than dividing by the number of confident pixels.
+    #     # denominator = valid_mask.sum().clamp_min(1)
 
-        # return loss.sum() / denominator
+    #     # return loss.sum() / denominator
 
-        pseudo_mask &= confidence > self.confidence_threshold
-        loss = self.loss(logits, pseudo_label, pseudo_mask)
-        return loss
+    #     mask = valid_mask * (confidence > self.confidence_threshold)
+    #     loss = self.loss(logits, pseudo_label, mask)
+    #     return loss
 
     # ======================================================================
     # Helpers
@@ -490,7 +509,7 @@ class UniMatchModule(pl.LightningModule):
 
         tile_u = tv_tensors.Image(tile_u)
         tile_u_w = self.weak_transform(tile_u)
-        tile_u = tile_u.as_subclass(torch.Tensor)
+        tile_u_w = tile_u_w.as_subclass(torch.Tensor)
 
         # ==================================================================
         # 3. Generate pseudo labels from weak prediction
@@ -507,7 +526,8 @@ class UniMatchModule(pl.LightningModule):
                 # valid_mask = valid_mask & self._prepare_valid_mask(mask_u)
                 valid_mask = valid_mask * mask_u
 
-            valid_mask &= confidence > self.confidence_threshold
+            # valid_mask &= confidence > self.confidence_threshold
+            valid_mask = valid_mask * (confidence > self.confidence_threshold)
 
             self.model.train()
 
@@ -658,7 +678,8 @@ class UniMatchModule(pl.LightningModule):
         # 13. Logging
         # ==================================================================
 
-        pseudo_ratio = ((confidence >= self.confidence_threshold) & valid_mask).float().mean()
+        # pseudo_ratio = ((confidence >= self.confidence_threshold) & valid_mask).float().mean()
+        pseudo_ratio = valid_mask.float().mean()
 
         # self.log("train/loss", loss, prog_bar=True, on_step=True, on_epoch=True, batch_size=tile.shape[0])
         # self.log("train/loss_labeled",loss_l, on_step=True, on_epoch=True, batch_size=tile.shape[0])
@@ -856,6 +877,9 @@ class UniMatchModule(pl.LightningModule):
         x = batch["x"]
         y = batch["y"]
         shape = batch["shape"]
+
+        if not has_label.any():
+            return None
 
         tile = tile[has_label]
         label = label[has_label]
