@@ -1,7 +1,5 @@
 defaults:
   - noisy_student
-  - /aug@teacher.aug: null
-  - /aug@student.aug: strong
 
 max_epochs: 2
 warmup_epochs: 0

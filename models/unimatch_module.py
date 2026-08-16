@@ -489,7 +489,8 @@ class UniMatchModule(pl.LightningModule):
         # tile_u_s2 = self._apply_transform(tile_u, self.strong_transform_2)
 
         tile_u = tv_tensors.Image(tile_u)
-        tile_u_w, label_u_w, mask_u_w = self.weak_transform(tile_u)
+        tile_u_w = self.weak_transform(tile_u)
+        tile_u = tile_u.as_subclass(torch.Tensor)
 
         # ==================================================================
         # 3. Generate pseudo labels from weak prediction
@@ -516,6 +517,13 @@ class UniMatchModule(pl.LightningModule):
 
         tile_u_s1, label_u_s1, mask_u_s1 = self.strong_transform_1(tile_u, pseudo_label, valid_mask)
         tile_u_s2, label_u_s2, mask_u_s2 = self.strong_transform_2(tile_u, pseudo_label, valid_mask)
+
+        tile_u_s1 = tile_u_s1.as_subclass(torch.Tensor)
+        label_u_s1 = label_u_s1.as_subclass(torch.Tensor)
+        mask_u_s1 = mask_u_s1.as_subclass(torch.Tensor)
+        tile_u_s2 = tile_u_s2.as_subclass(torch.Tensor)
+        label_u_s2 = label_u_s2.as_subclass(torch.Tensor)
+        mask_u_s2 = mask_u_s2.as_subclass(torch.Tensor)
 
         # # ==================================================================
         # # 4. Prepare a second unlabeled group for CutMix

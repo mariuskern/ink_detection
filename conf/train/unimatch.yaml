@@ -3,6 +3,8 @@ defaults:
   - /aug@weak_aug: weak
   - /aug@strong_aug: strong
 
+max_epochs: 250
+
 name: unimatch
 
 # Optimization (aligned with LiheYoung/UniMatch)
