@@ -54,11 +54,17 @@ class SupervisedModule(pl.LightningModule):
 
         pseudo_mask = mask * pseudo_mask
 
-
         num_samples_with_pseudo_label = has_pseudo_label.sum()
-        pseudo_label_mean = pseudo_label[has_pseudo_label].mean()
+        if has_pseudo_label.any():
+            pseudo_label_mean = pseudo_label[has_pseudo_label].mean()
+        else:
+            pseudo_label_mean = torch.tensor(0, device=pseudo_label.device, dtype=pseudo_label.dtype)
         num_samples_with_pseudo_mask = has_pseudo_mask.sum()
-        pseudo_mask_mean = pseudo_mask[has_pseudo_mask].mean()
+        if has_pseudo_mask.any():
+            pseudo_mask_mean = pseudo_mask[has_pseudo_mask].mean()
+        else:
+            pseudo_mask_mean = torch.tensor(0, device=pseudo_mask.device, dtype=pseudo_mask.dtype)
+        
         self._log_metric("train_debug", "num_samples_with_pseudo_label", num_samples_with_pseudo_label, batch_size=self.batch_size, on_step=True, on_epoch=True)
         self._log_metric("train_debug", "pseudo_label_mean", pseudo_label_mean, batch_size=self.batch_size, on_step=True, on_epoch=True)
         self._log_metric("train_debug", "num_samples_with_pseudo_mask", num_samples_with_pseudo_mask, batch_size=self.batch_size, on_step=True, on_epoch=True)
