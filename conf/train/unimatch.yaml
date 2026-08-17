@@ -6,8 +6,8 @@ defaults:
 max_epochs: 100
 compile: false # Doesn't work with UniMatch due to memory usage.
 
-# dataloader:
-#   batch_size: 4
+dataloader:
+  batch_size: 4
 
 name: unimatch
 
