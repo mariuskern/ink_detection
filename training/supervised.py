@@ -79,7 +79,8 @@ def fit(cfg, logger, output_dir, *, pseudo_label_version=None, iteration=None, a
         ]
     )
 
-    train_dataset = build_train_dataset(cfg, pseudo_label_version=pseudo_label_version, augmentation=augmentation)
+    use_unlabeled_data = iteration is not None and iteration > 0
+    train_dataset = build_train_dataset(cfg, use_unlabeled_data=use_unlabeled_data, pseudo_label_version=pseudo_label_version, augmentation=augmentation)
     val_dataset = build_dataset(cfg, cfg.train.val, min_mask_fraction=0.0)
     train_sampler = build_sampler(cfg, train_dataset)
     train_loader = build_dataloader(cfg, train_dataset, train_sampler)

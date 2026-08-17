@@ -48,11 +48,22 @@ class SupervisedModule(pl.LightningModule):
         has_label = batch["has_label"]
         has_pseudo_label = batch["has_pseudo_label"]
         # has_mask = batch["has_mask"]
-        # has_pseudo_mask = batch["has_pseudo_mask"]
+        has_pseudo_mask = batch["has_pseudo_mask"]
 
         output = self(tile)
 
         pseudo_mask = mask * pseudo_mask
+
+
+        num_samples_with_pseudo_label = has_pseudo_label.sum()
+        pseudo_label_mean = pseudo_label[has_pseudo_label].mean()
+        num_samples_with_pseudo_mask = has_pseudo_mask.sum()
+        pseudo_mask_mean = pseudo_mask[has_pseudo_mask].mean()
+        self._log_metric("train_debug", "num_samples_with_pseudo_label", num_samples_with_pseudo_label, batch_size=self.batch_size, on_step=True, on_epoch=True)
+        self._log_metric("train_debug", "pseudo_label_mean", pseudo_label_mean, batch_size=self.batch_size, on_step=True, on_epoch=True)
+        self._log_metric("train_debug", "num_samples_with_pseudo_mask", num_samples_with_pseudo_mask, batch_size=self.batch_size, on_step=True, on_epoch=True)
+        self._log_metric("train_debug", "pseudo_mask_mean", pseudo_mask_mean, batch_size=self.batch_size, on_step=True, on_epoch=True)
+
 
         labeled_loss = self.loss(output[has_label], label[has_label], mask[has_label]) if has_label.any() else torch.tensor(0.0, device=self.device)
         pseudo_loss = self.loss(output[has_pseudo_label], pseudo_label[has_pseudo_label], pseudo_mask[has_pseudo_label]) if has_pseudo_label.any() else torch.tensor(0.0, device=self.device)
