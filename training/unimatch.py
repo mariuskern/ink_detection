@@ -60,6 +60,8 @@ def fit(cfg, logger, output_dir):
         # cutmix_alpha=cfg.train.cutmix_alpha,
         # cutmix_probability=cfg.train.cutmix_probability,
         feature_dropout_p=cfg.train.feature_dropout_p,
+        gradient_clip_val=cfg.train.gradient_clip_val,
+        gradient_clip_algorithm=cfg.train.gradient_clip_algorithm,
     )
 
     checkpoint_callback = ModelCheckpoint(
@@ -77,8 +79,8 @@ def fit(cfg, logger, output_dir):
         accelerator=cfg.train.accelerator,
         devices=cfg.train.devices,
         logger=logger,
-        gradient_clip_val=cfg.train.gradient_clip_val,
-        gradient_clip_algorithm=cfg.train.gradient_clip_algorithm,
+        # gradient_clip_val=cfg.train.gradient_clip_val,
+        # gradient_clip_algorithm=cfg.train.gradient_clip_algorithm,
         log_every_n_steps=10,
         precision=cfg.train.precision,
         benchmark=cfg.train.benchmark,

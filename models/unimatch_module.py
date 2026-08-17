@@ -6,7 +6,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import lightning.pytorch as pl
-import numpy as np
 from torchvision import tv_tensors
 
 # from .cutmix import CutMix
@@ -68,6 +67,8 @@ class UniMatchModule(pl.LightningModule):
         # cutmix_probability: float = 0.5,
         # ignore_index: int = 255,
         feature_dropout_p: float = 0.5,
+        gradient_clip_val = 1.0,
+        gradient_clip_algorithm = "norm",
     ):
         super().__init__()
 
@@ -90,6 +91,8 @@ class UniMatchModule(pl.LightningModule):
         # self.ignore_index = ignore_index
         self.feature_dropout_p = feature_dropout_p
         # self.use_cutmix = use_cutmix
+        self.gradient_clip_val = gradient_clip_val
+        self.gradient_clip_algorithm = gradient_clip_algorithm
 
         self.model = model
         self.loss = loss
@@ -116,6 +119,8 @@ class UniMatchModule(pl.LightningModule):
                 "strong_transform_2",
             ]
         )
+
+        self.automatic_optimization = False
 
     # ======================================================================
     # Forward
@@ -167,7 +172,7 @@ class UniMatchModule(pl.LightningModule):
         # return logits, logits_fp
 
         features = self.model.encode(x)
-        logits = self.model.decode(features)
+        # logits = self.model.decode(features)
 
         x_f, conv_block, enc1, enc2, enc3 = features
 
@@ -181,7 +186,8 @@ class UniMatchModule(pl.LightningModule):
 
         logits_fp = self.model.decode(features_fp)
 
-        return logits, logits_fp
+        # return logits, logits_fp
+        return logits_fp
 
     def _dropout_features(self, features):
         """
@@ -464,6 +470,9 @@ class UniMatchModule(pl.LightningModule):
         This allows CutMix without requiring a second DataLoader.
         """
 
+        optimizer = self.optimizers()
+        optimizer.zero_grad()
+
         tile = batch["tile"]
         
         label = batch["label"]
@@ -486,6 +495,8 @@ class UniMatchModule(pl.LightningModule):
             logits_l = self(tile_l)
             # loss_l = self.supervised_loss(logits_l, label_l, mask_l)
             loss_l = self.loss(logits_l, label_l, mask_l)
+            self.manual_backward(loss_l)
+            del logits_l
         else:
             # loss_l = torch.tensor(0.0, device=self.device)
             loss_l = tile.sum() * 0.0
@@ -516,7 +527,7 @@ class UniMatchModule(pl.LightningModule):
         # ==================================================================
 
         with torch.no_grad():
-            self.model.eval()
+            self.eval()
 
             pred_u_w = self(tile_u_w)
 
@@ -529,7 +540,10 @@ class UniMatchModule(pl.LightningModule):
             # valid_mask &= confidence > self.confidence_threshold
             valid_mask = valid_mask * (confidence > self.confidence_threshold)
 
-            self.model.train()
+            del pred_u_w
+            del confidence
+
+            self.train()
 
         # tile_u = tv_tensors.Image(tile_u)
         pseudo_label = tv_tensors.Mask(pseudo_label)
@@ -638,13 +652,23 @@ class UniMatchModule(pl.LightningModule):
         # ==================================================================
 
         pred_u_s1 = self(tile_u_s1)
+        loss_u_s1 = self.loss(pred_u_s1, label_u_s1, mask_u_s1)
+        self.manual_backward(self.strong_loss_weight * self.lambda_u * loss_u_s1)
+        del pred_u_s1
+        # del loss_u_s1
+               
         pred_u_s2 = self(tile_u_s2)
+        loss_u_s2 = self.loss(pred_u_s2, label_u_s2, mask_u_s2)
+        self.manual_backward(self.strong_loss_weight * self.lambda_u * loss_u_s2)
+        del pred_u_s2
+        # del loss_u_s2
 
         # ==================================================================
         # 8. Feature perturbation
         # ==================================================================
 
-        _, pred_u_w_fp = (self.forward_with_feature_perturbation(tile_u_w))
+        # _, pred_u_w_fp = (self.forward_with_feature_perturbation(tile_u_w))
+        pred_u_w_fp = (self.forward_with_feature_perturbation(tile_u_w))
 
         # ==================================================================
         # 9. Strong consistency losses
@@ -652,8 +676,8 @@ class UniMatchModule(pl.LightningModule):
 
         # loss_u_s1 = self.consistency_loss(logits=pred_u_s1, pseudo_label=pseudo_s1, confidence=confidence_s1, valid_mask=valid_s1)
         # loss_u_s2 = self.consistency_loss(logits=pred_u_s2, pseudo_label=pseudo_s2, confidence=confidence_s2, valid_mask=valid_s2)
-        loss_u_s1 = self.loss(pred_u_s1, label_u_s1, mask_u_s1)
-        loss_u_s2 = self.loss(pred_u_s2, label_u_s2, mask_u_s2)
+        # loss_u_s1 = self.loss(pred_u_s1, label_u_s1, mask_u_s1)
+        # loss_u_s2 = self.loss(pred_u_s2, label_u_s2, mask_u_s2)
 
         # ==================================================================
         # 10. Feature perturbation consistency
@@ -661,6 +685,9 @@ class UniMatchModule(pl.LightningModule):
 
         # loss_u_fp = self.consistency_loss(logits=pred_u_w_fp, pseudo_label=pseudo_label, confidence=confidence, valid_mask=valid_mask)
         loss_u_fp = self.loss(pred_u_w_fp, pseudo_label, valid_mask)
+        self.manual_backward(self.fp_loss_weight * self.lambda_u * loss_u_fp)
+        del pred_u_w_fp
+        # del loss_u_fp
 
         # ==================================================================
         # 11. UniMatch unsupervised loss
@@ -703,6 +730,18 @@ class UniMatchModule(pl.LightningModule):
             on_epoch=True,
             batch_size=tile.shape[0],
         )
+
+
+        self.clip_gradients(
+            optimizer,
+            gradient_clip_val=self.gradient_clip_val,
+            gradient_clip_algorithm=self.gradient_clip_algorithm,
+        )
+
+        scheduler = self.lr_schedulers()
+        optimizer.step()
+        scheduler.step()
+        optimizer.zero_grad()
 
         return loss
 
@@ -934,7 +973,7 @@ class UniMatchModule(pl.LightningModule):
                 "val/loss": loss,
                 "val/dice": dice,
                 "val/iou": iou,
-                "train/pseudo_ratio": 0.0,
+                "val/pseudo_ratio": 0.0,
             },
             on_step=True,
             on_epoch=True,

@@ -3,7 +3,11 @@ defaults:
   - /aug@weak_aug: weak
   - /aug@strong_aug: strong
 
-max_epochs: 250
+max_epochs: 100
+compile: false # Doesn't work with UniMatch due to memory usage.
+
+dataloader:
+  batch_size: 4
 
 name: unimatch
 

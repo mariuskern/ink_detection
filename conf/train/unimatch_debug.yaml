@@ -5,7 +5,7 @@ defaults:
   - /data/dataloader@dataloader: debug
 
 max_epochs: 2
-compile: true
+compile: false
 val_image_every_n_epochs: 1
 
 # sampler:
