@@ -172,19 +172,25 @@ class UniMatchModule(pl.LightningModule):
         # return logits, logits_fp
 
         features = self.model.encode(x)
-        # logits = self.model.decode(features)
+        logits = self.model.decode(features)
 
         x_f, conv_block, enc1, enc2, enc3 = features
 
-        features_fp = (
-            self._dropout_features(x_f),
-            conv_block,
-            enc1,
-            enc2,
-            enc3,
-        )
+        # features_fp = (
+        #     self._dropout_features(x_f),
+        #     conv_block,
+        #     enc1,
+        #     enc2,
+        #     enc3,
+        # )
+
+        features_fp = self._dropout_features(features)
 
         logits_fp = self.model.decode(features_fp)
+
+        fp_prediction_difference = (torch.sigmoid(logits) - torch.sigmoid(logits_fp)).abs().mean()
+        self.log("train_debug/fp_prediction_difference", fp_prediction_difference)
+        del logits
 
         # return logits, logits_fp
         return logits_fp
@@ -246,7 +252,19 @@ class UniMatchModule(pl.LightningModule):
         prob = torch.sigmoid(logits)
         pseudo_label = (prob >= self.threshold).to(torch.uint8)
         confidence = torch.maximum(prob, 1 - prob)
-        mask = torch.ones_like(pseudo_label, dtype=torch.bool)
+        mask = torch.ones_like(confidence, dtype=torch.bool)
+
+        # print("logits finite:", torch.isfinite(logits).all().item())
+        # print("prob finite:", torch.isfinite(prob).all().item())
+        # print("pseudo_label finite:", torch.isfinite(pseudo_label).all().item())
+        # print("confidence finite:", torch.isfinite(confidence).all().item())
+        # print("mask finite:", torch.isfinite(mask).all().item())
+
+        # print("logits shape:", logits.shape)
+        # print("prob shape:", prob.shape)
+        # print("pseudo_label shape:", pseudo_label.shape)
+        # print("confidence shape:", confidence.shape)
+        # print("mask shape:", mask.shape)
 
         return pseudo_label, confidence, mask
 
@@ -470,15 +488,17 @@ class UniMatchModule(pl.LightningModule):
         This allows CutMix without requiring a second DataLoader.
         """
 
-        optimizer = self.optimizers()
-        optimizer.zero_grad()
-
         tile = batch["tile"]
         
         label = batch["label"]
+        # pseudo_label = batch["pseudo_label"]
         mask = batch["mask"]
+        # pseudo_mask = batch["pseudo_mask"]
+
         has_label = batch["has_label"]
-        has_mask = batch["has_mask"]
+        # has_pseudo_label = batch["has_pseudo_label"]
+        # has_mask = batch["has_mask"]
+        # has_pseudo_mask = batch["has_pseudo_mask"]
 
         tile_l = tile[has_label]
         tile_u = tile[~has_label]
@@ -508,6 +528,20 @@ class UniMatchModule(pl.LightningModule):
         if tile_u.shape[0] == 0:
             loss = loss_l
             self._log_supervised_only(loss=loss, loss_l=loss_l, batch_size=tile.shape[0])
+
+            optimizer = self.optimizers()
+            scheduler = self.lr_schedulers()
+    
+            self.clip_gradients(
+                optimizer,
+                gradient_clip_val=self.gradient_clip_val,
+                gradient_clip_algorithm=self.gradient_clip_algorithm,
+            )
+    
+            optimizer.step()
+            scheduler.step()
+            optimizer.zero_grad()
+
             return loss
 
         # ==================================================================
@@ -533,12 +567,20 @@ class UniMatchModule(pl.LightningModule):
 
             pseudo_label, confidence, valid_mask = self.generate_pseudo_labels(pred_u_w)
 
+            valid_mask = valid_mask.bool()
+
             if mask_u is not None:
                 # valid_mask = valid_mask & self._prepare_valid_mask(mask_u)
-                valid_mask = valid_mask * mask_u
+                valid_mask = valid_mask & mask_u.bool()
 
             # valid_mask &= confidence > self.confidence_threshold
-            valid_mask = valid_mask * (confidence > self.confidence_threshold)
+            valid_mask = valid_mask & (confidence > self.confidence_threshold)
+
+            # mean_confidence = confidence[valid_mask].mean()
+            if valid_mask.any():
+                mean_confidence = confidence[valid_mask].mean()
+            else:
+                mean_confidence = confidence.new_tensor(0.0)
 
             del pred_u_w
             del confidence
@@ -716,6 +758,14 @@ class UniMatchModule(pl.LightningModule):
         # self.log( "train/loss_feature_fp", loss_u_fp, on_step=True, on_epoch=True, batch_size=tile.shape[0])
         # self.log("train/pseudo_ratio", pseudo_ratio, prog_bar=True, on_step=True, on_epoch=True, batch_size=tile.shape[0])
 
+        num_samples_without_label = (~has_label).sum()
+        pseudo_positive_fraction_all = pseudo_label.float().mean()
+        # pseudo_positive_fraction_confident = pseudo_label[valid_mask].float().mean()
+        if valid_mask.any():
+            pseudo_positive_fraction_confident = pseudo_label[valid_mask].float().mean()
+        else:
+            pseudo_positive_fraction_confident = pseudo_label.new_tensor(0.0)
+
         self.log_dict(
             {
                 "train/loss": loss,
@@ -725,12 +775,19 @@ class UniMatchModule(pl.LightningModule):
                 "train/loss_strong_2": loss_u_s2,
                 "train/loss_feature_fp": loss_u_fp,
                 "train/pseudo_ratio": pseudo_ratio,
+
+                "train_debug/num_samples_without_label": num_samples_without_label,
+                "train_debug/pseudo_positive_fraction_all": pseudo_positive_fraction_all,
+                "train_debug/pseudo_positive_fraction_confident": pseudo_positive_fraction_confident,
+                "train_debug/mean_confidence": mean_confidence,
             },
             on_step=True,
             on_epoch=True,
             batch_size=tile.shape[0],
         )
 
+        optimizer = self.optimizers()
+        scheduler = self.lr_schedulers()
 
         self.clip_gradients(
             optimizer,
@@ -738,7 +795,6 @@ class UniMatchModule(pl.LightningModule):
             gradient_clip_algorithm=self.gradient_clip_algorithm,
         )
 
-        scheduler = self.lr_schedulers()
         optimizer.step()
         scheduler.step()
         optimizer.zero_grad()

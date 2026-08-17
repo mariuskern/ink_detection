@@ -57,6 +57,7 @@ def build_dataset(
     segments,
     *,
     transform=None,
+    use_as_unlabeled=False,
     pseudo_label_version=None,
     stride=None,
     min_mask_fraction=None,
@@ -73,6 +74,7 @@ def build_dataset(
         depth=cfg.dataset.depth,
         norm=cfg.dataset.norm,
         min_mask_fraction=cfg.dataset.min_mask_fraction if min_mask_fraction is None else min_mask_fraction,
+        use_as_unlabeled=use_as_unlabeled,
         pseudo_label_version=pseudo_label_version,
         pseudo_target=cfg.train.pseudo_target if use_pseudo_labels else "hard",
         transform=transform,
@@ -91,6 +93,7 @@ def build_train_dataset(cfg, use_unlabeled_data=False, pseudo_label_version=None
         cfg,
         cfg.train.unlabeled,
         transform=transform,
+        use_as_unlabeled=use_unlabeled_data,
         pseudo_label_version=pseudo_label_version,
     )
 

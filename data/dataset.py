@@ -142,6 +142,7 @@ class InkDataset(Dataset):
         depth=32,
         norm="global",
         min_mask_fraction=0.5,
+        use_as_unlabeled=False,
         pseudo_label_version=None,
         pseudo_target="hard",
         transform=None,
@@ -153,6 +154,7 @@ class InkDataset(Dataset):
         self.center = center if center is not None else n_layers // 2
         self.depth = depth
         self.norm = norm
+        self.use_as_unlabeled = use_as_unlabeled
         self.pseudo_label_version = pseudo_label_version
         self.pseudo_target = pseudo_target
         self.transform = transform
@@ -275,7 +277,7 @@ class InkDataset(Dataset):
         return tile
 
     def _get_label(self, zarr_array, x, y):
-        if "label" not in zarr_array:
+        if "label" not in zarr_array or self.use_as_unlabeled:
             return None
 
         return torch.from_numpy(zarr_array["label"][y:y+self.tile_size, x:x+self.tile_size]).float()
@@ -295,7 +297,7 @@ class InkDataset(Dataset):
         return torch.from_numpy(zarr_array[group][version][y:y+self.tile_size, x:x+self.tile_size]).float()
 
     def _get_mask(self, zarr_array, x, y):
-        if "mask" not in zarr_array:
+        if "mask" not in zarr_array or self.use_as_unlabeled:
             return None
 
         return torch.from_numpy(zarr_array["mask"][y:y+self.tile_size, x:x+self.tile_size]).float()
@@ -357,7 +359,14 @@ class InkDataset(Dataset):
         tile_list = []
 
         for t in tiles:
-            if t["mask_fraction"] < min_mask_fraction:
+            if self.use_as_unlabeled and self.pseudo_label_version is None:
+                positive_fraction = float("nan")
+                mask_fraction = float("nan")
+            else:
+                positive_fraction = float(t["positive_fraction"])
+                mask_fraction = float(t["mask_fraction"])
+
+            if not np.isnan(mask_fraction) and mask_fraction < min_mask_fraction:
                 continue
             
             tile_list.append(
@@ -365,8 +374,8 @@ class InkDataset(Dataset):
                     "segment": segment_path.name,
                     "y": int(t["y"]),
                     "x": int(t["x"]),
-                    "positive_fraction": float(t["positive_fraction"]),
-                    "mask_fraction": float(t["mask_fraction"]),
+                    "positive_fraction": positive_fraction,
+                    "mask_fraction": mask_fraction,
                 }
             )
 
