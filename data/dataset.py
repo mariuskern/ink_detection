@@ -404,7 +404,7 @@ class InkDataset(Dataset):
             # if version not in pseudo_targets:
             #     raise KeyError(f"Missing pseudo target version '{version}'. Available versions: {available_versions}")
 
-            version = self.pseudo_label_version
+            version = str(self.pseudo_label_version)
 
             available_versions = list(zarr_data[group].keys())
             if version not in zarr_data[group]:

@@ -11,6 +11,7 @@ defaults:
 
 experiment:
   name: ${now:%Y-%m-%d_%H-%M-%S} # ${model.name}_${now:%Y-%m-%d_%H-%M-%S}
+  jobid: ${oc.env:SLURM_JOB_ID,none}
 
 hydra:
   run:

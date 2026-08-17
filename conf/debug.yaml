@@ -6,11 +6,12 @@ defaults:
   - loss: dice_bce
   - path: local
   - wandb: debug
-  - train: unimatch_debug # noisy_student_debug unimatch_debug
+  - train: noisy_student_debug # noisy_student_debug unimatch_debug
   - _self_
 
 experiment:
   name: ${now:%Y-%m-%d_%H-%M-%S} # ${model.name}_${now:%Y-%m-%d_%H-%M-%S}
+  jobid: ${oc.env:SLURM_JOB_ID,none}
 
 hydra:
   run:
