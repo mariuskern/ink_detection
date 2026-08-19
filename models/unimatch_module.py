@@ -134,7 +134,9 @@ class UniMatchModule(pl.LightningModule):
         # return logits, logits_fp
 
         features = self.model.encode(x)
-        logits = self.model.decode(features)
+        # logits = self.model.decode(features)
+        with torch.no_grad():
+            logits = self.model.decode(features)
 
         x_f, conv_block, enc1, enc2, enc3 = features
 
@@ -150,8 +152,10 @@ class UniMatchModule(pl.LightningModule):
 
         logits_fp = self.model.decode(features_fp)
 
-        fp_prediction_difference = (torch.sigmoid(logits) - torch.sigmoid(logits_fp)).abs().mean()
-        self.log("train_debug/fp_prediction_difference", fp_prediction_difference)
+        with torch.no_grad():
+            fp_prediction_difference = (torch.sigmoid(logits) - torch.sigmoid(logits_fp)).abs().mean()
+            self.log("train_debug/fp_prediction_difference", fp_prediction_difference)
+            
         del logits
 
         # return logits, logits_fp
@@ -224,14 +228,17 @@ class UniMatchModule(pl.LightningModule):
             logits_l = self(tile_l)
             loss_l = self.loss(logits_l, label_l, mask_l)
             self.manual_backward(loss_l)
+            loss_l_value = loss_l.detach()
             del logits_l
+            del loss_l
         else:
             # loss_l = torch.tensor(0.0, device=self.device)
             loss_l = tile.sum() * 0.0
+            loss_l_value = loss_l.detach()
 
         if tile_u.shape[0] == 0:
-            loss = loss_l
-            self._log_supervised_only(loss=loss, loss_l=loss_l, batch_size=tile.shape[0])
+            loss = loss_l_value
+            self._log_supervised_only(loss=loss, loss_l=loss_l_value, batch_size=tile.shape[0])
 
             optimizer = self.optimizers()
             scheduler = self.lr_schedulers()
@@ -280,15 +287,15 @@ class UniMatchModule(pl.LightningModule):
         pseudo_label = tv_tensors.Mask(pseudo_label)
         valid_mask = tv_tensors.Mask(valid_mask)
 
-        tile_u_s1, label_u_s1, mask_u_s1 = self.strong_transform_1(tile_u, pseudo_label, valid_mask)
-        tile_u_s2, label_u_s2, mask_u_s2 = self.strong_transform_2(tile_u, pseudo_label, valid_mask)
+        # tile_u_s1, label_u_s1, mask_u_s1 = self.strong_transform_1(tile_u, pseudo_label, valid_mask)
+        # tile_u_s2, label_u_s2, mask_u_s2 = self.strong_transform_2(tile_u, pseudo_label, valid_mask)
 
-        tile_u_s1 = tile_u_s1.as_subclass(torch.Tensor)
-        label_u_s1 = label_u_s1.as_subclass(torch.Tensor)
-        mask_u_s1 = mask_u_s1.as_subclass(torch.Tensor)
-        tile_u_s2 = tile_u_s2.as_subclass(torch.Tensor)
-        label_u_s2 = label_u_s2.as_subclass(torch.Tensor)
-        mask_u_s2 = mask_u_s2.as_subclass(torch.Tensor)
+        # tile_u_s1 = tile_u_s1.as_subclass(torch.Tensor)
+        # label_u_s1 = label_u_s1.as_subclass(torch.Tensor)
+        # mask_u_s1 = mask_u_s1.as_subclass(torch.Tensor)
+        # tile_u_s2 = tile_u_s2.as_subclass(torch.Tensor)
+        # label_u_s2 = label_u_s2.as_subclass(torch.Tensor)
+        # mask_u_s2 = mask_u_s2.as_subclass(torch.Tensor)
 
         # # ==================================================================
         # # 4. Prepare a second unlabeled group for CutMix
@@ -378,17 +385,37 @@ class UniMatchModule(pl.LightningModule):
         #     confidence_s2 = confidence
         #     valid_s2 = valid_mask
 
+        tile_u_s1, label_u_s1, mask_u_s1 = self.strong_transform_1(tile_u, pseudo_label, valid_mask)
+        tile_u_s1 = tile_u_s1.as_subclass(torch.Tensor)
+        label_u_s1 = label_u_s1.as_subclass(torch.Tensor)
+        mask_u_s1 = mask_u_s1.as_subclass(torch.Tensor)
+
         pred_u_s1 = self(tile_u_s1)
         loss_u_s1 = self.loss(pred_u_s1, label_u_s1, mask_u_s1)
         self.manual_backward(self.strong_loss_weight * self.lambda_u * loss_u_s1)
+        loss_u_s1_value = loss_u_s1.detach()
+
+        del tile_u_s1
+        del label_u_s1
+        del mask_u_s1
         del pred_u_s1
-        # del loss_u_s1
+        del loss_u_s1
+
+        tile_u_s2, label_u_s2, mask_u_s2 = self.strong_transform_2(tile_u, pseudo_label, valid_mask)
+        tile_u_s2 = tile_u_s2.as_subclass(torch.Tensor)
+        label_u_s2 = label_u_s2.as_subclass(torch.Tensor)
+        mask_u_s2 = mask_u_s2.as_subclass(torch.Tensor)
                
         pred_u_s2 = self(tile_u_s2)
         loss_u_s2 = self.loss(pred_u_s2, label_u_s2, mask_u_s2)
         self.manual_backward(self.strong_loss_weight * self.lambda_u * loss_u_s2)
+        loss_u_s2_value = loss_u_s2.detach()
+
+        del tile_u_s2
+        del label_u_s2
+        del mask_u_s2
         del pred_u_s2
-        # del loss_u_s2
+        del loss_u_s2
 
         pred_u_w_fp = (self.forward_with_feature_perturbation(tile_u_w))
 
@@ -397,11 +424,12 @@ class UniMatchModule(pl.LightningModule):
 
         loss_u_fp = self.loss(pred_u_w_fp, pseudo_label, valid_mask)
         self.manual_backward(self.fp_loss_weight * self.lambda_u * loss_u_fp)
+        loss_u_fp_value = loss_u_fp.detach()
         del pred_u_w_fp
-        # del loss_u_fp
+        del loss_u_fp
 
-        loss_u = self.strong_loss_weight * loss_u_s1 + self.strong_loss_weight * loss_u_s2 + self.fp_loss_weight * loss_u_fp
-        loss = loss_l + self.lambda_u * loss_u
+        loss_u = self.strong_loss_weight * loss_u_s1_value + self.strong_loss_weight * loss_u_s2_value + self.fp_loss_weight * loss_u_fp_value
+        loss = loss_l_value + self.lambda_u * loss_u
 
         pseudo_ratio = valid_mask.float().mean()
 
@@ -424,11 +452,11 @@ class UniMatchModule(pl.LightningModule):
         self.log_dict(
             {
                 "train/loss": loss,
-                "train/loss_labeled": loss_l,
+                "train/loss_labeled": loss_l_value,
                 "train/loss_unlabeled": loss_u,
-                "train/loss_strong_1": loss_u_s1,
-                "train/loss_strong_2": loss_u_s2,
-                "train/loss_feature_fp": loss_u_fp,
+                "train/loss_strong_1": loss_u_s1_value,
+                "train/loss_strong_2": loss_u_s2_value,
+                "train/loss_feature_fp": loss_u_fp_value,
                 "train/pseudo_ratio": pseudo_ratio,
 
                 "train_debug/num_samples_without_label": num_samples_without_label,
@@ -555,11 +583,13 @@ class UniMatchModule(pl.LightningModule):
                 [
                     {
                         "params": backbone_params,
-                        "lr": self.lr,
+                        # "lr": self.lr,
+                        "lr": self.lr * self.backbone_lr_multiplier,
                     },
                     {
                         "params": head_params,
-                        "lr": self.lr * self.backbone_lr_multiplier,
+                        # "lr": self.lr * self.backbone_lr_multiplier,
+                        "lr": self.lr,
                     },
                 ],
                 momentum=0.9,

@@ -8,6 +8,9 @@ compile: false # Doesn't work with UniMatch due to memory usage.
 
 dataloader:
   batch_size: 4
+dataset:
+  tile_size: 128
+  stride: 64  
 
 name: unimatch
 
