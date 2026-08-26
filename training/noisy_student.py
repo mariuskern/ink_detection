@@ -3,7 +3,7 @@ from pathlib import Path
 from training.supervised import fit
 
 from utils import predict, postprocess_predictions, save_predictions_as_images, save_predictions_as_zarr
-from data import build_dataset, build_dataloader, prepare_pseudo_tile_manifests
+from data import build_dataset, build_dataloader, prepare_pseudo_tile_manifests, build_augmentation
 
 
 def train_noisy_student(cfg, logger):
@@ -28,7 +28,8 @@ def train_noisy_student(cfg, logger):
 
 
 def generate_pseudo_labels(cfg, model, iteration, output_dir):
-        predict_dataset = build_dataset(cfg, cfg.train.unlabeled, min_mask_fraction=0.0)
+        transform = build_augmentation(cfg.train.teacher.aug) if cfg.train.teacher.aug is not None else None
+        predict_dataset = build_dataset(cfg, cfg.train.unlabeled, min_mask_fraction=0.0, transform=transform)
         predict_loader = build_dataloader(cfg, predict_dataset, None)
 
         results = predict(model, predict_loader, device=cfg.train.devices)
