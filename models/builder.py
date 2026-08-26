@@ -1,4 +1,5 @@
 from models.unetrpp import UNetRpp
+from models.timesformer import TimeSformer
 
 
 def build_model(cfg):
@@ -25,4 +26,19 @@ def build_model(cfg):
                 cfg.model.collapse,
                 # Head
                 cfg.model.head_classes,
+            )
+        case "timesformer":
+            return TimeSformer(
+                cfg.model.dim,
+                cfg.dataset.tile_size, # cfg.model.image_size,
+                cfg.model.patch_size,
+                cfg.dataset.depth, # cfg.model.num_frames,
+                cfg.model.num_classes,
+                cfg.model.channels,
+                cfg.model.depth,
+                cfg.model.heads,
+                cfg.model.dim_head,
+                cfg.model.attn_dropout,
+                cfg.model.ff_dropout,
+                cfg.model.with_norm
             )

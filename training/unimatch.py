@@ -65,12 +65,12 @@ def fit(cfg, logger, output_dir):
     )
 
     checkpoint_callback = ModelCheckpoint(
-        monitor="val/dice",
-        mode="max",
+        monitor="val/loss",
+        mode="min",
         save_top_k=cfg.train.save_top_k,
         save_last=True,
         dirpath=checkpoint_dir,
-        filename=cfg.model.name + "_{epoch:03d}_{val/dice:.3f}",
+        filename=cfg.model.name + "_{epoch:03d}_{val_loss:.3f}",
         every_n_epochs=cfg.train.checkpoint_every_n_epochs,
     )
 

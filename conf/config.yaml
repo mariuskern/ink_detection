@@ -2,11 +2,11 @@ defaults:
   - data/dataset@dataset: default
   - data/sampler@sampler: default
   - data/dataloader@dataloader: default
-  - model: unetrpp
+  - model: timesformer
   - loss: dice_bce
   - path: alex
   - wandb: default
-  - train: noisy_student # noisy_student unimatch
+  - train: supervised # supervised noisy_student unimatch
   - _self_
 
 experiment:

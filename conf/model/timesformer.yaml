@@ -1,0 +1,13 @@
+name: timesformer
+dim: 512
+# image_size: 64 # tile_size in dataset config
+patch_size: 16
+# num_frames: 26 # depth in dataset config
+num_classes: 16
+channels: 1
+depth: 8
+heads: 6
+dim_head: 64
+attn_dropout: 0.1
+ff_dropout: 0.1
+with_norm: false

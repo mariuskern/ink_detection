@@ -52,7 +52,7 @@ def fit(cfg, logger, output_dir, *, pseudo_label_version=None, iteration=None, a
     )
 
     checkpoint_callback = ModelCheckpoint(
-        monitor="train/loss",
+        monitor="val/loss",
         mode="min",
         save_top_k=cfg.train.save_top_k,
         save_last=True,

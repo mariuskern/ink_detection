@@ -2,11 +2,11 @@ defaults:
   - data/dataset@dataset: debug
   - data/sampler@sampler: debug
   - data/dataloader@dataloader: debug
-  - model: unetrpp
+  - model: timesformer
   - loss: dice_bce
   - path: local
   - wandb: debug
-  - train: noisy_student_debug # noisy_student_debug unimatch_debug
+  - train: supervised_debug # supervised_debug noisy_student_debug unimatch_debug
   - _self_
 
 experiment:
