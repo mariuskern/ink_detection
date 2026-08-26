@@ -13,7 +13,7 @@ from models import build_model, build_loss, SupervisedModule
 def train_supervised(cfg, logger):
     output_dir = Path(cfg.path.output_dir)
 
-    fit(cfg, logger, output_dir)
+    fit(cfg, logger, output_dir, augmentation=cfg.train.aug)
 
 
 @dataclass(frozen=True)

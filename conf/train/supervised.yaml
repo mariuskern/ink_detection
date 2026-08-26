@@ -1,5 +1,6 @@
 defaults:
   - base
+  - /aug@aug: strong
 
 max_epochs: 100
 
