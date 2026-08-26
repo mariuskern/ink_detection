@@ -141,12 +141,14 @@ class SupervisedModule(pl.LightningModule):
         self._log_metric("val", "loss", loss, batch_size=self.batch_size, on_step=True, on_epoch=True, prog_bar=True)
 
         if self._export_validation_predictions_this_epoch():
-            output_r = self.interpolate_reverse(output)
-            probs = torch.sigmoid(output_r).squeeze(1).detach().float().cpu().numpy()
-            label_r = self.interpolate_reverse(label)
-            targets = label_r.squeeze(1).detach().float().cpu().numpy()
-            mask_r = self.interpolate_reverse(mask)
-            valid_masks = mask_r.squeeze(1).detach().float().cpu().numpy()
+            if self.interpolate_label:
+                output = self.interpolate_reverse(output)
+                label = self.interpolate_reverse(label)
+                mask = self.interpolate_reverse(mask)
+
+            probs = torch.sigmoid(output).squeeze(1).detach().float().cpu().numpy()
+            targets = label.squeeze(1).detach().float().cpu().numpy()
+            valid_masks = mask.squeeze(1).detach().float().cpu().numpy()
 
             has_label_cpu = has_label.cpu().numpy()
 

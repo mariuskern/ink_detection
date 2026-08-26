@@ -2,7 +2,7 @@ defaults:
   - data/dataset@dataset: debug
   - data/sampler@sampler: debug
   - data/dataloader@dataloader: debug
-  - model: timesformer
+  - model: unetrpp # timesformer unetrpp
   - loss: dice_bce
   - path: local
   - wandb: debug
