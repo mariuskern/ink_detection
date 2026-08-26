@@ -1,6 +1,8 @@
 defaults:
   - base
 
+max_epochs: 100
+
 name: supervised
 labeled:
   - 20241025145341

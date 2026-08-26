@@ -48,7 +48,9 @@ def fit(cfg, logger, output_dir, *, pseudo_label_version=None, iteration=None, a
         iteration=str(iteration) if iteration is not None else None,
         pseudo_loss_weight=cfg.train.get("pseudo_loss_weight", 0.0),
         pseudo_loss_rampup_epochs=cfg.train.get("pseudo_loss_rampup_epochs", 0),
-        threshold=cfg.train.get("threshold", 0.5)
+        threshold=cfg.train.get("threshold", 0.5),
+        interpolate_label=True if cfg.model.name == "timesformer" else False,
+        interpolation_size=cfg.model.patch_size,
     )
 
     checkpoint_callback = ModelCheckpoint(

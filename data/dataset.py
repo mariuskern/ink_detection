@@ -236,8 +236,8 @@ class InkDataset(Dataset):
         if self.transform is not None:
             tile, label, pseudo_label, mask, pseudo_mask = self.transform(tile, label, pseudo_label, mask, pseudo_mask)
 
-        tile = tile.unsqueeze(0)
-        label = label.unsqueeze(0)
+        tile = tile.unsqueeze(0) # [1, D, H, W]
+        label = label.unsqueeze(0) # [1, H, W]
         pseudo_label = pseudo_label.unsqueeze(0)
         mask = mask.unsqueeze(0)
         pseudo_mask = pseudo_mask.unsqueeze(0)
@@ -280,7 +280,9 @@ class InkDataset(Dataset):
         if "label" not in zarr_array or self.use_as_unlabeled:
             return None
 
-        return torch.from_numpy(zarr_array["label"][y:y+self.tile_size, x:x+self.tile_size]).float()
+        label = torch.from_numpy(zarr_array["label"][y:y+self.tile_size, x:x+self.tile_size]).float()
+        
+        return label
 
     def _get_pseudo_label(self, zarr_array, x, y):
         if self.pseudo_label_version is None:
@@ -294,7 +296,9 @@ class InkDataset(Dataset):
         if version not in zarr_array[group]:
             return None
 
-        return torch.from_numpy(zarr_array[group][version][y:y+self.tile_size, x:x+self.tile_size]).float()
+        label = torch.from_numpy(zarr_array[group][version][y:y+self.tile_size, x:x+self.tile_size]).float()
+
+        return label
 
     def _get_mask(self, zarr_array, x, y):
         if "mask" not in zarr_array or self.use_as_unlabeled:

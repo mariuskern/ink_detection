@@ -1,11 +1,12 @@
 import lightning as pl
 import torch
+import torch.nn.functional as F
 
 from utils import PredictionMerger, save_predictions_as_images, calculate_dice, calculate_iou
 
 
 class SupervisedModule(pl.LightningModule):
-    def __init__(self, model, loss, lr, warmup_epochs, max_epochs, weight_decay, val_img_dir, val_image_every_n_epochs, batch_size, iteration=None, pseudo_loss_weight=0.0, pseudo_loss_rampup_epochs=0, threshold=0.5):
+    def __init__(self, model, loss, lr, warmup_epochs, max_epochs, weight_decay, val_img_dir, val_image_every_n_epochs, batch_size, iteration=None, pseudo_loss_weight=0.0, pseudo_loss_rampup_epochs=0, threshold=0.5, interpolate_label=False, interpolation_size=16):
         super().__init__()
 
         self.lr = lr
@@ -19,6 +20,8 @@ class SupervisedModule(pl.LightningModule):
         self.pseudo_loss_weight = pseudo_loss_weight
         self.pseudo_loss_rampup_epochs = pseudo_loss_rampup_epochs
         self.threshold = threshold
+        self.interpolate_label = interpolate_label
+        self.interpolation_size = interpolation_size
 
         self.model = model
         self.loss = loss
@@ -49,6 +52,12 @@ class SupervisedModule(pl.LightningModule):
         has_pseudo_label = batch["has_pseudo_label"]
         # has_mask = batch["has_mask"]
         has_pseudo_mask = batch["has_pseudo_mask"]
+
+        if self.interpolate_label:
+            label = self.interpolate(label)
+            pseudo_label = self.interpolate(pseudo_label)
+            mask = self.interpolate(mask)
+            pseudo_mask = self.interpolate(pseudo_mask)
 
         output = self(tile)
 
@@ -114,6 +123,12 @@ class SupervisedModule(pl.LightningModule):
         y = batch["y"]
         shape = batch["shape"]
 
+        if self.interpolate_label:
+            label = self.interpolate(label)
+            # pseudo_label = self.interpolate(pseudo_label)
+            mask = self.interpolate(mask)
+            # pseudo_mask = self.interpolate(pseudo_mask)
+
         output = self(tile)
 
         if has_label.any():
@@ -126,9 +141,12 @@ class SupervisedModule(pl.LightningModule):
         self._log_metric("val", "loss", loss, batch_size=self.batch_size, on_step=True, on_epoch=True, prog_bar=True)
 
         if self._export_validation_predictions_this_epoch():
-            probs = torch.sigmoid(output).squeeze(1).detach().float().cpu().numpy()
-            targets = label.squeeze(1).detach().float().cpu().numpy()
-            valid_masks = mask.squeeze(1).detach().float().cpu().numpy()
+            output_r = self.interpolate_reverse(output)
+            probs = torch.sigmoid(output_r).squeeze(1).detach().float().cpu().numpy()
+            label_r = self.interpolate_reverse(label)
+            targets = label_r.squeeze(1).detach().float().cpu().numpy()
+            mask_r = self.interpolate_reverse(mask)
+            valid_masks = mask_r.squeeze(1).detach().float().cpu().numpy()
 
             has_label_cpu = has_label.cpu().numpy()
 
@@ -253,3 +271,12 @@ class SupervisedModule(pl.LightningModule):
 
     def _export_validation_predictions_this_epoch(self):
             return self.current_epoch % self.val_image_every_n_epochs == 0
+
+    def interpolate(self, x):
+        _, _, H, W = x.shape
+        x = F.interpolate(x, (H // self.interpolation_size, W // self.interpolation_size), mode="nearest")
+        return x
+
+    def interpolate_reverse(self, x):
+        x = F.interpolate(x.float(), scale_factor=self.interpolation_size, mode='bilinear').squeeze(0)
+        return x

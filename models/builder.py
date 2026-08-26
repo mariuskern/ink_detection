@@ -33,7 +33,7 @@ def build_model(cfg):
                 cfg.dataset.tile_size, # cfg.model.image_size,
                 cfg.model.patch_size,
                 cfg.dataset.depth, # cfg.model.num_frames,
-                cfg.model.num_classes,
+                # cfg.model.num_classes,
                 cfg.model.channels,
                 cfg.model.depth,
                 cfg.model.heads,
