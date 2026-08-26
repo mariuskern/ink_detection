@@ -1,7 +1,7 @@
 defaults:
   - noisy_student
 
-max_epochs: 2
+max_epochs: 1
 warmup_epochs: 0
 checkpoint_every_n_epochs: 1
 compile: false

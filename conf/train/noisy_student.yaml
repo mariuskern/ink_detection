@@ -1,15 +1,15 @@
 defaults:
   - base
-  - /aug@teacher.aug: null
+  - /aug@teacher.aug: weak
   - /aug@student.aug: strong
 
 name: noisy_student
-threshold: 0.5
-pseudo_target: soft # hard | soft
-use_confidence_mask: True
-confidence_threshold: 0.7 # 0.9
-use_uncertainty_mask: True
-uncertainty_threshold: 0.2 # 0.05
+# threshold: 0.5
+pseudo_target: hard # hard | soft
+# use_confidence_mask: True
+# confidence_threshold: 0.7 # 0.9
+# use_uncertainty_mask: True
+# uncertainty_threshold: 0.2 # 0.05
 iterations: 8
 pseudo_loss_weight: 1.0
 pseudo_loss_rampup_epochs: 0
@@ -26,3 +26,19 @@ unlabeled:
   - 20251115002740-auto_grown_20251115002740308_0_flatboi
 val:
   - 20241113090990
+
+refinement:
+  strong_threshold: 0.80
+  weak_threshold: 0.30
+  confidence_threshold: 0.70
+  uncertainty_threshold: 0.20
+  min_component_size: 20
+  opening_radius: 1
+  closing_radius: 2
+  local_window_sigma: 3.0
+  use_opening: true
+  use_closing: true
+  use_reconstruction: true
+  use_components: true
+  use_local_mean: true
+  # use_gradient: true

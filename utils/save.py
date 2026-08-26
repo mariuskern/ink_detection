@@ -16,6 +16,8 @@ def save_predictions_as_images(
     save_uncertainty=False,
     save_label=False,
     save_mask=False,
+    save_label_not_refined=False,
+    save_mask_not_refined=False,
     name_suffix=None,
     create_subfolders=True,
 ):
@@ -36,7 +38,7 @@ def save_predictions_as_images(
                 "confidence",
                 prediction.segment,
                 prediction.confidence,
-                name_suffix="",
+                name_suffix,
                 create_subfolders=True,
             )
 
@@ -46,7 +48,7 @@ def save_predictions_as_images(
                 "uncertainty",
                 prediction.segment,
                 prediction.uncertainty,
-                name_suffix="",
+                name_suffix,
                 create_subfolders=True,
             )
 
@@ -56,7 +58,7 @@ def save_predictions_as_images(
                 "pseudo_label",
                 prediction.segment,
                 prediction.pseudo_label,
-                name_suffix="",
+                name_suffix,
                 create_subfolders=True,
             )
 
@@ -66,7 +68,27 @@ def save_predictions_as_images(
                 "pseudo_mask",
                 prediction.segment,
                 prediction.pseudo_mask,
-                name_suffix="",
+                name_suffix,
+                create_subfolders=True,
+            )
+
+        if save_label_not_refined and prediction.pseudo_label_not_refined is not None:
+            _save_image(
+                output_dir,
+                "pseudo_label_not_refined",
+                prediction.segment,
+                prediction.pseudo_label_not_refined,
+                name_suffix,
+                create_subfolders=True,
+            )
+
+        if save_mask_not_refined and prediction.pseudo_mask_not_refined is not None:
+            _save_image(
+                output_dir,
+                "pseudo_mask_not_refined",
+                prediction.segment,
+                prediction.pseudo_mask_not_refined,
+                name_suffix,
                 create_subfolders=True,
             )
 
@@ -87,7 +109,7 @@ def _save_image(output_dir, name, segment, image, name_suffix, create_subfolders
     plt.close(fig)
 
 
-def save_predictions_as_zarr(data_dir, predictions, iteration, save_probability=False, save_confidence=False, save_uncertainty=False, save_label=False, save_mask=False):
+def save_predictions_as_zarr(data_dir, predictions, iteration, save_probability=False, save_confidence=False, save_uncertainty=False, save_label=False, save_mask=False, save_label_not_refined=False, save_mask_not_refined=False):
     segment_paths = get_segment_paths(data_dir)
     
     for prediction in predictions:
@@ -133,6 +155,24 @@ def save_predictions_as_zarr(data_dir, predictions, iteration, save_probability=
                 "pseudo_masks",
                 prediction.segment,
                 prediction.pseudo_mask,
+                iteration
+            )
+
+        if save_label_not_refined and prediction.pseudo_label_not_refined is not None:
+            _save_zarr(
+                segment_paths[prediction.segment],
+                "pseudo_label_not_refined",
+                prediction.segment,
+                prediction.pseudo_label_not_refined,
+                iteration
+            )
+
+        if save_mask_not_refined and prediction.pseudo_mask_not_refined is not None:
+            _save_zarr(
+                segment_paths[prediction.segment],
+                "pseudo_mask_not_refined",
+                prediction.segment,
+                prediction.pseudo_mask_not_refined,
                 iteration
             )
 

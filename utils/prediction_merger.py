@@ -6,11 +6,18 @@ import numpy as np
 @dataclass
 class Prediction:
     segment: str
+
     probability: np.ndarray
     confidence: np.ndarray | None = None
     uncertainty: np.ndarray | None = None
+
     pseudo_label: np.ndarray | None = None
     pseudo_mask: np.ndarray | None = None
+    
+    pseudo_label_not_refined: np.ndarray | None = None
+    pseudo_mask_not_refined: np.ndarray | None = None
+    
+    debug: dict | None = None
 
 
 class PredictionMerger:

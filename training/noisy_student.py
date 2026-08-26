@@ -33,13 +33,31 @@ def generate_pseudo_labels(cfg, model, iteration, output_dir):
         predict_loader = build_dataloader(cfg, predict_dataset, None)
 
         results = predict(model, predict_loader, device=cfg.train.devices)
+        # results = postprocess_predictions(
+        #     results,
+        #     cfg.train.threshold,
+        #     cfg.train.confidence_threshold,
+        #     cfg.train.uncertainty_threshold,
+        #     use_confidence_mask=cfg.train.use_confidence_mask,
+        #     use_uncertainty_mask=cfg.train.use_uncertainty_mask,
+        # )
         results = postprocess_predictions(
             results,
-            cfg.train.threshold,
-            cfg.train.confidence_threshold,
-            cfg.train.uncertainty_threshold,
-            use_confidence_mask=cfg.train.use_confidence_mask,
-            use_uncertainty_mask=cfg.train.use_uncertainty_mask,
+            strong_threshold=cfg.train.refinement.strong_threshold,
+            weak_threshold=cfg.train.refinement.weak_threshold,
+            confidence_threshold=cfg.train.refinement.confidence_threshold,
+            uncertainty_threshold=cfg.train.refinement.uncertainty_threshold,
+            # use_confidence_mask=cfg.train.refinement.use_confidence_mask,
+            # use_uncertainty_mask=cfg.train.refinement.use_uncertainty_mask,
+            min_component_size=cfg.train.refinement.min_component_size,
+            opening_radius=cfg.train.refinement.opening_radius,
+            closing_radius=cfg.train.refinement.closing_radius,
+            local_window_sigma=cfg.train.refinement.local_window_sigma,
+            use_opening=cfg.train.refinement.use_opening,
+            use_closing=cfg.train.refinement.use_closing,
+            use_reconstruction=cfg.train.refinement.use_reconstruction,
+            use_components=cfg.train.refinement.use_components,
+            use_local_mean=cfg.train.refinement.use_local_mean,
         )
 
         save_predictions_as_images(
@@ -49,7 +67,9 @@ def generate_pseudo_labels(cfg, model, iteration, output_dir):
             save_confidence=True,
             save_uncertainty=True,
             save_label=True,
-            save_mask=True
+            save_mask=True,
+            save_label_not_refined=True,
+            save_mask_not_refined=True,
         )
 
         save_predictions_as_zarr(

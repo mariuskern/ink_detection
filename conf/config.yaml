@@ -6,7 +6,7 @@ defaults:
   - loss: dice_bce
   - path: alex
   - wandb: default
-  - train: supervised # supervised noisy_student unimatch
+  - train: noisy_student # supervised noisy_student unimatch
   - _self_
 
 experiment:
