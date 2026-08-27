@@ -1,6 +1,6 @@
 defaults:
   - base
-  - /aug@teacher.aug: weak
+  - /aug@teacher.aug: none
   - /aug@student.aug: strong
 
 name: noisy_student

@@ -20,4 +20,6 @@ timm
 einops
 triton; platform_system != "Windows"
 matplotlib
-timesformer_pytorch 
+timesformer_pytorch
+scipy
+scikit-image

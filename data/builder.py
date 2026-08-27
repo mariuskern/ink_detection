@@ -49,6 +49,9 @@ def build_augmentation(aug):
             case _:
                 raise ValueError(f"Unknown transform: {t.name}")
 
+    if not transforms:
+        return v2.Identity()
+
     return v2.Compose(transforms)
 
 

@@ -2,7 +2,7 @@ defaults:
   - base
   - /aug@aug: strong
 
-max_epochs: 100
+max_epochs: 250
 
 name: supervised
 labeled:
