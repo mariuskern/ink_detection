@@ -91,7 +91,7 @@ class LabelRefiner:
 
         mask_not_refined = reliable.copy()
 
-        strong &= reliable
+        # strong &= reliable
 
         # ---------------------------------------------------------
         # 3. Morphological cleanup of strong seeds

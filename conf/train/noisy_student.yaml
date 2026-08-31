@@ -36,9 +36,9 @@ refinement:
   opening_radius: 1
   closing_radius: 2
   local_window_sigma: 3.0
-  use_opening: true
-  use_closing: true
-  use_reconstruction: true
-  use_components: true
-  use_local_mean: true
+  use_opening: false
+  use_closing: false
+  use_reconstruction: false
+  use_components: false
+  use_local_mean: false
   # use_gradient: true
