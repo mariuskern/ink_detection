@@ -18,7 +18,7 @@ SEGMENTS = [
     # {
     #     "scroll": "9b",
     #     "segment": "auto_grown_20250919055754487_inp_hr_2um",
-    #     "prefix": "ink/0009b/auto_grown_20250919055754487_inp_hr_2um/auto_grown_20250919055754487_inp_hr_2um.zarr",
+    #     "volume": "ink/0009b/auto_grown_20250919055754487_inp_hr_2um/auto_grown_20250919055754487_inp_hr_2um.zarr",
     #     "label": "ink/0009b/auto_grown_20250919055754487_inp_hr_2um/auto_grown_20250919055754487_inp_hr_2um_inklabels.tif",
     #     "mask": "ink/0009b/auto_grown_20250919055754487_inp_hr_2um/auto_grown_20250919055754487_inp_hr_2um_supervision_mask.tif",
     #     "meta": "ink/0009b/auto_grown_20250919055754487_inp_hr_2um/meta.json",
@@ -26,7 +26,7 @@ SEGMENTS = [
     # {
     #     "scroll": "500p2",
     #     "segment": "-1",
-    #     "prefix": "ink/0500p2/-1/-1.zarr",
+    #     "volume": "ink/0500p2/-1/-1.zarr",
     #     "label": "ink/0500p2/-1/-1_inklabels.tif",
     #     "mask": "ink/0500p2/-1/-1_supervision_mask.tif",
     #     "meta": "ink/0500p2/-1/meta.json",
@@ -34,7 +34,7 @@ SEGMENTS = [
     # {
     #     "scroll": "p343p",
     #     "segment": "20250511003658",
-    #     "prefix": "ink/unused/P343p/20250511003658/20250511003658.zarr",
+    #     "volume": "ink/unused/P343p/20250511003658/20250511003658.zarr",
     #     "label": "ink/unused/P343p/20250511003658/20250511003658_inklabels.tif",
     #     "mask": "ink/unused/P343p/20250511003658/20250511003658_supervision_mask.tif",
     #     "meta": "ink/unused/P343p/20250511003658/meta.json",
@@ -43,7 +43,7 @@ SEGMENTS = [
     # {
     #     "scroll": "1667",
     #     "segment": "w013_20240304141531_2um",
-    #     "prefix": "ink/1667/w013_20240304141531_2um/w013_20240304141531_2um.zarr",
+    #     "volume": "ink/1667/w013_20240304141531_2um/w013_20240304141531_2um.zarr",
     #     "label": "ink/1667/w013_20240304141531_2um/w013_20240304141531_2um_inklabels.zarr",
     #     "mask": "ink/1667/w013_20240304141531_2um/w013_20240304141531_2um_supervision_mask.zarr",
     #     "meta": "ink/1667/w013_20240304141531_2um/meta.json",
@@ -51,7 +51,7 @@ SEGMENTS = [
     # {
     #     "scroll": "1667",
     #     "segment": "w018_20240304144031_2um",
-    #     "prefix": "ink/1667/w018_20240304144031_2um/w018_20240304144031_2um.zarr",
+    #     "volume": "ink/1667/w018_20240304144031_2um/w018_20240304144031_2um.zarr",
     #     "label": "ink/1667/w018_20240304144031_2um/w018_20240304144031_2um_inklabels.zarr",
     #     "mask": "ink/1667/w018_20240304144031_2um/w018_20240304144031_2um_supervision_mask.zarr",
     #     "meta": "ink/1667/w018_20240304144031_2um/meta.json",
@@ -59,7 +59,7 @@ SEGMENTS = [
     # {
     #     "scroll": "1667",
     #     "segment": "w023_20240304161941_2um",
-    #     "prefix": "ink/1667/w023_20240304161941_2um/w023_20240304161941_2um.zarr",
+    #     "volume": "ink/1667/w023_20240304161941_2um/w023_20240304161941_2um.zarr",
     #     "label": "ink/1667/w023_20240304161941_2um/w023_20240304161941_2um_inklabels.zarr",
     #     "mask": "ink/1667/w023_20240304161941_2um/w023_20240304161941_2um_supervision_mask.zarr",
     #     "meta": "ink/1667/w023_20240304161941_2um/meta.json",
@@ -67,7 +67,8 @@ SEGMENTS = [
     {
         "scroll": "1667",
         "segment": "w028_20251208130119156_2um",
-        "prefix": "ink/1667/w028_20251208130119156_2um/w028_20251208130119156_2um.zarr",
+        "volume": "ink/1667/w028_20251208130119156_2um/w028_20251208130119156_2um.zarr",
+        # "volume": None,
         "label": "ink/1667/w028_20251208130119156_2um/w028_20251208130119156_2um_inklabels.zarr",
         "mask": "ink/1667/w028_20251208130119156_2um/w028_20251208130119156_2um_supervision_mask.zarr",
         "meta": "ink/1667/w028_20251208130119156_2um/meta.json",
@@ -75,7 +76,7 @@ SEGMENTS = [
     # {
     #     "scroll": "1667",
     #     "segment": "w029_20251212185248662_2um",
-    #     "prefix": "ink/1667/w029_20251212185248662_2um/w029_20251212185248662_2um.zarr",
+    #     "volume": "ink/1667/w029_20251212185248662_2um/w029_20251212185248662_2um.zarr",
     #     "label": "ink/1667/w029_20251212185248662_2um/w029_20251212185248662_2um_inklabels.zarr",
     #     "mask": "ink/1667/w029_20251212185248662_2um/w029_20251212185248662_2um_supervision_mask.zarr",
     #     "meta": "ink/1667/w029_20251212185248662_2um/meta.json",
@@ -83,7 +84,7 @@ SEGMENTS = [
     # {
     #     "scroll": "1667",
     #     "segment": "w031_2025122323_2um",
-    #     "prefix": "ink/1667/w031_2025122323_2um/w031_2025122323_2um.zarr",
+    #     "volume": "ink/1667/w031_2025122323_2um/w031_2025122323_2um.zarr",
     #     "label": "ink/1667/w031_2025122323_2um/w031_2025122323_2um_inklabels.zarr",
     #     "mask": "ink/1667/w031_2025122323_2um/w031_2025122323_2um_supervision_mask.zarr",
     #     "meta": "ink/1667/w031_2025122323_2um/meta.json",
@@ -108,7 +109,6 @@ def list_folder(prefix, max_retries=10):
                 if item.__class__.__name__ == "BucketFile":
                     files.append(item)
             return files
-
         except HfHubHTTPError as e:
             if e.response is not None and e.response.status_code == 429:
                 wait_time = min(60 * (attempt + 1), 300)
@@ -178,7 +178,7 @@ def download_single_file(file, output_path, max_retries=10):
     raise RuntimeError(f"Download fehlgeschlagen: {file.path}")
 
 
-def download_zarr_store(zarr_prefix, output_dir):
+def download_zarr_store(zarr_volume, output_dir):
     """
     Download a complete Zarr store.
 
@@ -187,14 +187,14 @@ def download_zarr_store(zarr_prefix, output_dir):
     """
 
     print("")
-    print(f"Liste Zarr-Dateien auf: " f"{zarr_prefix}")
+    print(f"Liste Zarr-Dateien auf: " f"{zarr_volume}")
 
-    zarr_files = list_folder(zarr_prefix)
+    zarr_files = list_folder(zarr_volume)
 
     print(f"  {len(zarr_files):,} " f"Zarr-Dateien gefunden.")
 
     if not zarr_files:
-        raise FileNotFoundError(f"Keine Dateien für Zarr gefunden: " f"{zarr_prefix}")
+        raise FileNotFoundError(f"Keine Dateien für Zarr gefunden: " f"{zarr_volume}")
 
     batches = [zarr_files[i : i + BATCH_SIZE] for i in range(0, len(zarr_files), BATCH_SIZE)]
 
@@ -204,7 +204,7 @@ def download_zarr_store(zarr_prefix, output_dir):
         download_list = []
 
         for file in batch:
-            relative_path = Path(file.path).relative_to(Path(zarr_prefix))
+            relative_path = Path(file.path).relative_to(Path(zarr_volume))
             destination = output_dir / relative_path
             destination.parent.mkdir(parents=True, exist_ok=True)
 
@@ -228,7 +228,7 @@ def download_zarr_store(zarr_prefix, output_dir):
                 else:
                     raise
 
-        raise RuntimeError(f"Download-Batch fehlgeschlagen: " f"{zarr_prefix}")
+        raise RuntimeError(f"Download-Batch fehlgeschlagen: " f"{zarr_volume}")
 
     download_success = True
 
@@ -247,7 +247,7 @@ def download_zarr_store(zarr_prefix, output_dir):
                 print(f"ERROR: {e}")
 
     if not download_success:
-        raise RuntimeError(f"Zarr-Download fehlgeschlagen: " f"{zarr_prefix}")
+        raise RuntimeError(f"Zarr-Download fehlgeschlagen: " f"{zarr_volume}")
 
     print(f"Zarr gespeichert: {output_dir}")
 
@@ -362,7 +362,7 @@ def convert_to_png(input_path, output_file):
                 f"Available arrays/groups: {available}"
             )
 
-        image = np.asarray(z["0"])
+        image = np.asarray(z["0"][32])
     else:
         raise ValueError(f"Nicht unterstütztes Format: " f"{input_path}")
 
@@ -371,13 +371,18 @@ def convert_to_png(input_path, output_file):
     if image.ndim != 2:
         raise ValueError(f"Erwartetes 2D-Bild, aber erhalten: " f"{image.shape}")
 
-    if image.dtype not in (np.uint8, np.uint16):
-        print(f"WARNING: Unerwarteter Datentyp {image.dtype}. Konvertiere nach uint8.")
+    # if image.dtype not in (np.uint8, np.uint16):
+    #     print(f"WARNING: Unerwarteter Datentyp {image.dtype}. Konvertiere nach uint8.")
 
-        if image.max() > 0:
-            image = (image.astype(np.float32) / image.max() * 255).astype(np.uint8)
-        else:
-            image = image.astype(np.uint8)
+    #     if image.max() > 0:
+    #         image = (image.astype(np.float32) / image.max() * 255).astype(np.uint8)
+    #     else:
+    #         image = image.astype(np.uint8)
+
+    if image.max() > 0:
+        image = (image.astype(np.float32) / image.max() * 255).astype(np.uint8)
+    else:
+        image = image.astype(np.uint8)
 
     Image.fromarray(image).save(output_file, format="PNG")
 
@@ -402,11 +407,11 @@ def create_metadata(segment_info, zarr_files, output_segment_dir):
             "bucket": BUCKET,
             "scroll": segment_info["scroll"],
             "segment": segment,
-            "zarr_source": segment_info["prefix"],
+            "zarr_source": segment_info["volume"],
             "label_source": segment_info.get("label"),
             "mask_source": segment_info.get("mask"),
             "meta_source": segment_info.get("meta"),
-            "huggingface_url": f"https://huggingface.co/buckets/{BUCKET}/tree/main/{segment_info['prefix']}",
+            "huggingface_url": f"https://huggingface.co/buckets/{BUCKET}/tree/main/{segment_info['volume']}",
         },
         "local": {
             "category": "labeled" if segment_info.get("label") is not None else "unlabeled",
@@ -608,23 +613,26 @@ def process_segment(segment_info):
     segment_dir = label_dir / segment
     segment_dir.mkdir(parents=True, exist_ok=True)
 
+    zarr_files = []
+
     # --------------------------------------------------------
     # Main Zarr
     # --------------------------------------------------------
 
-    zarr_dir = segment_dir / f"{segment}.zarr"
+    if segment_info.get("volume") is not None:
+        zarr_dir = segment_dir / f"{segment}.zarr"
 
-    print("")
-    print("=" * 70)
-    print(f"Scroll:   {scroll}")
-    print(f"Segment:  {segment}")
-    print(f"Status:   {label_type}")
-    print(f"Output:   {segment_dir}")
-    print("=" * 70)
-    print("")
+        print("")
+        print("=" * 70)
+        print(f"Scroll:   {scroll}")
+        print(f"Segment:  {segment}")
+        print(f"Status:   {label_type}")
+        print(f"Output:   {segment_dir}")
+        print("=" * 70)
+        print("")
 
-    zarr_files = download_zarr_store(segment_info["prefix"], zarr_dir)
-    print_zarr_shapes(zarr_dir)
+        zarr_files.extend(download_zarr_store(segment_info["volume"], zarr_dir))
+        print_zarr_shapes(zarr_dir)
 
     # --------------------------------------------------------
     # Label
@@ -640,13 +648,12 @@ def process_segment(segment_info):
         if label_source.lower().endswith(".zarr"):
             temporary_label = segment_dir / f"{segment}_inklabels.zarr"
 
-            download_zarr_store(label_source, temporary_label)
+            zarr_files.extend(download_zarr_store(label_source, temporary_label))
             print_zarr_shapes(temporary_label)
             convert_to_png(temporary_label,output_label)
 
             if temporary_label.exists():
                 shutil.rmtree(temporary_label)
-
         else:
             label_file = find_file(label_source)
             temporary_label = segment_dir / f"{segment}_inklabels.tif"
@@ -671,13 +678,12 @@ def process_segment(segment_info):
         if mask_source.lower().endswith(".zarr"):
             temporary_mask = segment_dir / f"{segment}_supervision_mask.zarr"
 
-            download_zarr_store(mask_source, temporary_mask)
+            zarr_files.extend(download_zarr_store(mask_source, temporary_mask))
             print_zarr_shapes(temporary_mask)
             convert_to_png(temporary_mask, output_mask)
 
             if temporary_mask.exists():
                 shutil.rmtree(temporary_mask)
-
         else:
             mask_file = find_file(mask_source)
             temporary_mask = segment_dir / f"{segment}_supervision_mask.tif"

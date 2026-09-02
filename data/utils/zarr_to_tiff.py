@@ -80,6 +80,9 @@ Optional arguments:
 
     --overwrite
         Overwrite existing TIFF files.
+    
+    --no-compression
+        Disable ZSTD compression.
 """
 
 
@@ -118,6 +121,19 @@ def _get_arguments():
         "--overwrite",
         action="store_true",
         help="Overwrite existing TIFF files and copied files.",
+    )
+
+    # parser.add_argument(
+    #     "--compression",
+    #     type=lambda x: x.lower() == "true",
+    #     default=True,
+    #     help="Use ZSTD compression (true/false, default: true).",
+    # )
+
+    parser.add_argument(
+        "--no-compression",
+        action="store_true",
+        help="Disable ZSTD compression.",
     )
 
     return parser.parse_args()
@@ -183,7 +199,7 @@ def copy_additional_files(input_segment_dir, output_segment_dir, zarr_path, over
     return copied_files
 
 
-def convert_segment(input_segment_dir, output_segment_dir, zarr_path, prefix, digits, overwrite):
+def convert_segment(input_segment_dir, output_segment_dir, zarr_path, prefix, digits, overwrite, compression):
     """
     Convert one Zarr segment into TIFF slices and copy
     all additional files to the corresponding output directory.
@@ -286,7 +302,16 @@ def convert_segment(input_segment_dir, output_segment_dir, zarr_path, prefix, di
 
         image = np.asarray(volume[i])
 
-        tifffile.imwrite(output_file, image)
+        # print(image.dtype, image.min(), image.max())
+
+        # tifffile.imwrite(output_file, image)
+
+        # if compression:
+        #     tifffile.imwrite(output_file, image, compression="zstd", bigtiff=True)
+        # else:
+        #     tifffile.imwrite(output_file, image, bigtiff=True)
+
+        tifffile.imwrite(output_file, image, compression=compression, bigtiff=True)
 
     print("")
     print(f"Finished: {segment_name}")
@@ -370,6 +395,7 @@ def main(args):
                 prefix=args.prefix,
                 digits=args.digits,
                 overwrite=args.overwrite,
+                compression="zstd" if not args.no_compression else None
             )
 
             successful += 1
