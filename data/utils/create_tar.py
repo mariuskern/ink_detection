@@ -32,23 +32,24 @@ def main(args):
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
-    for subfolder in args.input_dir.iterdir():
-        for segment_folder in subfolder.iterdir():
-            if not segment_folder.is_dir():
-                continue
+    for scroll in args.input_dir.iterdir():
+        for category in scroll.iterdir():
+            for segment_folder in category.iterdir():
+                if not segment_folder.is_dir():
+                    continue
 
-            output_subdir = args.output_dir / subfolder.name
-            output_subdir.mkdir(parents=True, exist_ok=True)
+                output_subdir = args.output_dir / scroll.name / category.name
+                output_subdir.mkdir(parents=True, exist_ok=True)
 
-            output_tar = output_subdir / f"{segment_folder.name}.tar.gz"
+                output_tar = output_subdir / f"{segment_folder.name}.tar.gz"
 
-            print(f"Creating archive: {output_tar}")
+                print(f"Creating archive: {output_tar}")
 
-            with tarfile.open(output_tar, "w:gz") as tar:
-                tar.add(
-                    segment_folder,
-                    arcname=segment_folder.name,
-                )
+                with tarfile.open(output_tar, "w:gz") as tar:
+                    tar.add(
+                        segment_folder,
+                        arcname=segment_folder.name,
+                    )
 
     print("Finished creating all archives.")
 

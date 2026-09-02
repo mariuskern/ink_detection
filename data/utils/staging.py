@@ -45,21 +45,22 @@ def main():
     segments = set(map(str, cfg.train.labeled)) | set(map(str, cfg.train.val)) | set(map(str, getattr(cfg.train, "unlabeled", []) or []))
 
     tasks = []
-    for category in stage_dir.iterdir():  # labeled/, unlabeled/, ...
-        if not category.is_dir():
-            continue
-
-        tar_dest_folder = data_dir.parent / stage_dir.name / category.name
-        zarr_dest_folder = data_dir / category.name
-        # target_category.mkdir(parents=True, exist_ok=True)
-
-        for archive in category.glob("*.tar.gz"):
-            segment_name = archive.name.removesuffix(".tar.gz")
-
-            if segment_name not in segments:
+    for scroll in stage_dir.iterdir():
+        for category in scroll.iterdir():  # labeled/, unlabeled/, ...
+            if not category.is_dir():
                 continue
 
-            tasks.append((archive, tar_dest_folder, zarr_dest_folder))
+            tar_dest_folder = data_dir.parent / stage_dir.name / scroll.name / category.name
+            zarr_dest_folder = data_dir / scroll.name / category.name
+            # target_category.mkdir(parents=True, exist_ok=True)
+
+            for archive in category.glob("*.tar.gz"):
+                segment_name = archive.name.removesuffix(".tar.gz")
+
+                if segment_name not in segments:
+                    continue
+
+                tasks.append((archive, tar_dest_folder, zarr_dest_folder))
 
     with ThreadPoolExecutor(max_workers=8) as executor:
         futures = [executor.submit(copy_and_extract_archive, src_file, tar_dest_folder, zarr_dest_folder) for src_file, tar_dest_folder, zarr_dest_folder in tasks]

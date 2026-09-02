@@ -2,7 +2,6 @@ import argparse
 from pathlib import Path
 from PIL import Image
 import json
-# from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import numpy as np
 import tifffile
@@ -15,43 +14,53 @@ Image.MAX_IMAGE_PIXELS = None
 """
 Conversion pipeline for transforming volumetric TIFF image stacks into Zarr datasets.
 
-The script processes individual sample folders containing 3D TIFF image stacks
-and optional annotation images (labels and masks). TIFF slices are read
-sequentially and written directly into a chunked Zarr array, avoiding loading
-the complete volume into memory. Spatial dimensions are aligned between image
-and annotation data by cropping all arrays to the common minimum height and
-width.
+The script processes sample folders containing 3D TIFF image stacks and optional
+annotation images (labels and masks). TIFF slices are read individually and
+written directly into a chunked Zarr array, avoiding loading the complete
+volume into memory. Spatial dimensions are aligned by cropping the volume,
+label, and mask data to their common minimum height and width.
 
-The generated Zarr stores contain separate arrays for:
+For each processed segment, the script creates a Zarr store containing:
+
     - volume: 3D image data with shape (Z, Y, X)
     - label: 2D binary annotation map with shape (Y, X), if available
     - mask: 2D binary mask with shape (Y, X), if available
 
-Additionally, metadata describing original and processed array shapes as well
-as chunk sizes is stored as a JSON file. Chunked Zarr storage enables efficient
-partial loading of large volumetric datasets, making the format suitable for
-out-of-core processing and deep learning workflows on large microscopy volumes.
+Metadata describing the original and processed array shapes as well as the
+selected Zarr chunk size is stored in a separate JSON file.
 
-The input directory is expected to contain sample folders with the following
-structure:
+The input directory is expected to contain scroll, split, and segment
+subdirectories with the following structure:
 
     data/
-    └── labeled/
-        └── segment/
-            ├── layers/
-            │   ├── 000.tif
-            │   ├── 001.tif
-            │   └── ...
-            ├── segment_inklabels.png   (optional)
-            └── segment_mask.png        (optional)
+    ├── scroll_1/
+    │   ├── labeled/
+    │   │   └── segment_1/
+    │   │       ├── layers/
+    │   │       │   ├── 000.tif
+    │   │       │   ├── 001.tif
+    │   │       │   └── ...
+    │   │       ├── segment_1_inklabels.png   (optional)
+    │   │       └── segment_1_mask.png        (optional)
+    │   └── unlabeled/
+    │       └── ...
+    └── scroll_2/
+        └── ...
 
-The output directory will contain one Zarr store per processed segment:
+The output directory preserves the scroll, split, and segment directory
+structure. Each processed segment contains its metadata file and Zarr store:
 
     data/
-    └── labeled/
-        └── segment/
-            ├── metadata.json
-            └── segment.zarr/
+    └── zarr_data/
+        ├── scroll_1/
+        │   ├── labeled/
+        │   │   └── segment_1/
+        │   │       ├── metadata.json
+        │   │       └── segment_1.zarr/
+        │   └── unlabeled/
+        │       └── ...
+        └── scroll_2/
+            └── ...
 
 Usage:
     python tiff_to_zarr.py <input_dir> <output_dir>
@@ -61,18 +70,19 @@ Example:
 
 Optional arguments:
     --segments SEGMENT [SEGMENT ...]
-        Convert only the specified sample folders.
-        By default, all available segments in the input directory are processed.
+        Convert only the specified segment folders.
+        By default, all segments found in the input directory are processed.
 
     --chunks Z Y X
         Define the Zarr chunk size for the volumetric image data.
-        The default chunk size is optimized for 3D volume access.
+        The default is 1 x 512 x 512.
 
 Example with optional arguments:
     python tiff_to_zarr.py ./tiff_data ./zarr_data \
-        --segments sample_1 sample_2 \
+        --segments segment_1 segment_2 \
         --chunks 1 512 512
 """
+
 
 
 def _get_arguments():
@@ -111,25 +121,6 @@ def _get_arguments():
     args = parser.parse_args()
 
     return args
-
-
-# def _get_volume(folder):
-#     layers = folder / "layers"
-
-#     files = sorted(layers.glob("*.tif"))
-
-#     if not files:
-#         print(f"No TIFF files found in folder: {folder.name}")
-#         return None
-
-#     # with ThreadPoolExecutor() as executor:
-#     #     slices = list(executor.map(tifffile.imread, files))
-
-#     # volume = np.stack(slices)
-    
-#     volume = np.stack([tifffile.imread(f) for f in files])
-
-#     return volume
 
 
 def _get_volume_files(folder):
@@ -174,65 +165,45 @@ def _load_binary_image(path):
     return binary_image
 
 
-# def _crop_images(volume, label=None, mask=None):
-#     arrays = [volume]
-
-#     if label is not None:
-#         arrays.append(label)
-    
-#     if mask is not None:
-#         arrays.append(mask)
-
-#     h_min = min(arr.shape[-2] for arr in arrays)
-#     w_min = min(arr.shape[-1] for arr in arrays)
-
-#     volume = volume[:, :h_min, :w_min]
-#     label = None if label is None else label[:h_min, :w_min]
-#     mask = None if mask is None else mask[:h_min, :w_min]
-
-#     return volume, label, mask
-
-
-# def _load_and_crop(args):
-#     index, file, h_min, w_min = args
-
-#     img = tifffile.imread(file)
-#     img = img[:h_min, :w_min]
-
-#     return index, img
-
-
 def main(args):
     if args.input.resolve() == args.output.resolve():
         raise ValueError("Input and output directory must be different.")
 
     args.output.mkdir(parents=True, exist_ok=True)
 
-    segment_roots = [p for p in args.input.iterdir() if p.is_dir()]
+    # segment_roots = [p for p in args.input.iterdir() if p.is_dir()]
 
-    if args.segments:
-        folders = []
-        for segment in args.segments:
-            found = False
+    # if args.segments:
+    #     folders = []
+    #     for segment in args.segments:
+    #         found = False
 
-            for root in segment_roots:
-                segment_path = root / segment
+    #         for root in segment_roots:
+    #             segment_path = root / segment
 
-                if segment_path.is_dir():
-                    folders.append(segment_path)
-                    found = True
+    #             if segment_path.is_dir():
+    #                 folders.append(segment_path)
+    #                 found = True
 
-            if not found:
-                print(f"Warning: Segment '{segment}' was not found in any subfolder of '{args.input}'. Skipping.")
-    else:
-        folders = []
-        for root in segment_roots:
-            folders.extend([p for p in root.iterdir() if p.is_dir()])
+    #         if not found:
+    #             print(f"Warning: Segment '{segment}' was not found in any subfolder of '{args.input}'. Skipping.")
+    # else:
+    #     folders = []
+    #     for root in segment_roots:
+    #         folders.extend([p for p in root.iterdir() if p.is_dir()])
+
+    folders = []
+    for scroll in args.input.iterdir():
+        for split in scroll.iterdir():
+            for segment in split.iterdir():
+                if segment.name in args.segments or args.segments is None:
+                    folders.append(segment)
 
     for folder in folders:
         print(f"Processing folder: {folder.name}")
 
-        output_path = args.output / folder.parent.name / folder.name
+        # output_path = args.output / folder.parent.name / folder.name
+        output_path = args.output / folder.parent.parent.name / folder.parent.name / folder.name
 
         if output_path.exists():
             print(f"Folder already exists for segment: {folder.name}. Skipping.")
@@ -311,25 +282,6 @@ def main(args):
         for i, file in tqdm(enumerate(volume_files), desc="Loading and saving TIFFs", total=len(volume_files)):
             img = tifffile.imread(file)
             volume_ds[i] = img[:h_min, :w_min]
-
-        # tasks = [
-        #     (i, file, h_min, w_min)
-        #     for i, file in enumerate(volume_files)
-        # ]
-
-        # with ThreadPoolExecutor(max_workers=8) as executor:
-        #     futures = [
-        #         executor.submit(_load_and_crop, task)
-        #         for task in tasks
-        #     ]
-
-        #     for future in tqdm(
-        #         as_completed(futures),
-        #         total=len(futures),
-        #         desc="Loading TIFFs"
-        #     ):
-        #         i, img = future.result()
-        #         volume_ds[i] = img
 
 
         # Save label

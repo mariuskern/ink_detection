@@ -104,10 +104,11 @@ def _get_arguments():
         "--tile-sizes",
         type=int,
         nargs="+",
-        default=[64, 128, 192, 256, 512, 1024],
+        # default=[64, 128, 192, 256, 512, 1024],
+        default=[64, 64, 128, 128, 192, 192, 256, 256, 512, 512, 1024, 1024],
         help=(
             "Square tile sizes. "
-            "Example: 64 128 192 256 512 1024"
+            "Example: 64 128 192 256 512 1024" # 64 64 128 128 192 192 256 256 512 512 1024 1024
         ),
     )
 
@@ -115,7 +116,8 @@ def _get_arguments():
         "--strides",
         type=int,
         nargs="+",
-        default=None,
+        # default=None,
+        default=[16, 32, 32, 64, 46, 96, 64, 128, 128, 256, 256, 512],
         help=(
             "Stride for each tile size. "
             "If omitted, stride equals half the tile size."
@@ -137,42 +139,43 @@ def main(args):
     if len(tile_sizes) != len(strides):
         raise ValueError("tile_sizes and strides must have same length")
 
-    for subfolder in sorted(args.input.iterdir()):
-        for segment_folder in sorted(subfolder.iterdir()):
-            if not segment_folder.is_dir():
-                continue
-
-            print(f"Processing segment: {segment_folder.name}")
-
-            z = zarr.open(segment_folder / f"{segment_folder.name}.zarr", mode="r")
-
-            volume_shape = z["volume"].shape
-            h, w = volume_shape[-2:]
-            label = z["label"] if "label" in z else None
-            mask = z["mask"] if "mask" in z else None
-
-            if label is None:
-                print(f"Segment {segment_folder.name}: no label found")
-            if mask is None:
-                print(f"Segment {segment_folder.name}: no mask found")
-
-            output_path = segment_folder / "tiles"
-            output_path.mkdir(parents=True, exist_ok=True)
-
-            for size, stride in zip(tile_sizes, strides):
-                npy_file = segment_folder / "tiles" / f"tile_size_{size}_stride_{stride}.npy"
-                csv_file = segment_folder / "tiles" / f"tile_size_{size}_stride_{stride}.csv"
-            
-                if npy_file.exists():
-                    print(f"Tile (size: {size}, stride: {stride}) already exists for segment: {segment_folder.name}. Skipping.")
+    for scroll in args.input.iterdir():
+        for category in scroll.iterdir():
+            for segment_folder in category.iterdir():
+                if not segment_folder.is_dir():
                     continue
+
+                print(f"Processing segment: {segment_folder.name}")
+
+                z = zarr.open(segment_folder / f"{segment_folder.name}.zarr", mode="r")
+
+                volume_shape = z["volume"].shape
+                h, w = volume_shape[-2:]
+                label = z["label"] if "label" in z else None
+                mask = z["mask"] if "mask" in z else None
+
+                if label is None:
+                    print(f"Segment {segment_folder.name}: no label found")
+                if mask is None:
+                    print(f"Segment {segment_folder.name}: no mask found")
+
+                output_path = segment_folder / "tiles"
+                output_path.mkdir(parents=True, exist_ok=True)
+
+                for size, stride in zip(tile_sizes, strides):
+                    npy_file = segment_folder / "tiles" / f"tile_size_{size}_stride_{stride}.npy"
+                    csv_file = segment_folder / "tiles" / f"tile_size_{size}_stride_{stride}.csv"
                 
-                l = get_tiles(label, mask, size, stride, segment_folder.name, h, w)
-                save_tiles(l, npy_file, csv_file)
+                    if npy_file.exists():
+                        print(f"Tile (size: {size}, stride: {stride}) already exists for segment: {segment_folder.name}. Skipping.")
+                        continue
+                    
+                    l = get_tiles(label, mask, size, stride, segment_folder.name, h, w)
+                    save_tiles(l, npy_file, csv_file)
 
-                print(f"Saved {len(l)} tiles")
+                    print(f"Saved {len(l)} tiles")
 
-            print("")
+                print("")
 
 
 if __name__ == "__main__":
