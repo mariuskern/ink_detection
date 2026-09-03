@@ -15,14 +15,14 @@ from huggingface_hub.errors import HfHubHTTPError
 BUCKET = "scrollprize/datasets"
 
 SEGMENTS = [
-    # {
-    #     "scroll": "9b",
-    #     "segment": "auto_grown_20250919055754487_inp_hr_2um",
-    #     "volume": "ink/0009b/auto_grown_20250919055754487_inp_hr_2um/auto_grown_20250919055754487_inp_hr_2um.zarr",
-    #     "label": "ink/0009b/auto_grown_20250919055754487_inp_hr_2um/auto_grown_20250919055754487_inp_hr_2um_inklabels.tif",
-    #     "mask": "ink/0009b/auto_grown_20250919055754487_inp_hr_2um/auto_grown_20250919055754487_inp_hr_2um_supervision_mask.tif",
-    #     "meta": "ink/0009b/auto_grown_20250919055754487_inp_hr_2um/meta.json",
-    # },
+    {
+        "scroll": "9b",
+        "segment": "auto_grown_20250919055754487_inp_hr_2um",
+        "volume": "ink/0009b/auto_grown_20250919055754487_inp_hr_2um/auto_grown_20250919055754487_inp_hr_2um.zarr",
+        "label": "ink/0009b/auto_grown_20250919055754487_inp_hr_2um/auto_grown_20250919055754487_inp_hr_2um_inklabels.tif",
+        "mask": "ink/0009b/auto_grown_20250919055754487_inp_hr_2um/auto_grown_20250919055754487_inp_hr_2um_supervision_mask.tif",
+        "meta": "ink/0009b/auto_grown_20250919055754487_inp_hr_2um/meta.json",
+    },
     # {
     #     "scroll": "500p2",
     #     "segment": "-1",
@@ -39,6 +39,7 @@ SEGMENTS = [
     #     "mask": "ink/unused/P343p/20250511003658/20250511003658_supervision_mask.tif",
     #     "meta": "ink/unused/P343p/20250511003658/meta.json",
     # },
+
 
     # {
     #     "scroll": "1667",
@@ -64,15 +65,15 @@ SEGMENTS = [
     #     "mask": "ink/1667/w023_20240304161941_2um/w023_20240304161941_2um_supervision_mask.zarr",
     #     "meta": "ink/1667/w023_20240304161941_2um/meta.json",
     # },
-    {
-        "scroll": "1667",
-        "segment": "w028_20251208130119156_2um",
-        "volume": "ink/1667/w028_20251208130119156_2um/w028_20251208130119156_2um.zarr",
-        # "volume": None,
-        "label": "ink/1667/w028_20251208130119156_2um/w028_20251208130119156_2um_inklabels.zarr",
-        "mask": "ink/1667/w028_20251208130119156_2um/w028_20251208130119156_2um_supervision_mask.zarr",
-        "meta": "ink/1667/w028_20251208130119156_2um/meta.json",
-    },
+    # {
+    #     "scroll": "1667",
+    #     "segment": "w028_20251208130119156_2um",
+    #     "volume": "ink/1667/w028_20251208130119156_2um/w028_20251208130119156_2um.zarr",
+    #     # "volume": None,
+    #     "label": "ink/1667/w028_20251208130119156_2um/w028_20251208130119156_2um_inklabels.zarr",
+    #     "mask": "ink/1667/w028_20251208130119156_2um/w028_20251208130119156_2um_supervision_mask.zarr",
+    #     "meta": "ink/1667/w028_20251208130119156_2um/meta.json",
+    # },
     # {
     #     "scroll": "1667",
     #     "segment": "w029_20251212185248662_2um",
@@ -91,7 +92,7 @@ SEGMENTS = [
     # },
 ]
 
-LOCAL_DIR = Path(r"D:\Dokumente\Studium\Masterarbeit\hf_data_1667")
+LOCAL_DIR = Path(r"D:\Dokumente\Studium\Masterarbeit\hf_data")
 
 MAX_WORKERS = 12
 BATCH_SIZE = 100
@@ -736,19 +737,27 @@ def main():
 
     print("")
 
+    successful = 0
+    failed = 0
+
     for i, segment_info in enumerate(SEGMENTS, start=1):
         print("")
         print(f"[{i}/{len(SEGMENTS)}] Verarbeite {segment_info['scroll']} / {segment_info['segment']}")
 
         try:
             process_segment(segment_info)
+            successful += 1
         except Exception as e:
+            failed += 1
             print("")
             print(f"ERROR bei " f"{segment_info['segment']}: " f"{e}")
 
     print("")
     print("=" * 70)
     print("Alle Segmente verarbeitet.")
+    print(f"Erfolgreich verarbeitet: {successful}/{len(SEGMENTS)}")
+    if failed:
+        print(f"Fehlgeschlagen:          {failed}/{len(SEGMENTS)}")
     print("=" * 70)
 
 
