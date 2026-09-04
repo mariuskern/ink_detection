@@ -15,14 +15,14 @@ from huggingface_hub.errors import HfHubHTTPError
 BUCKET = "scrollprize/datasets"
 
 SEGMENTS = [
-    {
-        "scroll": "9b",
-        "segment": "auto_grown_20250919055754487_inp_hr_2um",
-        "volume": "ink/0009b/auto_grown_20250919055754487_inp_hr_2um/auto_grown_20250919055754487_inp_hr_2um.zarr",
-        "label": "ink/0009b/auto_grown_20250919055754487_inp_hr_2um/auto_grown_20250919055754487_inp_hr_2um_inklabels.tif",
-        "mask": "ink/0009b/auto_grown_20250919055754487_inp_hr_2um/auto_grown_20250919055754487_inp_hr_2um_supervision_mask.tif",
-        "meta": "ink/0009b/auto_grown_20250919055754487_inp_hr_2um/meta.json",
-    },
+    # {
+    #     "scroll": "9b",
+    #     "segment": "auto_grown_20250919055754487_inp_hr_2um",
+    #     "volume": "ink/0009b/auto_grown_20250919055754487_inp_hr_2um/auto_grown_20250919055754487_inp_hr_2um.zarr",
+    #     "label": "ink/0009b/auto_grown_20250919055754487_inp_hr_2um/auto_grown_20250919055754487_inp_hr_2um_inklabels.tif",
+    #     "mask": "ink/0009b/auto_grown_20250919055754487_inp_hr_2um/auto_grown_20250919055754487_inp_hr_2um_supervision_mask.tif",
+    #     "meta": "ink/0009b/auto_grown_20250919055754487_inp_hr_2um/meta.json",
+    # },
     # {
     #     "scroll": "500p2",
     #     "segment": "-1",
@@ -31,14 +31,14 @@ SEGMENTS = [
     #     "mask": "ink/0500p2/-1/-1_supervision_mask.tif",
     #     "meta": "ink/0500p2/-1/meta.json",
     # },
-    # {
-    #     "scroll": "p343p",
-    #     "segment": "20250511003658",
-    #     "volume": "ink/unused/P343p/20250511003658/20250511003658.zarr",
-    #     "label": "ink/unused/P343p/20250511003658/20250511003658_inklabels.tif",
-    #     "mask": "ink/unused/P343p/20250511003658/20250511003658_supervision_mask.tif",
-    #     "meta": "ink/unused/P343p/20250511003658/meta.json",
-    # },
+    {
+        "scroll": "p343p",
+        "segment": "20250511003658",
+        "volume": "ink/unused/P343p/20250511003658/20250511003658.zarr",
+        "label": "ink/unused/P343p/20250511003658/20250511003658_inklabels.tif",
+        "mask": "ink/unused/P343p/20250511003658/20250511003658_supervision_mask.tif",
+        "meta": "ink/unused/P343p/20250511003658/meta.json",
+    },
 
 
     # {

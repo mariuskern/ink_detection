@@ -1,5 +1,6 @@
 from models.unetrpp import UNetRpp
 from models.timesformer import TimeSformer
+from models.vesuvius_unet import UNet
 
 
 def build_model(cfg):
@@ -41,4 +42,10 @@ def build_model(cfg):
                 cfg.model.attn_dropout,
                 cfg.model.ff_dropout,
                 cfg.model.with_norm
+            )
+        case "vesuvius_unet":
+            return UNet(
+                in_channels=cfg.model.in_channels,
+                out_channels=cfg.model.out_channels,
+                z_projection=cfg.model.z_projection,
             )

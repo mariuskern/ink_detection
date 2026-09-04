@@ -1,10 +1,12 @@
 import os
 import sys
+import argparse
+from pathlib import Path
 
 import torch
 
-import hydra
-from omegaconf import DictConfig, OmegaConf
+from hydra import compose, initialize
+from omegaconf import DictConfig
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -12,18 +14,39 @@ load_dotenv()
 sys.path.append(os.getenv("CODE_DIR"))
 
 from models import build_model
-from data import build_dataloader, build_augmentation
+from data import build_train_dataset, build_sampler, build_dataloader
 
 
-@hydra.main(version_base=None, config_path="../../conf", config_name="config")
-def main(cfg : DictConfig) -> None:
+def _get_arguments():
+    parser = argparse.ArgumentParser(
+        description="Convert all downloaded Zarr segments into TIFF stacks while preserving the directory structure."
+    )
+
+    parser.add_argument(
+        "--checkpoint_path",
+        type=Path,
+        default=None,
+        help="Path to the checkpoint file.",
+    )
+
+    return parser.parse_args()
+
+
+def main(args) -> None:
+    with initialize(config_path="../../conf/", version_base=None):
+        cfg = compose(config_name="debug")
+
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model = build_model(cfg).to(device)
-
     print("Model created")
 
-    # loader, _ = build_dataloader(cfg)
-    loader, _ = build_dataloader(cfg, aug=cfg.train.student.aug)
+    if args.checkpoint_path is not None and args.checkpoint_path.exists():
+        model.load_checkpoint(args.checkpoint_path, map_location="cuda")
+        print("Checkpoint loaded")
+
+    dataset = build_train_dataset(cfg)
+    sampler = build_sampler(cfg, dataset)
+    loader = build_dataloader(cfg, dataset, sampler)
 
     print("Loader created")
 
@@ -37,4 +60,4 @@ def main(cfg : DictConfig) -> None:
 
 
 if __name__ == "__main__":
-    main()
+    main(_get_arguments())
