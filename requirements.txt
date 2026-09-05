@@ -24,3 +24,7 @@ timesformer_pytorch
 scipy
 scikit-image
 huggingface_hub
+fvcore                  # used for the vesuvius model code
+hiddenlayer             # used for the vesuvius model code
+transformers==4.57.6    # used for the vesuvius model code
+regex

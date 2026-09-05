@@ -1,6 +1,7 @@
 from models.unetrpp import UNetRpp
 from models.timesformer import TimeSformer
-from models.vesuvius_unet import UNet
+from models.vesuvius_models import VesuviusUNet
+from models.vesuvius_models import VesuviusResNet3D
 
 
 def build_model(cfg):
@@ -44,8 +45,18 @@ def build_model(cfg):
                 cfg.model.with_norm
             )
         case "vesuvius_unet":
-            return UNet(
+            return VesuviusUNet(
                 in_channels=cfg.model.in_channels,
                 out_channels=cfg.model.out_channels,
                 z_projection=cfg.model.z_projection,
+            )
+        case "vesuvius_resnet":
+            return VesuviusResNet3D(
+                model_depth=cfg.model.model_depth,
+                n_input_channels=cfg.model.n_input_channels,
+                forward_features=cfg.model.forward_features,
+                n_classes=cfg.model.n_classes,
+                with_norm=cfg.model.with_norm,
+                norm=cfg.model.norm,
+                group_norm_groups=cfg.model.group_norm_groups,
             )

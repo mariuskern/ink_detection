@@ -41,7 +41,7 @@ def main(args) -> None:
     print("Model created")
 
     if args.checkpoint_path is not None and args.checkpoint_path.exists():
-        model.load_checkpoint(args.checkpoint_path, map_location="cuda")
+        model.load_vesuvius_checkpoint(args.checkpoint_path, map_location="cuda")
         print("Checkpoint loaded")
 
     dataset = build_train_dataset(cfg)
