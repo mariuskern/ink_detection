@@ -38,10 +38,11 @@ fit()
 
 from pathlib import Path
 from dataclasses import dataclass
-from tqdm import tqdm
+import math
 
 import torch
 import torch.nn.functional as F
+from tqdm import tqdm
 
 from data.builder import build_train_dataset, build_dataset, build_sampler, build_dataloader
 from models import build_model
@@ -140,11 +141,21 @@ def fit(cfg, logger, output_dir, *, pseudo_label_version=None, iteration=None, a
     # Scheduler
     # ------------------------------------------------------------------------
 
-    total_steps = cfg.train.max_epochs * len(train_loader)
-    steps_per_epoch = max(total_steps // cfg.train.max_epochs, 1)
+    accumulation_steps = cfg.train.gradient_accumulation_steps
+
+    optimizer_steps_per_epoch = math.ceil(len(train_loader) / accumulation_steps)
+
+    total_steps = cfg.train.max_epochs * optimizer_steps_per_epoch
+    steps_per_epoch = max(optimizer_steps_per_epoch, 1)
 
     requested_warmup_steps = cfg.train.warmup_epochs * steps_per_epoch
     warmup_steps = min(requested_warmup_steps, max(total_steps - 1, 0))
+
+    # total_steps = cfg.train.max_epochs * len(train_loader)
+    # steps_per_epoch = max(total_steps // cfg.train.max_epochs, 1)
+
+    # requested_warmup_steps = cfg.train.warmup_epochs * steps_per_epoch
+    # warmup_steps = min(requested_warmup_steps, max(total_steps - 1, 0))
 
     if warmup_steps == 0:
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
@@ -225,6 +236,7 @@ def fit(cfg, logger, output_dir, *, pseudo_label_version=None, iteration=None, a
             pseudo_labels_used=True if pseudo_label_version is not None else False,
             autocast_dtype=autocast_dtype,
             scaler=scaler,
+            accumulation_steps=accumulation_steps
         )
 
         # ====================================================================
@@ -319,12 +331,15 @@ def train_one_epoch(
     pseudo_labels_used,
     autocast_dtype,
     scaler,
+    accumulation_steps
 ):
     """
     Equivalent to SupervisedModule.training_step(), executed over one epoch.
     """
 
     model.train()
+
+    optimizer.zero_grad(set_to_none=True)
 
     for batch_idx, batch in enumerate(tqdm(train_loader, desc=f"Training Epoch {epoch + 1}")):
 
@@ -357,7 +372,7 @@ def train_one_epoch(
         # Forward
         # --------------------------------------------------------------------
 
-        optimizer.zero_grad(set_to_none=True)
+        # optimizer.zero_grad(set_to_none=True)
 
         with autocast_context(device.type, autocast_dtype):
             output = model(tile)
@@ -403,45 +418,51 @@ def train_one_epoch(
         # --------------------------------------------------------------------
 
         # loss.backward()
-        scaler.scale(loss).backward()
+        scaled_loss = loss / accumulation_steps
+        scaler.scale(scaled_loss).backward()
+        # scaler.scale(loss).backward()
 
-        # --------------------------------------------------------------------
-        # Gradient clipping
-        # --------------------------------------------------------------------
+        should_step = (batch_idx + 1) % accumulation_steps == 0 or (batch_idx + 1) == len(train_loader)
 
-        gradient_clip_val = cfg.train.gradient_clip_val
+        if should_step:
+            # --------------------------------------------------------------------
+            # Gradient clipping
+            # --------------------------------------------------------------------
 
-        if gradient_clip_val is not None:
-            scaler.unscale_(optimizer)
+            gradient_clip_val = cfg.train.gradient_clip_val
 
-            algorithm = str(cfg.train.gradient_clip_algorithm).lower()
+            if gradient_clip_val is not None:
+                scaler.unscale_(optimizer)
 
-            if algorithm == "norm":
-                torch.nn.utils.clip_grad_norm_(model.parameters(), gradient_clip_val)
-            elif algorithm == "value":
-                torch.nn.utils.clip_grad_value_(model.parameters(), gradient_clip_val)
-            else:
-                raise ValueError("Unknown gradient clipping algorithm: " f"{algorithm!r}")
+                algorithm = str(cfg.train.gradient_clip_algorithm).lower()
 
-        # --------------------------------------------------------------------
-        # Optimizer
-        # --------------------------------------------------------------------
+                if algorithm == "norm":
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), gradient_clip_val)
+                elif algorithm == "value":
+                    torch.nn.utils.clip_grad_value_(model.parameters(), gradient_clip_val)
+                else:
+                    raise ValueError("Unknown gradient clipping algorithm: " f"{algorithm!r}")
 
-        # optimizer.step()
-        scaler.step(optimizer)
-        scaler.update()
+            # --------------------------------------------------------------------
+            # Optimizer
+            # --------------------------------------------------------------------
 
-        # --------------------------------------------------------------------
-        # Scheduler
-        #
-        # Lightning:
-        #
-        #     interval="step"
-        #
-        # therefore this is intentionally here and NOT after the epoch.
-        # --------------------------------------------------------------------
+            # optimizer.step()
+            scaler.step(optimizer)
+            scaler.update()
 
-        scheduler.step()
+            # --------------------------------------------------------------------
+            # Scheduler
+            #
+            # Lightning:
+            #
+            #     interval="step"
+            #
+            # therefore this is intentionally here and NOT after the epoch.
+            # --------------------------------------------------------------------
+
+            scheduler.step()
+            optimizer.zero_grad(set_to_none=True)
 
         # --------------------------------------------------------------------
         # Training metrics
