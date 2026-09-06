@@ -5,8 +5,8 @@ from .prediction_merger import PredictionMerger
 
 
 @torch.no_grad()
-def predict(model, dataloader, device=None):
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+def predict(model, dataloader, device):
+    # device = "cuda" if torch.cuda.is_available() else "cpu"
 
     model.to(device)
     model.eval()

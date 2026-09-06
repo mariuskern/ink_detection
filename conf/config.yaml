@@ -2,7 +2,7 @@ defaults:
   - data/dataset@dataset: default
   - data/sampler@sampler: default
   - data/dataloader@dataloader: default
-  - model: unetrpp # timesformer unetrpp
+  - model: unetrpp # timesformer unetrpp vesuvius_unet vesuvius_resnet3d
   - loss: dice_bce
   - path: alex
   - wandb: default

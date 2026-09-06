@@ -3,6 +3,7 @@ from pathlib import Path
 from training.supervised import fit
 
 from utils import predict, postprocess_predictions, save_predictions_as_images, save_predictions_as_zarr
+from utils.device import get_device
 from data import build_dataset, build_dataloader, prepare_pseudo_tile_manifests, build_augmentation
 
 
@@ -14,6 +15,8 @@ def train_noisy_student(cfg, logger):
 
         output_dir_iteration = output_dir / "iteration" / str(iteration)
 
+        device = get_device(cfg)
+
         # Training
         result = fit(
             cfg,
@@ -22,17 +25,18 @@ def train_noisy_student(cfg, logger):
             pseudo_label_version=iteration - 1 if iteration > 0 else None,
             iteration=iteration,
             augmentation=cfg.train.student.aug,
+            device=device,
         )
 
-        generate_pseudo_labels(cfg, result.model, iteration, output_dir_iteration)
+        generate_pseudo_labels(cfg, result.model, iteration, output_dir_iteration, device)
 
 
-def generate_pseudo_labels(cfg, model, iteration, output_dir):
+def generate_pseudo_labels(cfg, model, iteration, output_dir, device):
         transform = build_augmentation(cfg.train.teacher.aug) if cfg.train.teacher.aug is not None else None
         predict_dataset = build_dataset(cfg, cfg.train.unlabeled, min_mask_fraction=0.0, transform=transform)
         predict_loader = build_dataloader(cfg, predict_dataset, None)
 
-        results = predict(model, predict_loader, device=cfg.train.devices)
+        results = predict(model, predict_loader, device=device)
         # results = postprocess_predictions(
         #     results,
         #     cfg.train.threshold,

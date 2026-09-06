@@ -50,7 +50,7 @@ def build_model(cfg):
                 out_channels=cfg.model.out_channels,
                 z_projection=cfg.model.z_projection,
             )
-        case "vesuvius_resnet":
+        case "vesuvius_resnet3d":
             return VesuviusResNet3D(
                 model_depth=cfg.model.model_depth,
                 n_input_channels=cfg.model.n_input_channels,
@@ -59,4 +59,5 @@ def build_model(cfg):
                 with_norm=cfg.model.with_norm,
                 norm=cfg.model.norm,
                 group_norm_groups=cfg.model.group_norm_groups,
+                upscale=cfg.model.upscale
             )

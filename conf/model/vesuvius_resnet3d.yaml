@@ -6,3 +6,4 @@ n_classes: 1039
 with_norm: False
 norm: batch
 group_norm_groups: 32
+upscale: auto

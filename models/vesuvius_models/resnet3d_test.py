@@ -31,7 +31,7 @@ def _get_arguments():
 
 def main(args):
     model_auto = AutoModel.from_pretrained("scrollprize/PHerc.1667-iteration-0", trust_remote_code=True).cuda()
-    model = VesuviusResNet3D().cuda()
+    model = VesuviusResNet3D(upscale=1).cuda()
 
     if args.checkpoint_path is not None and args.checkpoint_path.exists():
         ckpt = torch.load(args.checkpoint_path, weights_only=False)
@@ -50,8 +50,8 @@ def main(args):
             y_auto = model_auto(x)["logits"]
             y_reimplemented = model(x)
 
-        # print(y_auto.shape)
-        # print(y_reimplemented.shape)
+        print(y_auto.shape)
+        print(y_reimplemented.shape)
 
         print("max absolute difference:", (y_auto - y_reimplemented).abs().max().item())
         print("mean absolute difference:", (y_auto - y_reimplemented).abs().mean().item())
