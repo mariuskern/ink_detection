@@ -44,7 +44,8 @@ import torch
 import torch.nn.functional as F
 
 from data.builder import build_train_dataset, build_dataset, build_sampler, build_dataloader
-from models import build_model, build_loss
+from models import build_model
+from losses import build_loss
 from utils import PredictionMerger, save_predictions_as_images, calculate_dice, calculate_iou
 from utils.device import get_device
 from .precision import parse_precision, autocast_context
