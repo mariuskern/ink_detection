@@ -31,24 +31,24 @@ SEGMENTS = [
     #     "mask": "ink/0500p2/-1/-1_supervision_mask.tif",
     #     "meta": "ink/0500p2/-1/meta.json",
     # },
-    {
-        "scroll": "p343p",
-        "segment": "20250511003658",
-        "volume": "ink/unused/P343p/20250511003658/20250511003658.zarr",
-        "label": "ink/unused/P343p/20250511003658/20250511003658_inklabels.tif",
-        "mask": "ink/unused/P343p/20250511003658/20250511003658_supervision_mask.tif",
-        "meta": "ink/unused/P343p/20250511003658/meta.json",
-    },
-
-
     # {
-    #     "scroll": "1667",
-    #     "segment": "w013_20240304141531_2um",
-    #     "volume": "ink/1667/w013_20240304141531_2um/w013_20240304141531_2um.zarr",
-    #     "label": "ink/1667/w013_20240304141531_2um/w013_20240304141531_2um_inklabels.zarr",
-    #     "mask": "ink/1667/w013_20240304141531_2um/w013_20240304141531_2um_supervision_mask.zarr",
-    #     "meta": "ink/1667/w013_20240304141531_2um/meta.json",
+    #     "scroll": "p343p",
+    #     "segment": "20250511003658",
+    #     "volume": "ink/unused/P343p/20250511003658/20250511003658.zarr",
+    #     "label": "ink/unused/P343p/20250511003658/20250511003658_inklabels.tif",
+    #     "mask": "ink/unused/P343p/20250511003658/20250511003658_supervision_mask.tif",
+    #     "meta": "ink/unused/P343p/20250511003658/meta.json",
     # },
+
+
+    {
+        "scroll": "1667",
+        "segment": "w013_20240304141531_2um",
+        "volume": "ink/1667/w013_20240304141531_2um/w013_20240304141531_2um.zarr",
+        "label": "ink/1667/w013_20240304141531_2um/w013_20240304141531_2um_inklabels.zarr",
+        "mask": "ink/1667/w013_20240304141531_2um/w013_20240304141531_2um_supervision_mask.zarr",
+        "meta": "ink/1667/w013_20240304141531_2um/meta.json",
+    },
     # {
     #     "scroll": "1667",
     #     "segment": "w018_20240304144031_2um",

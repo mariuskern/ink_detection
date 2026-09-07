@@ -1,58 +1,59 @@
-import torch
-from torchvision.transforms import v2
+# import torch
+# from torchvision.transforms import v2
 
 from .dataset import InkDataset, CombinedInkDataset
 from .sampler import create_sampler
 from .loader import create_dataloader
+from .augmentations import build_augmentation
 
 
-class AddGaussianNoise(torch.nn.Module):
-    def __init__(self, mean=0., sigma=0.05):
-        super().__init__()
+# class AddGaussianNoise(torch.nn.Module):
+#     def __init__(self, mean=0., sigma=0.05):
+#         super().__init__()
 
-        self.mean = mean
-        self.sigma = sigma
+#         self.mean = mean
+#         self.sigma = sigma
 
-    def forward(self, image, *masks):
-        noise = torch.randn_like(image)
-        image = image + noise * self.sigma + self.mean
-        image = torch.clamp(image, 0, 1)
-        return (image, *masks)
+#     def forward(self, image, *masks):
+#         noise = torch.randn_like(image)
+#         image = image + noise * self.sigma + self.mean
+#         image = torch.clamp(image, 0, 1)
+#         return (image, *masks)
 
 
-def build_augmentation(aug):
-    transforms = []
+# def build_augmentation(aug):
+#     transforms = []
 
-    def add_with_probability(transform, spec):
-        """Apply non-flip transforms only with the probability from the YAML."""
-        p = getattr(spec, "p", 1.0)
-        transforms.append(v2.RandomApply([transform], p=p) if p < 1.0 else transform)
+#     def add_with_probability(transform, spec):
+#         """Apply non-flip transforms only with the probability from the YAML."""
+#         p = getattr(spec, "p", 1.0)
+#         transforms.append(v2.RandomApply([transform], p=p) if p < 1.0 else transform)
 
-    for t in aug.transforms:
-        match t.name:
-            case "random_horizontal_flip":
-                transforms.append(v2.RandomHorizontalFlip(p=t.p))
-            case "random_vertical_flip":
-                transforms.append(v2.RandomVerticalFlip(p=t.p))
-            case "random_rotation":
-                add_with_probability(v2.RandomRotation(degrees=t.degrees), t)
-            case "random_affine":
-                add_with_probability(v2.RandomAffine(degrees=t.degrees, translate=t.translate, scale=t.scale, shear=t.shear), t)
-            case "random_resized_crop":
-                add_with_probability(v2.RandomResizedCrop(size=t.size, scale=t.scale, ratio=t.ratio), t)
-            case "color_jitter":
-                add_with_probability(v2.ColorJitter(brightness=t.brightness, contrast=t.contrast, saturation=t.saturation, hue=t.hue), t)
-            case "gaussian_blur":
-                add_with_probability(v2.GaussianBlur(kernel_size=t.kernel_size, sigma=t.sigma), t)
-            case "gaussian_noise":
-                add_with_probability(AddGaussianNoise(mean=t.mean, sigma=t.sigma), t)
-            case _:
-                raise ValueError(f"Unknown transform: {t.name}")
+#     for t in aug.transforms:
+#         match t.name:
+#             case "random_horizontal_flip":
+#                 transforms.append(v2.RandomHorizontalFlip(p=t.p))
+#             case "random_vertical_flip":
+#                 transforms.append(v2.RandomVerticalFlip(p=t.p))
+#             case "random_rotation":
+#                 add_with_probability(v2.RandomRotation(degrees=t.degrees), t)
+#             case "random_affine":
+#                 add_with_probability(v2.RandomAffine(degrees=t.degrees, translate=t.translate, scale=t.scale, shear=t.shear), t)
+#             case "random_resized_crop":
+#                 add_with_probability(v2.RandomResizedCrop(size=t.size, scale=t.scale, ratio=t.ratio), t)
+#             case "color_jitter":
+#                 add_with_probability(v2.ColorJitter(brightness=t.brightness, contrast=t.contrast, saturation=t.saturation, hue=t.hue), t)
+#             case "gaussian_blur":
+#                 add_with_probability(v2.GaussianBlur(kernel_size=t.kernel_size, sigma=t.sigma), t)
+#             case "gaussian_noise":
+#                 add_with_probability(AddGaussianNoise(mean=t.mean, sigma=t.sigma), t)
+#             case _:
+#                 raise ValueError(f"Unknown transform: {t.name}")
 
-    if not transforms:
-        return v2.Identity()
+#     if not transforms:
+#         return v2.Identity()
 
-    return v2.Compose(transforms)
+#     return v2.Compose(transforms)
 
 
 def build_dataset(

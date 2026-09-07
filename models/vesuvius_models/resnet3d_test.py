@@ -1,3 +1,9 @@
+# NOTE: This test is currently not working with Transformers 5.x.
+# The scrollprize/PHerc.1667-iteration-0 model was built for Transformers 4.57.6,
+# but a newer Hugging Face Hub version is required elsewhere in the project,
+# which is incompatible with the Transformers version required by this model.
+
+
 import os
 import sys
 import argparse

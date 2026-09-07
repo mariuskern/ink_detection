@@ -33,7 +33,11 @@ torch.set_float32_matmul_precision("high")
 def main(cfg):
     # pl.seed_everything(cfg.train.seed, workers=True)
 
-    seed_everything(cfg.train.seed)
+    if cfg.train.seed is not None:
+        seed_everything(cfg.train.seed)
+        print(f"Seed: {cfg.train.seed}")
+    else:
+        print("Seed: no seed used")
 
     # logger = WandbLogger(project=cfg.wandb.project, name=cfg.experiment.name)
     # logger.experiment.config.update(OmegaConf.to_container(cfg, resolve=True))
