@@ -159,6 +159,18 @@ def _get_mask(folder):
     return mask
 
 
+def _get_validation_mask(folder):
+    validation_mask_path = folder / f"{folder.name}_validation_mask.png"
+    
+    if not validation_mask_path.exists():
+        print(f"No mask file found for folder: {folder.name}")
+        return None
+    
+    validation_mask = _load_binary_image(validation_mask_path)
+
+    return validation_mask
+
+
 def _load_binary_image(path):
     image = np.array(Image.open(path).convert("L"))
     binary_image = (image > 127).astype(np.uint8)
@@ -213,6 +225,7 @@ def main(args):
         volume_files = _get_volume_files(folder)
         label_original = _get_label(folder)
         mask_original = _get_mask(folder)
+        validation_mask_original = _get_validation_mask(folder)
 
         # if volume_original is None:
         #     print(f"Skipping folder {folder.name} due to missing image stack.")
@@ -239,6 +252,9 @@ def main(args):
         if mask_original is not None:
             arrays.append(mask_original)
 
+        if validation_mask_original is not None:
+            arrays.append(validation_mask_original)
+
         h_min = min(a.shape[-2] for a in arrays)
         w_min = min(a.shape[-1] for a in arrays)
 
@@ -246,14 +262,17 @@ def main(args):
 
         label = None if label_original is None else label_original[:h_min, :w_min]
         mask = None if mask_original is None else mask_original[:h_min, :w_min]
+        validation_mask = None if validation_mask_original is None else validation_mask_original[:h_min, :w_min]
 
         meta = {
             "volume_original_shape": [d, h, w],
             "label_original_shape": None if label_original is None else label_original.shape,
             "mask_original_shape": None if mask_original is None else mask_original.shape,
+            "validation_mask_original_shape": None if validation_mask_original is None else validation_mask_original.shape,
             "volume_shape": volume_shape,
             "label_shape": None if label is None else label.shape,
             "mask_shape": None if mask is None else mask.shape,
+            "validation_mask_shape": None if validation_mask is None else validation_mask.shape,
             "chunks": args.chunks
         }
 
@@ -308,6 +327,19 @@ def main(args):
             )
 
             z["mask"][:] = mask
+
+
+        # Save validation mask
+
+        if validation_mask is not None:
+            z.create_array(
+                "validation_mask",
+                shape=validation_mask.shape,
+                chunks=args.chunks[1:],
+                dtype=validation_mask.dtype,
+            )
+
+            z["validation_mask"][:] = validation_mask
 
         print(f"Saved Zarr archive to: {output_path}")
         print("")

@@ -8,6 +8,7 @@ compile: false
 val_image_every_n_epochs: 1
 
 iterations: 4
+
 # labeled:
 #   - 20241025145341
 # unlabeled:
@@ -15,6 +16,15 @@ iterations: 4
 #   # - 20251115002740-auto_grown_20251115002740308_0_flatboi
 # val:
 #   - 20241025145701
+
+# labeled:
+#   - "0172_20241025145341"
+# unlabeled:
+#   - "0172_20241113090990"
+#   # - 20251115002740-auto_grown_20251115002740308_0_flatboi
+# val:
+#   - "0172_20241025145701"
+
 labeled:
   - "0172_20241025145341"
 unlabeled:
@@ -22,3 +32,6 @@ unlabeled:
   # - 20251115002740-auto_grown_20251115002740308_0_flatboi
 val:
   - "0172_20241025145701"
+  - "0172_20241113090990"
+
+use_validation_mask: true 

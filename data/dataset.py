@@ -146,6 +146,7 @@ class InkDataset(Dataset):
         pseudo_label_version=None,
         pseudo_target="hard",
         transform=None,
+        split=None
     ):
         self.data_dir = Path(data_dir)
         self.tile_size = tile_size
@@ -158,12 +159,16 @@ class InkDataset(Dataset):
         self.pseudo_label_version = pseudo_label_version
         self.pseudo_target = pseudo_target
         self.transform = transform
+        self.split = split
 
         if self.norm not in ["global", "local"]:
             raise ValueError(f"Invalid normalization mode: {self.norm}. Must be 'global' or 'local'.")
         
         if self.pseudo_target not in ["hard", "soft"]:
             raise ValueError(f"Invalid pseudo target '{self.pseudo_target}'. Must be 'hard' or 'soft'.")
+
+        if split is not None and split not in ["train", "val"]:
+            raise ValueError(f"Invalid split '{self.split}'. Must be None, 'train' or 'val'.")
 
         self.segment_paths = get_segment_paths(self.data_dir)
 
@@ -186,7 +191,7 @@ class InkDataset(Dataset):
             self.zarr_data[segment] = self._get_zarr_data_for_segment(segment_path)
 
             # Load tiles
-            self.tiles.extend(self._get_tiles_for_segment(segment_path, min_mask_fraction))
+            self.tiles.extend(self._get_tiles_for_segment(segment, min_mask_fraction))
 
             # Load meta
             self.segment_shapes[segment] = torch.tensor(self._get_meta_for_segment(segment_path)["volume_shape"])
@@ -320,14 +325,16 @@ class InkDataset(Dataset):
 
         return torch.from_numpy(zarr_array[group][version][y:y+self.tile_size, x:x+self.tile_size]).float()
 
-    def _get_tiles_for_segment(self, segment_path, min_mask_fraction):
+    def _get_tiles_for_segment(self, segment, min_mask_fraction):
+        segment_path = self.segment_paths[segment]
+
         if self.pseudo_label_version is not None:
             tile_dir = segment_path / "pseudo_tiles" / str(self.pseudo_label_version) / self.pseudo_target
-            tile_path = tile_dir / f"tile_size_{self.tile_size}_stride_{self.stride}.npy"
-            csv_path = tile_dir / f"tile_size_{self.tile_size}_stride_{self.stride}.csv"
+            tile_path = tile_dir / f"tile_size_{self.tile_size}_stride_{self.stride}_split_{self.split if self.split is not None else "None"}.npy"
+            csv_path = tile_dir / f"tile_size_{self.tile_size}_stride_{self.stride}_split_{self.split if self.split is not None else "None"}.csv"
         else:
-            tile_path = segment_path / "tiles" / f"tile_size_{self.tile_size}_stride_{self.stride}.npy"
-            csv_path = segment_path / "tiles" / f"tile_size_{self.tile_size}_stride_{self.stride}.csv"
+            tile_path = segment_path / "tiles" / f"tile_size_{self.tile_size}_stride_{self.stride}_split_{self.split if self.split is not None else "None"}.npy"
+            csv_path = segment_path / "tiles" / f"tile_size_{self.tile_size}_stride_{self.stride}_split_{self.split if self.split is not None else "None"}.csv"
         
         # if not tile_path.exists():
         #     raise FileNotFoundError(f"Missing tile index: {tile_path}")
@@ -337,7 +344,7 @@ class InkDataset(Dataset):
         else:
             print(f"Missing tile index: {tile_path}. Creating tiles.")
 
-            zarr_data = self.zarr_data[segment_path.name]
+            zarr_data = self.zarr_data[segment]
             volume_shape = zarr_data["volume"].shape
             h, w = volume_shape[-2:]
 
@@ -355,7 +362,13 @@ class InkDataset(Dataset):
                 else:
                     mask = pseudo_mask
 
-            tiles = get_tiles(label, mask, self.tile_size, self.stride, segment_path.name, h, w)
+            validation_mask = np.asarray(zarr_data["validation_mask"]) if "validation_mask" in zarr_data else None
+            if self.split is not None and validation_mask is not None:
+                if self.split == "train":
+                    validation_mask = ~validation_mask
+                mask = mask * validation_mask
+
+            tiles = get_tiles(label, mask, self.tile_size, self.stride, segment, h, w)
 
             tile_path.parent.mkdir(parents=True, exist_ok=True)
             save_tiles(tiles, tile_path, csv_path)
@@ -375,7 +388,7 @@ class InkDataset(Dataset):
             
             tile_list.append(
                 {
-                    "segment": segment_path.name,
+                    "segment": t["segment"],
                     "y": int(t["y"]),
                     "x": int(t["x"]),
                     "positive_fraction": positive_fraction,
@@ -392,6 +405,9 @@ class InkDataset(Dataset):
             raise FileNotFoundError(f"Missing zarr archive: {zarr_path}")
 
         zarr_data = zarr.open(zarr_path, mode="r")
+
+        # if self.split is not None and "validation_mask" not in zarr_data:
+        #     raise ValueError("Split can only be used if the segment contains a validation mask")
 
         if self.pseudo_label_version is not None:
             group = "pseudo_labels" if self.pseudo_target == "hard" else "prediction"
