@@ -23,6 +23,8 @@ SEGMENTS = [
     #     "mask": "ink/0009b/auto_grown_20250919055754487_inp_hr_2um/auto_grown_20250919055754487_inp_hr_2um_supervision_mask.tif",
     #     "meta": "ink/0009b/auto_grown_20250919055754487_inp_hr_2um/meta.json",
     # },
+
+
     # {
     #     "scroll": "500p2",
     #     "segment": "-1",
@@ -31,6 +33,8 @@ SEGMENTS = [
     #     "mask": "ink/0500p2/-1/-1_supervision_mask.tif",
     #     "meta": "ink/0500p2/-1/meta.json",
     # },
+
+
     # {
     #     "scroll": "p343p",
     #     "segment": "20250511003658",
@@ -50,14 +54,14 @@ SEGMENTS = [
     #     "mask": "ink/1667/w013_20240304141531_2um/w013_20240304141531_2um_supervision_mask.zarr",
     #     "meta": "ink/1667/w013_20240304141531_2um/meta.json",
     # },
-    {
-        "scroll": "1667",
-        "segment": "w018_20240304144031_2um",
-        "volume": "ink/1667/w018_20240304144031_2um/w018_20240304144031_2um.zarr",
-        "label": "ink/1667/w018_20240304144031_2um/w018_20240304144031_2um_inklabels.zarr",
-        "mask": "ink/1667/w018_20240304144031_2um/w018_20240304144031_2um_supervision_mask.zarr",
-        "meta": "ink/1667/w018_20240304144031_2um/meta.json",
-    },
+    # {
+    #     "scroll": "1667",
+    #     "segment": "w018_20240304144031_2um",
+    #     "volume": "ink/1667/w018_20240304144031_2um/w018_20240304144031_2um.zarr",
+    #     "label": "ink/1667/w018_20240304144031_2um/w018_20240304144031_2um_inklabels.zarr",
+    #     "mask": "ink/1667/w018_20240304144031_2um/w018_20240304144031_2um_supervision_mask.zarr",
+    #     "meta": "ink/1667/w018_20240304144031_2um/meta.json",
+    # },
     # {
     #     "scroll": "1667",
     #     "segment": "w023_20240304161941_2um",
@@ -91,9 +95,20 @@ SEGMENTS = [
     #     "mask": "ink/1667/w031_2025122323_2um/w031_2025122323_2um_supervision_mask.zarr",
     #     "meta": "ink/1667/w031_2025122323_2um/meta.json",
     # },
+
+
+    {
+        "scroll": "814",
+        "segment": "814_46527_2um_try2",
+        "volume": "ink/814/814_46527_2um_try2/814_46527_2um_try2.zarr",
+        "label": "ink/814/814_46527_2um_try2/814_46527_2um_try2_inklabels_v2.zarr",
+        "mask": "ink/814/814_46527_2um_try2/814_46527_2um_try2_supervision_mask_v2.zarr",
+        "validation_mask": "ink/814/814_46527_2um_try2/814_46527_2um_try2_validation_mask_v2.zarr",
+        "meta": "ink/814/814_46527_2um_try2/meta.json",
+    },
 ]
 
-LOCAL_DIR = Path(r"D:\Dokumente\Studium\Masterarbeit\hf_data_18")
+LOCAL_DIR = Path(r"D:\Dokumente\Studium\Masterarbeit\hf_data_814")
 
 MAX_WORKERS = 12
 BATCH_SIZE = 100
@@ -730,6 +745,36 @@ def process_segment(segment_info):
 
             if temporary_mask.exists():
                 temporary_mask.unlink()
+
+    # --------------------------------------------------------
+    # Validation mask
+    # --------------------------------------------------------
+
+    if segment_info.get("validation_mask") is not None:
+        print("")
+        print("Download Validation Mask...")
+
+        validation_mask_source = segment_info["validation_mask"]
+        output_validation_mask = segment_dir / f"{segment}_validation_mask.png"
+
+        if validation_mask_source.lower().endswith(".zarr"):
+            temporary_validation_mask = segment_dir / f"{segment}_validation_mask.zarr"
+
+            zarr_files.extend(download_zarr_store(validation_mask_source, temporary_validation_mask))
+            print_zarr_shapes(temporary_validation_mask)
+            convert_to_png(temporary_validation_mask, output_validation_mask)
+
+            if temporary_validation_mask.exists():
+                shutil.rmtree(temporary_validation_mask)
+        else:
+            validation_mask_file = find_file(validation_mask_source)
+            temporary_validation_mask = segment_dir / f"{segment}_validation_mask.tif"
+
+            download_single_file(validation_mask_file, temporary_validation_mask)
+            convert_to_png(temporary_validation_mask, output_validation_mask)
+
+            if temporary_validation_mask.exists():
+                temporary_validation_mask.unlink()
 
     # --------------------------------------------------------
     # Meta
