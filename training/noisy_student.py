@@ -40,11 +40,11 @@ def generate_pseudo_labels(cfg, model, iteration, output_dir, device):
         results = predict(model, predict_loader, device=device, tta_transform=transform, tta_num=cfg.train.refinement.tta_num)
         results = postprocess_predictions(
             results,
-            cfg.train.threshold,
-            cfg.train.confidence_threshold,
-            cfg.train.uncertainty_threshold,
-            use_confidence_mask=cfg.train.use_confidence_mask,
-            use_uncertainty_mask=cfg.train.use_uncertainty_mask,
+            cfg.train.refinement.threshold,
+            cfg.train.refinement.confidence_threshold,
+            cfg.train.refinement.uncertainty_threshold,
+            use_confidence_mask=cfg.train.refinement.use_confidence_mask,
+            use_uncertainty_mask=cfg.train.refinement.use_uncertainty_mask,
         )
         # results = postprocess_predictions(
         #     results,

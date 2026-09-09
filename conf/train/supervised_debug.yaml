@@ -7,7 +7,11 @@ checkpoint_every_n_epochs: 1
 compile: false
 val_image_every_n_epochs: 1
 
+# labeled:
+#   - 20241025145341
+# val:
+#   - 20241025145701
 labeled:
-  - 20241025145341
+  - "0172_20241025145341"
 val:
-  - 20241025145701
+  - "0172_20241025145701"
