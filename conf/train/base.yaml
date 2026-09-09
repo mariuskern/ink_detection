@@ -10,7 +10,7 @@ precision: bf16-mixed           # 16-true 16-mixed bf16-true bf16-mixed 32-true
 compile: true                   # Set this to false when debugging model code, where compilation errors are easier to read.
 compile_mode: reduce-overhead
 val_image_every_n_epochs: 10
-seed: 42 # null 42
+seed: null # null 42
 checkpoint:
   checkpoint_every_n_epochs: 1
   save_top_k: 1
@@ -18,7 +18,7 @@ checkpoint:
   save_last_every_epoch: True
   monitor: val/loss
   mode: min
-benchmark: False
+benchmark: true
 deterministic: False
 threshold: 0.5                  # Used to calculate dice and iou
 gradient_accumulation_steps: 4

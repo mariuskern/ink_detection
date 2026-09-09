@@ -5,7 +5,7 @@ defaults:
 
 name: noisy_student
 # threshold: 0.5
-pseudo_target: hard # hard | soft
+pseudo_target: soft # hard | soft
 # use_confidence_mask: True
 # confidence_threshold: 0.7 # 0.9
 # use_uncertainty_mask: True
@@ -29,17 +29,25 @@ val:
 
 refinement:
   tta_num: 4
-  strong_threshold: 0.80
-  weak_threshold: 0.30
-  confidence_threshold: 0.70
-  uncertainty_threshold: 0.20
-  min_component_size: 20
-  opening_radius: 1
-  closing_radius: 2
-  local_window_sigma: 3.0
-  use_opening: false
-  use_closing: false
-  use_reconstruction: false
-  use_components: false
-  use_local_mean: false
-  # use_gradient: true
+
+  predictions:
+  threshold: 0.5
+  confidence_threshold: 0.8
+  uncertainty_threshold: 0.15
+  use_confidence_mask: True
+  use_uncertainty_mask: True
+
+  # strong_threshold: 0.80
+  # weak_threshold: 0.30
+  # confidence_threshold: 0.70
+  # uncertainty_threshold: 0.20
+  # min_component_size: 20
+  # opening_radius: 1
+  # closing_radius: 2
+  # local_window_sigma: 3.0
+  # use_opening: false
+  # use_closing: false
+  # use_reconstruction: false
+  # use_components: false
+  # use_local_mean: false
+  # # use_gradient: true
