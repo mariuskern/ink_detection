@@ -41,22 +41,23 @@ SEGMENTS = [
     # },
 
 
-    {
-        "scroll": "1667",
-        "segment": "w013_20240304141531_2um",
-        "volume": "ink/1667/w013_20240304141531_2um/w013_20240304141531_2um.zarr",
-        "label": "ink/1667/w013_20240304141531_2um/w013_20240304141531_2um_inklabels.zarr",
-        "mask": "ink/1667/w013_20240304141531_2um/w013_20240304141531_2um_supervision_mask.zarr",
-        "meta": "ink/1667/w013_20240304141531_2um/meta.json",
-    },
     # {
     #     "scroll": "1667",
-    #     "segment": "w018_20240304144031_2um",
-    #     "volume": "ink/1667/w018_20240304144031_2um/w018_20240304144031_2um.zarr",
-    #     "label": "ink/1667/w018_20240304144031_2um/w018_20240304144031_2um_inklabels.zarr",
-    #     "mask": "ink/1667/w018_20240304144031_2um/w018_20240304144031_2um_supervision_mask.zarr",
-    #     "meta": "ink/1667/w018_20240304144031_2um/meta.json",
+    #     "segment": "w013_20240304141531_2um",
+    #     "volume": "ink/1667/w013_20240304141531_2um/w013_20240304141531_2um.zarr",
+    #     # "volume": None,
+    #     "label": "ink/1667/w013_20240304141531_2um/w013_20240304141531_2um_inklabels.zarr",
+    #     "mask": "ink/1667/w013_20240304141531_2um/w013_20240304141531_2um_supervision_mask.zarr",
+    #     "meta": "ink/1667/w013_20240304141531_2um/meta.json",
     # },
+    {
+        "scroll": "1667",
+        "segment": "w018_20240304144031_2um",
+        "volume": "ink/1667/w018_20240304144031_2um/w018_20240304144031_2um.zarr",
+        "label": "ink/1667/w018_20240304144031_2um/w018_20240304144031_2um_inklabels.zarr",
+        "mask": "ink/1667/w018_20240304144031_2um/w018_20240304144031_2um_supervision_mask.zarr",
+        "meta": "ink/1667/w018_20240304144031_2um/meta.json",
+    },
     # {
     #     "scroll": "1667",
     #     "segment": "w023_20240304161941_2um",
@@ -92,7 +93,7 @@ SEGMENTS = [
     # },
 ]
 
-LOCAL_DIR = Path(r"D:\Dokumente\Studium\Masterarbeit\hf_data")
+LOCAL_DIR = Path(r"D:\Dokumente\Studium\Masterarbeit\hf_data_18")
 
 MAX_WORKERS = 12
 BATCH_SIZE = 100
@@ -209,8 +210,27 @@ def download_zarr_store(zarr_volume, output_dir):
             destination = output_dir / relative_path
             destination.parent.mkdir(parents=True, exist_ok=True)
 
+            # if destination.exists():
+            #     continue
+
+            # download_list.append((file, str(destination)))
+
+            expected_size = getattr(file, "size", None)
+
             if destination.exists():
-                continue
+                if expected_size is not None:
+                    local_size = destination.stat().st_size
+
+                    if local_size == expected_size:
+                        continue
+
+                    print(
+                        f"REDOWNLOAD: {relative_path}\n"
+                        f"  lokal:    {local_size:,} bytes\n"
+                        f"  erwartet: {expected_size:,} bytes"
+                    )
+                else:
+                    continue
 
             download_list.append((file, str(destination)))
 
@@ -220,6 +240,22 @@ def download_zarr_store(zarr_volume, output_dir):
         for attempt in range(10):
             try:
                 download_bucket_files(BUCKET, files=download_list)
+
+                for file, destination_str in download_list:
+                    destination = Path(destination_str)
+                    expected_size = getattr(file, "size", None)
+
+                    if expected_size is not None:
+                        actual_size = destination.stat().st_size
+
+                        if actual_size != expected_size:
+                            raise RuntimeError(
+                                f"Falsche Dateigröße nach Download:\n"
+                                f"  Datei:     {file.path}\n"
+                                f"  erwartet:  {expected_size:,} bytes\n"
+                                f"  erhalten:  {actual_size:,} bytes"
+                            )
+
                 return f"OK ({len(download_list)} Dateien)"
             except HfHubHTTPError as e:
                 if e.response is not None and e.response.status_code == 429:
@@ -651,7 +687,7 @@ def process_segment(segment_info):
 
             zarr_files.extend(download_zarr_store(label_source, temporary_label))
             print_zarr_shapes(temporary_label)
-            convert_to_png(temporary_label,output_label)
+            convert_to_png(temporary_label, output_label)
 
             if temporary_label.exists():
                 shutil.rmtree(temporary_label)

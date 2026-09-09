@@ -1,0 +1,26 @@
+defaults:
+  - data/dataset@dataset: default
+  - data/dataloader@dataloader: default
+  - model: unetrpp # timesformer unetrpp vesuvius_unet vesuvius_resnet3d
+  - path: predict
+  - /aug@aug: tta
+  - _self_
+
+experiment:
+  name: ${now:%Y-%m-%d_%H-%M-%S}
+  jobid: ${oc.env:SLURM_JOB_ID,none}
+
+hydra:
+  run:
+    dir: outputs/${train.name}/${model.name}/${experiment.name}
+
+train:
+  segments:
+    - 20241113090990
+  accelerator: cuda
+
+  aug: null
+  tta_num: 8
+
+  compile: false
+  compile_mode: default

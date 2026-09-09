@@ -16,7 +16,11 @@ class AddGaussianNoise(torch.nn.Module):
         noise = torch.randn_like(image)
         image = image + noise * self.sigma + self.mean
         image = torch.clamp(image, 0, 1)
-        return (image, *masks)
+
+        if masks:
+            return (image, *masks)
+
+        return image
 
 
 class AdditiveBrightness(torch.nn.Module):
@@ -36,7 +40,11 @@ class AdditiveBrightness(torch.nn.Module):
         ).uniform_(self.min_value, self.max_value)
 
         image = torch.clamp(image + value, 0, 1)
-        return (image, *masks)
+
+        if masks:
+            return (image, *masks)
+
+        return image
 
 
 class GammaTransform(torch.nn.Module):
@@ -53,7 +61,10 @@ class GammaTransform(torch.nn.Module):
         image = torch.clamp(image, 0, 1)
         image = image.pow(gamma)
 
-        return (image, *masks)
+        if masks:
+            return (image, *masks)
+
+        return image
 
 
 class MultiplicativeBrightness(torch.nn.Module):
@@ -69,7 +80,10 @@ class MultiplicativeBrightness(torch.nn.Module):
 
         image = torch.clamp(image * factor, 0, 1)
 
-        return (image, *masks)
+        if masks:
+            return (image, *masks)
+
+        return image
 
 
 class BlankRectangle(torch.nn.Module):
@@ -100,7 +114,10 @@ class BlankRectangle(torch.nn.Module):
 
             image[..., y:y + rect_h, x:x + rect_w] = value
 
-        return (image, *masks)
+        if masks:
+            return (image, *masks)
+
+        return image
 
 
 class RandomLowResolution(torch.nn.Module):
@@ -150,13 +167,16 @@ class RandomLowResolution(torch.nn.Module):
         elif original_ndim == 3:
             image = image.squeeze(0)
 
-        return (image, *masks)
+        if masks:
+            return (image, *masks)
+
+        return image
 
 
 class TransposeAxes(torch.nn.Module):
     """Randomly transpose the spatial axes."""
 
-    def __init__(self, axes=(0, 1)):
+    def __init__(self, axes=(-2, -1)):
         super().__init__()
 
         if len(axes) < 2:
@@ -170,14 +190,20 @@ class TransposeAxes(torch.nn.Module):
         image = torch.swapaxes(image, axis_a, axis_b)
         masks = tuple(torch.swapaxes(mask, axis_a, axis_b) for mask in masks)
 
-        return (image, *masks)
+        if masks:
+            return (image, *masks)
+
+        return image
 
 
 class InvertImage(torch.nn.Module):
     """Invert image intensities."""
 
     def forward(self, image, *masks):
-        return (1.0 - image, *masks)
+        if masks:
+            return (1.0 - image, *masks)
+
+        return 1.0 - image
 
 
 class MotionBlur(torch.nn.Module):
@@ -220,7 +246,10 @@ class MotionBlur(torch.nn.Module):
         elif original_ndim == 3:
             image = image.squeeze(0)
 
-        return (image, *masks)
+        if masks:
+            return (image, *masks)
+
+        return image
 
 
 class CoarseDropout(torch.nn.Module):
@@ -268,7 +297,10 @@ class CoarseDropout(torch.nn.Module):
 
             image[..., top : top + hole_height, left : left + hole_width] = self.fill
 
-        return (image, *masks)
+        if masks:
+            return (image, *masks)
+
+        return image
 
 
 class OneOf(torch.nn.Module):
@@ -358,7 +390,10 @@ class TTARandomHorizontalFlip(torch.nn.Module):
         if params["apply"]:
             masks = tuple(torch.flip(mask, dims=(-1,)) for mask in masks)
 
-        return (image, *masks)
+        if masks:
+            return (image, *masks)
+
+        return image
 
     def inverse(self, prediction, params):
         if params["apply"]:
@@ -388,7 +423,10 @@ class TTARandomVerticalFlip(torch.nn.Module):
         if params["apply"]:
             masks = tuple(torch.flip(mask, dims=(-2,)) for mask in masks)
 
-        return (image, *masks)
+        if masks:
+            return (image, *masks)
+
+        return image
 
     def inverse(self, prediction, params):
         if params["apply"]:
@@ -423,7 +461,10 @@ class TTATransposeAxes(torch.nn.Module):
 
         masks = tuple(torch.swapaxes(mask, params["axis_a"], params["axis_b"]) for mask in masks)
 
-        return (image, *masks)
+        if masks:
+            return (image, *masks)
+
+        return image
 
     def inverse(self, prediction, params):
         return torch.swapaxes(prediction, params["axis_a"], params["axis_b"])
@@ -882,10 +923,7 @@ class TTARandomApply(torch.nn.Module):
         if not apply:
             return (image, *masks)
 
-        return self.transform(
-            image,
-            *masks,
-        )
+        return self.transform(image, *masks)
 
     def inverse(self, prediction, params):
         if not params["apply"]:
@@ -935,19 +973,13 @@ class TTAOneOf(torch.nn.Module):
             device=image.device,
         ).item()
 
-        return self.transforms[index](
-            image,
-            *masks,
-        )
+        return self.transforms[index]( image, *masks)
 
     def inverse(self, prediction, params):
         transform = self.transforms[params["index"]]
 
         if hasattr(transform, "inverse"):
-            return transform.inverse(
-                prediction,
-                params["params"],
-            )
+            return transform.inverse( prediction, params["params"])
 
         return prediction
 

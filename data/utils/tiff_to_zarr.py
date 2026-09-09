@@ -196,7 +196,7 @@ def main(args):
     for scroll in args.input.iterdir():
         for split in scroll.iterdir():
             for segment in split.iterdir():
-                if segment.name in args.segments or args.segments is None:
+                if args.segments is None or segment.name in args.segments:
                     folders.append(segment)
 
     for folder in folders:

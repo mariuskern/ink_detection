@@ -1,6 +1,6 @@
 defaults:
   - base
-  - /aug@teacher.aug: none
+  - /aug@teacher.aug: tta
   - /aug@student.aug: strong
 
 name: noisy_student
@@ -28,6 +28,7 @@ val:
   - 20241113090990
 
 refinement:
+  tta_num: 4
   strong_threshold: 0.80
   weak_threshold: 0.30
   confidence_threshold: 0.70

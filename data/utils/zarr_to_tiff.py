@@ -300,7 +300,23 @@ def convert_segment(input_segment_dir, output_segment_dir, zarr_path, prefix, di
         if output_file.exists() and not overwrite:
             continue
 
-        image = np.asarray(volume[i])
+        # image = np.asarray(volume[i, :, :])
+
+        try:
+            image = np.asarray(volume[i, :, :])
+        except Exception as e:
+            print("")
+            print("=" * 70)
+            print("ZARR READ ERROR")
+            print("=" * 70)
+            print(f"Segment: {segment_name}")
+            print(f"Slice:   {i}")
+            print(f"Shape:   {volume.shape}")
+            print(f"Chunks:  {volume.chunks}")
+            print(f"Dtype:   {volume.dtype}")
+            print(f"Error:   {type(e).__name__}: {e}")
+            print("=" * 70)
+            raise
 
         # print(image.dtype, image.min(), image.max())
 
@@ -406,6 +422,7 @@ def main(args):
             print(f"ERROR processing " f"{input_segment_dir.name}:")
 
             print(f"  {e}")
+            raise
 
     # ========================================================
     # Summary

@@ -88,16 +88,16 @@ python tiff_to_zarr.py \
 echo "=============================="
 
 
-echo
-echo "Generating tiles..."
-echo
+# echo
+# echo "Generating tiles..."
+# echo
 
-python zarr_to_tiles.py \
-    "$ZARR_DIR" \
-    $TILE_SIZES \
-    $STRIDES
+# python zarr_to_tiles.py \
+#     "$ZARR_DIR" \
+#     $TILE_SIZES \
+#     $STRIDES
 
-echo "=============================="
+# echo "=============================="
 
 
 echo

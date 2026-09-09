@@ -36,7 +36,8 @@ def generate_pseudo_labels(cfg, model, iteration, output_dir, device):
         predict_dataset = build_dataset(cfg, cfg.train.unlabeled, min_mask_fraction=0.0, transform=transform)
         predict_loader = build_dataloader(cfg, predict_dataset, None)
 
-        results = predict(model, predict_loader, device=device)
+        # results = predict(model, predict_loader, device=device)
+        results = predict(model, predict_loader, device=device, tta_transform=transform, tta_num=cfg.train.refinement.tta_num)
         # results = postprocess_predictions(
         #     results,
         #     cfg.train.threshold,

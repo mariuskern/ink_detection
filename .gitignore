@@ -2,6 +2,7 @@
 /outputs
 /wandb
 /logs
+/checkpoints
 
 
 # https://github.com/github/gitignore/blob/main/Python.gitignore
