@@ -4,7 +4,7 @@ from training.supervised import fit
 
 from utils import predict, postprocess_predictions, save_predictions_as_images, save_predictions_as_zarr
 from utils.device import get_device
-from data import build_dataset, build_dataloader, prepare_pseudo_tile_manifests, build_augmentation
+from data import build_dataset, build_dataloader, build_augmentation
 
 
 def train_noisy_student(cfg, logger):
@@ -33,7 +33,8 @@ def train_noisy_student(cfg, logger):
 
 def generate_pseudo_labels(cfg, model, iteration, output_dir, device):
         transform = build_augmentation(cfg.train.teacher.aug) if cfg.train.teacher.aug is not None else None
-        predict_dataset = build_dataset(cfg, cfg.train.unlabeled, min_mask_fraction=0.0, transform=transform)
+        # predict_dataset = build_dataset(cfg, cfg.train.unlabeled, min_mask_fraction=0.0, transform=transform)
+        predict_dataset = build_dataset(cfg, cfg.train.unlabeled, transform=transform, split="train" if cfg.train.use_validation_mask else None)
         predict_loader = build_dataloader(cfg, predict_dataset, None)
 
         # results = predict(model, predict_loader, device=device)
@@ -86,11 +87,12 @@ def generate_pseudo_labels(cfg, model, iteration, output_dir, device):
             save_mask=True,
         )
 
-        prepare_pseudo_tile_manifests(
-            cfg.path.data_dir,
-            cfg.train.unlabeled,
-            version=iteration,
-            tile_size=cfg.dataset.tile_size,
-            stride=cfg.dataset.stride,
-            target=cfg.train.pseudo_target,
-        )
+        # prepare_pseudo_tile_manifests(
+        #     cfg.path.data_dir,
+        #     cfg.train.unlabeled,
+        #     version=iteration,
+        #     tile_size=cfg.dataset.tile_size,
+        #     stride=cfg.dataset.stride,
+        #     target=cfg.train.pseudo_target,
+        #     split="train" if cfg.train.use_validation_mask else None
+        # )

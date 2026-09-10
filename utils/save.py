@@ -119,7 +119,7 @@ def save_predictions_as_zarr(data_dir, predictions, iteration, save_probability=
             _save_zarr(
                 segment_paths[prediction.segment],
                 "prediction",
-                prediction.segment,
+                # prediction.segment,
                 prediction.probability,
                 iteration
             )
@@ -128,7 +128,7 @@ def save_predictions_as_zarr(data_dir, predictions, iteration, save_probability=
             _save_zarr(
                 segment_paths[prediction.segment],
                 "confidence",
-                prediction.segment,
+                # prediction.segment,
                 prediction.confidence,
                 iteration
             )
@@ -137,7 +137,7 @@ def save_predictions_as_zarr(data_dir, predictions, iteration, save_probability=
             _save_zarr(
                 segment_paths[prediction.segment],
                 "uncertainty",
-                prediction.segment,
+                # prediction.segment,
                 prediction.uncertainty,
                 iteration
             )
@@ -146,7 +146,7 @@ def save_predictions_as_zarr(data_dir, predictions, iteration, save_probability=
             _save_zarr(
                 segment_paths[prediction.segment],
                 "pseudo_labels",
-                prediction.segment,
+                # prediction.segment,
                 prediction.pseudo_label,
                 iteration
             )
@@ -155,7 +155,7 @@ def save_predictions_as_zarr(data_dir, predictions, iteration, save_probability=
             _save_zarr(
                 segment_paths[prediction.segment],
                 "pseudo_masks",
-                prediction.segment,
+                # prediction.segment,
                 prediction.pseudo_mask,
                 iteration
             )
@@ -164,7 +164,7 @@ def save_predictions_as_zarr(data_dir, predictions, iteration, save_probability=
             _save_zarr(
                 segment_paths[prediction.segment],
                 "pseudo_label_not_refined",
-                prediction.segment,
+                # prediction.segment,
                 prediction.pseudo_label_not_refined,
                 iteration
             )
@@ -173,14 +173,14 @@ def save_predictions_as_zarr(data_dir, predictions, iteration, save_probability=
             _save_zarr(
                 segment_paths[prediction.segment],
                 "pseudo_mask_not_refined",
-                prediction.segment,
+                # prediction.segment,
                 prediction.pseudo_mask_not_refined,
                 iteration
             )
 
 
-def _save_zarr(segment_path, group_name, segment, array, iteration):
-    zarr_path = segment_path / f"{segment}.zarr"
+def _save_zarr(segment_path, group_name, array, iteration):
+    zarr_path = segment_path / f"{segment_path.name}.zarr"
 
     z = zarr.open(zarr_path, mode="a")
 

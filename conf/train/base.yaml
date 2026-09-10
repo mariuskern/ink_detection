@@ -22,3 +22,4 @@ benchmark: true
 deterministic: False
 threshold: 0.5                  # Used to calculate dice and iou
 gradient_accumulation_steps: 4
+use_validation_mask: false

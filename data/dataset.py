@@ -365,7 +365,7 @@ class InkDataset(Dataset):
             validation_mask = np.asarray(zarr_data["validation_mask"]) if "validation_mask" in zarr_data else None
             if self.split is not None and validation_mask is not None:
                 if self.split == "train":
-                    validation_mask = ~validation_mask
+                    validation_mask = validation_mask == 0
                 mask = mask * validation_mask
 
             tiles = get_tiles(label, mask, self.tile_size, self.stride, segment, h, w)

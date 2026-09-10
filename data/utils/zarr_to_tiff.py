@@ -298,6 +298,7 @@ def convert_segment(input_segment_dir, output_segment_dir, zarr_path, prefix, di
         output_file = layers_dir / f"{prefix}{i:0{digits}d}.tif"
 
         if output_file.exists() and not overwrite:
+            print(f"Skipping: {output_file}")
             continue
 
         # image = np.asarray(volume[i, :, :])

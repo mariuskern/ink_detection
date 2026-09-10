@@ -34,4 +34,7 @@ val:
   - "0172_20241025145701"
   - "0172_20241113090990"
 
-use_validation_mask: true 
+use_validation_mask: true
+
+refinement:
+  tta_num: 1
