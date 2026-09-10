@@ -314,6 +314,8 @@ def main(args):
             )
 
             z["label"][:] = label
+        else:
+            print("No label")
 
 
         # Save mask
@@ -327,6 +329,8 @@ def main(args):
             )
 
             z["mask"][:] = mask
+        else:
+            print("No mask")
 
 
         # Save validation mask
@@ -340,6 +344,8 @@ def main(args):
             )
 
             z["validation_mask"][:] = validation_mask
+        else:
+            print("No validation mask")
 
         print(f"Saved Zarr archive to: {output_path}")
         print("")

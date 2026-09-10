@@ -55,7 +55,7 @@ def main():
             # target_category.mkdir(parents=True, exist_ok=True)
 
             for archive in category.glob("*.tar.gz"):
-                segment_name = archive.name.removesuffix(".tar.gz")
+                segment_name = scroll.name + "_" + archive.name.removesuffix(".tar.gz")
 
                 if segment_name not in segments:
                     continue
