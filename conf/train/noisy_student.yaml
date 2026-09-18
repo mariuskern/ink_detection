@@ -1,6 +1,6 @@
 defaults:
   - base
-  - /aug@teacher.aug: tta
+  - /aug@teacher.aug: none
   - /aug@student.aug: strong
 
 name: noisy_student
@@ -41,7 +41,7 @@ val:
   - "0172_20241113090990"
 
 refinement:
-  tta_num: 4
+  tta_num: 1
 
   predictions:
   threshold: 0.5

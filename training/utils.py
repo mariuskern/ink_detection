@@ -210,6 +210,9 @@ def fit(cfg, logger, output_dir, *, pseudo_label_version=None, iteration=None, a
         iteration=str(iteration) if iteration is not None else None
     )
 
+    if iteration:
+        logging_manager.log_once("train_debug", "iteration", iteration)
+
     # ------------------------------------------------------------------------
     # Epoch loop
     # ------------------------------------------------------------------------
