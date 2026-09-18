@@ -16,11 +16,11 @@ hydra:
 
 train:
   segments:
-    - 20241113090990
+    # - 20241113090990
+    - 0172_20241113090990
   accelerator: cuda
 
-  aug: null
-  tta_num: 8
+  tta_num: 1
 
   compile: false
   compile_mode: default
