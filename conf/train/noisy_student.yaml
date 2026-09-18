@@ -41,7 +41,7 @@ val:
   - "0172_20241113090990"
 
 refinement:
-  tta_num: 1
+  # tta_num: 1
 
   predictions:
   threshold: 0.5

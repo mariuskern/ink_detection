@@ -1,7 +1,7 @@
 lr: 1.0e-4 # 1.0e-4
 max_epochs: 50
 weight_decay: 3.0e-5
-warmup_epochs: 5
+warmup_epochs: 3 # 5
 accelerator: auto
 # devices: 1
 gradient_clip_val: 1.0
@@ -16,7 +16,7 @@ checkpoint:
   save_top_k: 1
   save_last: True
   save_last_every_epoch: True
-  monitor: val/loss
+  monitor: train/loss # val/loss
   mode: min
 benchmark: true
 deterministic: False

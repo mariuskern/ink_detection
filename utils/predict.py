@@ -5,7 +5,7 @@ from .prediction_merger import PredictionMerger
 
 
 @torch.no_grad()
-def predict(model, dataloader, device, tta_transform=None, tta_num=1):
+def predict(model, dataloader, device):
     # device = "cuda" if torch.cuda.is_available() else "cpu"
 
     model.to(device)
@@ -13,39 +13,71 @@ def predict(model, dataloader, device, tta_transform=None, tta_num=1):
 
     prediction_merger = PredictionMerger()
 
-    if tta_transform is None and tta_num > 1:
-        raise ValueError("transform has to be given if tta_num is greater than 1")
+    for batch in tqdm(dataloader, desc="Predicting"):
+        tile = batch["tile"]
+        segments = batch["segment"]
+        x = batch["x"]
+        y = batch["y"]
+        shape = batch["shape"]
 
-    for _ in range(tta_num):
-        for batch in tqdm(dataloader, desc="Predicting"):
-            tile = batch["tile"]
-            segments = batch["segment"]
-            x = batch["x"]
-            y = batch["y"]
-            shape = batch["shape"]
+        tile = tile.to(device, non_blocking=True)
+        output = model(tile)
+        probs = torch.sigmoid(output).squeeze(1).cpu().numpy()
 
-            tile = tile.to(device, non_blocking=True)
-
-            if tta_transform is not None:
-                tile, params = tta_transform.tta_forward(tile)
-
-            output = model(tile)
-
-            if tta_transform is not None:
-                output = tta_transform.inverse(output, params)
-
-            probs = torch.sigmoid(output).squeeze(1).cpu().numpy()
-
-            for i, segment in enumerate(segments):
-                prediction_merger.add(
-                    segment=segment,
-                    x=int(x[i]),
-                    y=int(y[i]),
-                    prediction=probs[i],
-                    shape=shape[i].tolist(),
-                )
+        for i, segment in enumerate(segments):
+            prediction_merger.add(
+                segment=segment,
+                x=int(x[i]),
+                y=int(y[i]),
+                prediction=probs[i],
+                shape=shape[i].tolist(),
+            )
 
     return prediction_merger.get_predictions()
+
+
+# @torch.no_grad()
+# def predict(model, dataloader, device, tta_transform=None, tta_num=1):
+#     # device = "cuda" if torch.cuda.is_available() else "cpu"
+
+#     model.to(device)
+#     model.eval()
+
+#     prediction_merger = PredictionMerger()
+
+#     if tta_transform is None and tta_num > 1:
+#         raise ValueError("transform has to be given if tta_num is greater than 1")
+
+#     for _ in range(tta_num):
+#         for batch in tqdm(dataloader, desc="Predicting"):
+#             tile = batch["tile"]
+#             segments = batch["segment"]
+#             x = batch["x"]
+#             y = batch["y"]
+#             shape = batch["shape"]
+
+#             tile = tile.to(device, non_blocking=True)
+
+#             if tta_transform is not None:
+#                 tile, params = tta_transform.tta_forward(tile)
+
+#             output = model(tile)
+
+#             if tta_transform is not None:
+#                 output = tta_transform.inverse(output, params)
+
+#             probs = torch.sigmoid(output).squeeze(1).cpu().numpy()
+
+#             for i, segment in enumerate(segments):
+#                 prediction_merger.add(
+#                     segment=segment,
+#                     x=int(x[i]),
+#                     y=int(y[i]),
+#                     prediction=probs[i],
+#                     shape=shape[i].tolist(),
+#                 )
+
+#     return prediction_merger.get_predictions()
 
     
 

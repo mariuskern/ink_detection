@@ -216,6 +216,18 @@ class InkDataset(Dataset):
         pseudo_label = self._get_pseudo_label(zarr_array, x, y)
         mask = self._get_mask(zarr_array, x, y)
         pseudo_mask = self._get_pseudo_mask(zarr_array, x, y)
+        
+        if label is not None:
+            self._assert_binary(label, "label")
+
+        if pseudo_label is not None and self.pseudo_target == "hard":
+            self._assert_binary(pseudo_label, "pseudo_label")
+
+        if mask is not None:
+            self._assert_binary(mask, "mask")
+
+        if pseudo_mask is not None:
+            self._assert_binary(pseudo_mask, "pseudo_mask")
 
         has_label = label is not None
         has_pseudo_label = pseudo_label is not None
@@ -449,3 +461,8 @@ class InkDataset(Dataset):
             meta = json.load(f)
 
         return meta
+
+
+    def _assert_binary(self, tensor, name):
+        values = torch.unique(tensor)
+        assert torch.all((values == 0) | (values == 1)), (f"{name} is not binary. Found values: {values[:20].tolist()}")
