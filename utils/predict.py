@@ -33,7 +33,8 @@ def predict(model, dataloader, device):
                 shape=shape[i].tolist(),
             )
 
-    return prediction_merger.get_predictions()
+    # return prediction_merger.get_predictions()
+    yield from prediction_merger.iter_predictions()
 
 
 # @torch.no_grad()

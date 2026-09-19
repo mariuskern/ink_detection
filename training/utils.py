@@ -816,15 +816,24 @@ def validate(
                 }
             )
 
-        results = prediction_merger.get_predictions()
+        for prediction in prediction_merger.iter_predictions():
+            save_predictions_as_images(
+                val_image_dir,
+                [prediction],
+                save_probability=True,
+                name_suffix=(f"epoch_{epoch:04d}"),
+                create_subfolders=False,
+            )
 
-        save_predictions_as_images(
-            val_image_dir,
-            results,
-            save_probability=True,
-            name_suffix=(f"epoch_{epoch:04d}"),
-            create_subfolders=False,
-        )
+        # results = prediction_merger.get_predictions()
+
+        # save_predictions_as_images(
+        #     val_image_dir,
+        #     results,
+        #     save_probability=True,
+        #     name_suffix=(f"epoch_{epoch:04d}"),
+        #     create_subfolders=False,
+        # )
 
     # ------------------------------------------------------------------------
     # Important:
