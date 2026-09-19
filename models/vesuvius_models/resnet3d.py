@@ -1,8 +1,11 @@
-# The original model was loaded using AutoModel from the provided checkpoint,
-# while the model was independently reimplemented based on the original
-# repository implementation. Functional equivalence was validated by loading
-# the same checkpoint weights into both models and verifying identical outputs
-# for the same inputs.
+# NOTE: The VesuviusResNet3D model is based on the original implementation from the
+# Vesuvius Challenge GitHub repository (https://github.com/ScrollPrize/villa/commit/e583fb67468f483fadd73d52e06f0ab0fe5ba813). The reference implementation was
+# obtained from Hugging Face (https://huggingface.co/scrollprize/PHerc.1667-iteration-5)
+#
+# The Hugging Face model code was downloaded and adapted to run independently of the Transformers
+# library. Functional equivalence was validated by loading the same checkpoint
+# weights into both implementations and verifying identical outputs for the
+# same inputs.
 
 
 import torch

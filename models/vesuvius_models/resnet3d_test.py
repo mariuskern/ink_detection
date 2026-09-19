@@ -2,6 +2,8 @@
 # The scrollprize/PHerc.1667-iteration-0 model was built for Transformers 4.57.6,
 # but a newer Hugging Face Hub version is required elsewhere in the project,
 # which is incompatible with the Transformers version required by this model.
+# Therefore, the Hugging Face model code was downloaded and adapted to run
+# independently of the Transformers library.
 
 
 import os
@@ -10,7 +12,7 @@ import argparse
 from pathlib import Path
 
 import torch
-from transformers import AutoModel
+# from transformers import AutoModel
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -18,6 +20,7 @@ load_dotenv()
 sys.path.append(os.getenv("CODE_DIR"))
 
 from models.vesuvius_models import VesuviusResNet3D
+from models.vesuvius_models.hf_code_iteration_5.modeling_inkdetection import InkDetectionModel
 
 
 def _get_arguments():
@@ -32,15 +35,36 @@ def _get_arguments():
         help="Path to the checkpoint file.",
     )
 
+    # parser.add_argument(
+    #     "--hf_checkpoint_path",
+    #     type=Path,
+    #     default=None,
+    #     help="Path to the huggingface checkpoint file."
+    # )
+
     return parser.parse_args()
 
 
 def main(args):
-    model_auto = AutoModel.from_pretrained("scrollprize/PHerc.1667-iteration-0", trust_remote_code=True).cuda()
+    # model_auto = AutoModel.from_pretrained("scrollprize/PHerc.1667-iteration-0", trust_remote_code=True).cuda()
+    model_auto = InkDetectionModel(
+        in_channels=1,
+        backbone_depth=50,
+        backbone_channels=(256, 512, 1024, 2048),
+        decoder_upscale=1,
+    ).cuda()
+
+    # if args.hf_checkpoint_path is not None and args.hf_checkpoint_path.exists():
+    #     ckpt = torch.load(args.hf_checkpoint_path, weights_only=False)
+    #     model_auto.load_state_dict(ckpt["state_dict"], strict=False)
+    #     print("Model auto checkpoint loaded")
+
     model = VesuviusResNet3D(upscale=1).cuda()
 
     if args.checkpoint_path is not None and args.checkpoint_path.exists():
         ckpt = torch.load(args.checkpoint_path, weights_only=False)
+        model_auto.load_state_dict(ckpt["state_dict"], strict=False)
+        print("Model auto checkpoint loaded")
         model.load_state_dict(ckpt["state_dict"])
         print("Model checkpoint loaded")
 
@@ -53,7 +77,7 @@ def main(args):
         print(x.shape)
 
         with torch.no_grad():
-            y_auto = model_auto(x)["logits"]
+            y_auto = model_auto(x)
             y_reimplemented = model(x)
 
         print(y_auto.shape)

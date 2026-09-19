@@ -62,18 +62,18 @@ SEGMENTS = [
     #     "mask": "ink/1667/w013_20240304141531_2um/w013_20240304141531_2um_supervision_mask.zarr",
     #     "meta": "ink/1667/w013_20240304141531_2um/meta.json",
     # },
-    # {
-    #     "scroll": "1667",
-    #     "segment": "w018_20240304144031_2um",
-    #     # "volume": "ink/1667/w018_20240304144031_2um/w018_20240304144031_2um.zarr",
-    #     "volume": None,
-    #     # "label": "ink/1667/w018_20240304144031_2um/w018_20240304144031_2um_inklabels.zarr",
-    #     "label": "ink/1667/w018_20240304144031_2um/w018_20240304144031_inklabels_v2.tif",
-    #     # "mask": "ink/1667/w018_20240304144031_2um/w018_20240304144031_2um_supervision_mask.zarr",
-    #     "mask": "ink/1667/w018_20240304144031_2um/w018_20240304144031_supervision_mask_v2.tif",
-    #     "validation_mask": "ink/1667/w018_20240304144031_2um/w018_20240304144031_validation_mask_v2.tif",
-    #     "meta": "ink/1667/w018_20240304144031_2um/meta.json",
-    # },
+    {
+        "scroll": "1667",
+        "segment": "w018_20240304144031_2um",
+        # "volume": "ink/1667/w018_20240304144031_2um/w018_20240304144031_2um.zarr",
+        "volume": None,
+        # "label": "ink/1667/w018_20240304144031_2um/w018_20240304144031_2um_inklabels.zarr",
+        "label": "ink/1667/w018_20240304144031_2um/w018_20240304144031_inklabels_v2.tif",
+        # "mask": "ink/1667/w018_20240304144031_2um/w018_20240304144031_2um_supervision_mask.zarr",
+        "mask": "ink/1667/w018_20240304144031_2um/w018_20240304144031_supervision_mask_v2.tif",
+        "validation_mask": "ink/1667/w018_20240304144031_2um/w018_20240304144031_validation_mask_v2.tif",
+        "meta": "ink/1667/w018_20240304144031_2um/meta.json",
+    },
     # {
     #     "scroll": "1667",
     #     "segment": "w023_20240304161941_2um",
@@ -135,36 +135,36 @@ SEGMENTS = [
     # },
 
 
-    {
-        "scroll": "841",
-        "segment": "auto_grown_20260220144552896",
-        "volume": "ink/841/auto_grown_20260220144552896/auto_grown_20260220144552896.zarr",
-        "label": "ink/841/auto_grown_20260220144552896/auto_grown_20260220144552896_inklabels_v2.tif",
-        "mask": "ink/841/auto_grown_20260220144552896/auto_grown_20260220144552896_supervision_mask_v2.tif",
-        "validation_mask": "ink/841/auto_grown_20260220144552896/auto_grown_20260220144552896_validation_mask_v2.tif",
-        "meta": "ink/841/auto_grown_20260220144552896/meta.json",
-    },
-    {
-        "scroll": "841",
-        "segment": "auto_grown_20260220174252405",
-        "volume": "ink/841/auto_grown_20260220174252405/auto_grown_20260220174252405.zarr",
-        "label": "ink/841/auto_grown_20260220174252405/auto_grown_20260220174252405_inklabels_v2.tif",
-        "mask": "ink/841/auto_grown_20260220174252405/auto_grown_20260220174252405_supervision_mask_v2.tif",
-        "validation_mask": "ink/841/auto_grown_20260220174252405/auto_grown_20260220174252405_validation_mask_v2.tif",
-        "meta": "ink/841/auto_grown_20260220174252405/meta.json",
-    },
-    {
-        "scroll": "841",
-        "segment": "w00",
-        "volume": "ink/841/w00/w00.zarr",
-        "label": "ink/841/w00/w00_inklabels_v2.tif",
-        "mask": "ink/841/w00/w00_supervision_mask_v2.tif",
-        "validation_mask": "ink/841/w00/w00_validation_mask_v2.tif",
-        "meta": "ink/841/w00/meta.json",
-    },
+    # {
+    #     "scroll": "841",
+    #     "segment": "auto_grown_20260220144552896",
+    #     "volume": "ink/841/auto_grown_20260220144552896/auto_grown_20260220144552896.zarr",
+    #     "label": "ink/841/auto_grown_20260220144552896/auto_grown_20260220144552896_inklabels_v2.tif",
+    #     "mask": "ink/841/auto_grown_20260220144552896/auto_grown_20260220144552896_supervision_mask_v2.tif",
+    #     "validation_mask": "ink/841/auto_grown_20260220144552896/auto_grown_20260220144552896_validation_mask_v2.tif",
+    #     "meta": "ink/841/auto_grown_20260220144552896/meta.json",
+    # },
+    # {
+    #     "scroll": "841",
+    #     "segment": "auto_grown_20260220174252405",
+    #     "volume": "ink/841/auto_grown_20260220174252405/auto_grown_20260220174252405.zarr",
+    #     "label": "ink/841/auto_grown_20260220174252405/auto_grown_20260220174252405_inklabels_v2.tif",
+    #     "mask": "ink/841/auto_grown_20260220174252405/auto_grown_20260220174252405_supervision_mask_v2.tif",
+    #     "validation_mask": "ink/841/auto_grown_20260220174252405/auto_grown_20260220174252405_validation_mask_v2.tif",
+    #     "meta": "ink/841/auto_grown_20260220174252405/meta.json",
+    # },
+    # {
+    #     "scroll": "841",
+    #     "segment": "w00",
+    #     "volume": "ink/841/w00/w00.zarr",
+    #     "label": "ink/841/w00/w00_inklabels_v2.tif",
+    #     "mask": "ink/841/w00/w00_supervision_mask_v2.tif",
+    #     "validation_mask": "ink/841/w00/w00_validation_mask_v2.tif",
+    #     "meta": "ink/841/w00/meta.json",
+    # },
 ]
 
-LOCAL_DIR = Path(r"D:\Dokumente\Studium\Masterarbeit\hf_data_841")
+LOCAL_DIR = Path(r"D:\Dokumente\Studium\Masterarbeit\hf_data_18_no_volume")
 
 MAX_WORKERS = 12
 BATCH_SIZE = 100
