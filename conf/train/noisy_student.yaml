@@ -45,8 +45,8 @@ refinement:
 
   predictions:
   threshold: 0.5
-  confidence_threshold: 0.8
-  uncertainty_threshold: 0.15
+  confidence_threshold: 0.9 # 0.8
+  uncertainty_threshold: 0.05 # 0.15
   use_confidence_mask: True
   use_uncertainty_mask: True
 
