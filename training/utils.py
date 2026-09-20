@@ -364,13 +364,13 @@ def train_one_epoch(
         # Interpolation
         # --------------------------------------------------------------------
 
-        interpolate_labels = cfg.model.name == "timesformer"
+        # interpolate_labels = cfg.model.name == "timesformer"
 
-        if interpolate_labels:
-            label = interpolate(label, cfg.model.patch_size)
-            pseudo_label = interpolate(pseudo_label, cfg.model.patch_size)
-            mask = interpolate(mask, cfg.model.patch_size)
-            pseudo_mask = interpolate(pseudo_mask, cfg.model.patch_size)
+        # if interpolate_labels:
+        #     label = interpolate(label, cfg.model.patch_size)
+        #     pseudo_label = interpolate(pseudo_label, cfg.model.patch_size)
+        #     mask = interpolate(mask, cfg.model.patch_size)
+        #     pseudo_mask = interpolate(pseudo_mask, cfg.model.patch_size)
 
         # --------------------------------------------------------------------
         # Forward
@@ -380,6 +380,14 @@ def train_one_epoch(
 
         with autocast_context(device.type, autocast_dtype):
             output = model(tile)
+
+            needs_resize = label.shape[-2:] != output.shape[-2:]
+
+            if needs_resize:
+                label = interpolate(label, output.shape[-2:])
+                pseudo_label = interpolate(pseudo_label, output.shape[-2:])
+                mask = interpolate(mask, output.shape[-2:])
+                pseudo_mask = interpolate(pseudo_mask, output.shape[-2:])
 
             pseudo_mask = mask * pseudo_mask
 
@@ -692,7 +700,7 @@ def validate(
 
     model.eval()
 
-    interpolate_labels = cfg.model.name == "timesformer"
+    # interpolate_labels = cfg.model.name == "timesformer"
 
     # ------------------------------------------------------------------------
     # Validation loop
@@ -717,9 +725,9 @@ def validate(
         # Interpolation
         # --------------------------------------------------------------------
 
-        if interpolate_labels:
-            label = interpolate(label, cfg.model.patch_size)
-            mask = interpolate(mask, cfg.model.patch_size)
+        # if interpolate_labels:
+        #     label = interpolate(label, cfg.model.patch_size)
+        #     mask = interpolate(mask, cfg.model.patch_size)
 
         # --------------------------------------------------------------------
         # Forward
@@ -727,6 +735,15 @@ def validate(
 
         with autocast_context(device.type, autocast_dtype):
             output = model(tile)
+
+            label_original = label
+            mask_original = mask
+
+            needs_resize = label.shape[-2:] != output.shape[-2:]
+            
+            if needs_resize:
+                label = interpolate(label, output.shape[-2:])
+                mask = interpolate(mask, output.shape[-2:])
 
             # --------------------------------------------------------------------
             # Loss + tile metrics
@@ -782,18 +799,18 @@ def validate(
         # --------------------------------------------------------------------
 
         if export_predictions:
-            if interpolate_labels:
-                output_for_export = interpolate_reverse(output, cfg.model.patch_size)
-                label_for_export = interpolate_reverse(label, cfg.model.patch_size)
-                mask_for_export = interpolate_reverse(mask, cfg.model.patch_size)
+            if needs_resize:
+                output_for_export = interpolate_reverse(output, tile.shape[-2:])
+                # label_for_export = interpolate_reverse(label, tile.shape[-2:])
+                # mask_for_export = interpolate_reverse(mask, tile.shape[-2:])
             else:
                 output_for_export = output
-                label_for_export = label
-                mask_for_export = mask
+                # label_for_export = label
+                # mask_for_export = mask
 
             probs = torch.sigmoid(output_for_export).squeeze(1).detach().float().cpu().numpy()
-            targets = label_for_export.squeeze(1).detach().float().cpu().numpy()
-            valid_masks = mask_for_export.squeeze(1).detach().float().cpu().numpy()
+            targets = label_original.squeeze(1).detach().float().cpu().numpy()
+            valid_masks = mask_original.squeeze(1).detach().float().cpu().numpy()
             has_label_cpu = has_label.detach().cpu().numpy()
 
             for i in range(len(segment)):
@@ -881,24 +898,26 @@ def get_pseudo_loss_weight(cfg, epoch):
     return weight * factor
 
 
-def interpolate(x, interpolation_size):
+def interpolate(x, target_size):
     """
     Exact equivalent of SupervisedModule.interpolate().
     """
 
     _, _, height, width = x.shape
 
-    x = F.interpolate(x, (height // interpolation_size, width // interpolation_size), mode="nearest")
+    # x = F.interpolate(x, (height // interpolation_size[0], width // interpolation_size[1]), mode="nearest")
+    x = F.interpolate(x.float(), size=target_size, mode="nearest")
 
     return x
 
 
-def interpolate_reverse(x, interpolation_size):
+def interpolate_reverse(x, target_size):
     """
     Exact equivalent of SupervisedModule.interpolate_reverse().
     """
 
-    x = F.interpolate(x.float(), scale_factor=interpolation_size, mode="bilinear").squeeze(0)
+    # x = F.interpolate(x.float(), scale_factor=interpolation_size, mode="bilinear").squeeze(0)
+    x = F.interpolate(x.float(), size=target_size, mode="bilinear")
 
     return x
 

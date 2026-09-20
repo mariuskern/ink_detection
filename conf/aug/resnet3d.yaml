@@ -1,0 +1,37 @@
+name: resnet3d
+transforms:
+  - name: random_horizontal_flip
+    p: 0.5
+
+  - name: random_vertical_flip
+    p: 0.5
+
+  - name: random_affine
+    degrees: 360
+    translate: [0.15, 0.15]
+    scale: [0.9, 1.1]
+    shear: 0
+    p: 0.75
+
+
+  # Scan-/Papyrus-spezifische Augmentierungen
+
+  # - name: color_jitter
+  #   brightness: 0.2
+  #   contrast: 0.2
+  #   saturation: 0.0
+  #   hue: 0.0
+  #   p: 0.5
+
+  - name: gaussian_blur
+    kernel_size: 5
+    sigma: [0.1, 2.0]
+    p: 0.4
+
+
+  # Crop/Scale
+  - name: random_resized_crop
+    size: ${dataset.tile_size}
+    scale: [0.8, 1.0]
+    ratio: [0.9, 1.1]
+    p: 0.5

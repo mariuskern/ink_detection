@@ -1,18 +1,2 @@
 defaults:
-  - data/dataset@dataset: debug
-  - data/sampler@sampler: debug
-  - data/dataloader@dataloader: debug
-  - model: unetrpp # timesformer unetrpp vesuvius_unet vesuvius_resnet3d
-  - loss: dice_bce
-  - path: local
-  - wandb: debug
-  - train: noisy_student_debug # supervised_debug noisy_student_debug unimatch_debug
-  - _self_
-
-experiment:
-  name: ${now:%Y-%m-%d_%H-%M-%S} # ${model.name}_${now:%Y-%m-%d_%H-%M-%S}
-  jobid: ${oc.env:SLURM_JOB_ID,none}
-
-hydra:
-  run:
-    dir: outputs/${train.name}/${model.name}/${experiment.name}
+  - debug_resnet3d

@@ -1,0 +1,18 @@
+defaults:
+  - data/dataset@dataset: resnet3d
+  - data/sampler@sampler: default
+  - data/dataloader@dataloader: resnet3d
+  - model: vesuvius_resnet3d # timesformer unetrpp vesuvius_unet vesuvius_resnet3d
+  - loss: resnet3d
+  - path: alex
+  - wandb: default
+  - train: noisy_student_resnet3d # supervised noisy_student unimatch
+  - _self_
+
+experiment:
+  name: ${now:%Y-%m-%d_%H-%M-%S} # ${model.name}_${now:%Y-%m-%d_%H-%M-%S}
+  jobid: ${oc.env:SLURM_JOB_ID,none}
+
+hydra:
+  run:
+    dir: ${path.output_dir}
