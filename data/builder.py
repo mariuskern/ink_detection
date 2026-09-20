@@ -122,7 +122,7 @@ def build_sampler(cfg, dataset):
         num_samples=cfg.sampler.num_samples,
         alpha=cfg.sampler.alpha,
         pos_threshold=cfg.sampler.pos_threshold,
-        real_fraction=cfg.sampler.real_fraction,
+        # real_fraction=cfg.sampler.real_fraction,
     )
 
 

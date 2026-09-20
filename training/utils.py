@@ -415,7 +415,20 @@ def train_one_epoch(
             # Total loss
             # --------------------------------------------------------------------
 
-            loss = labeled_loss + pseudo_weight * pseudo_loss
+            # loss = labeled_loss + pseudo_weight * pseudo_loss
+
+            combined_label = torch.empty_like(label)
+            combined_mask = torch.empty_like(mask)
+
+            combined_label[has_label] = label[has_label]
+            combined_label[has_pseudo_label] = pseudo_label[has_pseudo_label]
+
+            combined_mask[has_label] = mask[has_label]
+            combined_mask[has_pseudo_label] = pseudo_mask[has_pseudo_label]
+
+            sample_weight = torch.where(has_label, torch.ones_like(has_label, dtype=torch.float32), torch.full_like(has_label, pseudo_weight, dtype=torch.float32))
+
+            loss = loss_fn(output, combined_label, combined_mask, sample_weight=sample_weight)
 
         # --------------------------------------------------------------------
         # Backward

@@ -20,7 +20,7 @@ class DiceBCELoss(nn.Module):
 
         self.bce = nn.BCEWithLogitsLoss(reduction="none")
 
-    def forward(self, logits, targets, mask=None):
+    def forward(self, logits, targets, mask=None, sample_weight=None):
         """
         Args:
             logits: Modelloutput, Shape (B,) oder (B,1)
@@ -39,12 +39,24 @@ class DiceBCELoss(nn.Module):
                 raise ValueError(f"mask and targets must have the same shape, got {tuple(mask.shape)} and {tuple(targets.shape)}")
             valid = mask.to(dtype=targets.dtype, device=targets.device)
 
+        if sample_weight is None:
+            sample_weight = torch.ones(logits.shape[0], device=logits.device, dtype=targets.dtype)
+        else:
+            if sample_weight.shape != (logits.shape[0],):
+                raise ValueError(f"sample_weight must have shape ({logits.shape[0]},), got {tuple(sample_weight.shape)}")
+            sample_weight = sample_weight.to(dtype=targets.dtype, device=targets.device)
+
+        sample_weight_map = sample_weight.view(-1, *([1] * (logits.ndim - 1)))
+
+        weighted_valid = valid * sample_weight_map
+
         # BCE
         bce_targets = targets
         if self.bce_label_smoothing > 0.0:
             bce_targets = bce_targets * (1.0 - self.bce_label_smoothing) + 0.5 * self.bce_label_smoothing
         bce_loss = self.bce(logits, bce_targets)
-        bce_loss = (bce_loss * valid).sum() / valid.sum().clamp(min=1)
+        # bce_loss = (bce_loss * valid).sum() / valid.sum().clamp(min=1)
+        bce_loss = (bce_loss * weighted_valid).sum() / weighted_valid.sum().clamp(min=1)
 
         # Dice
         probs = torch.sigmoid(logits)
@@ -63,7 +75,8 @@ class DiceBCELoss(nn.Module):
         union = (probs.sum(dim=dims) + dice_targets.sum(dim=dims))
         dice = ( 2 * intersection + self.eps) / ( union + self.eps)
 
-        dice_score = dice.mean()
+        # dice_score = dice.mean()
+        dice_score = (dice * sample_weight).sum() / sample_weight.sum().clamp(min=1e-12)
 
         dice_loss = 1 - dice_score
 

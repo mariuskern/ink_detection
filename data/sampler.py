@@ -8,7 +8,7 @@ def create_sampler(
     num_samples=None,
     alpha=5.0,
     pos_threshold=0.05,
-    real_fraction=None,
+    # real_fraction=None,
 ):
     """
     Creates a weighted sampler that samples approximately
@@ -54,21 +54,21 @@ def create_sampler(
     weights[positive] *= 0.5 / pos_sum
     weights[~positive] *= 0.5 / neg_sum
 
-    if real_fraction is not None and isinstance(dataset, ConcatDataset):
-        if not 0 < real_fraction < 1:
-            raise ValueError("real_fraction must be strictly between 0 and 1.")
-        is_pseudo = torch.cat([
-            torch.full(
-                (len(child),),
-                bool(getattr(child, "use_pseudo_labels", False) or getattr(child, "mark_as_pseudo", False)),
-            )
-            for child in dataset.datasets
-        ])
-        # Explicitly reserve sampling mass for real and pseudo-labelled data.
-        # This avoids the larger source silently dominating a ConcatDataset.
-        if is_pseudo.any() and (~is_pseudo).any():
-            for group, target_mass in ((~is_pseudo, real_fraction), (is_pseudo, 1 - real_fraction)):
-                weights[group] *= target_mass / weights[group].sum().clamp_min(1e-12)
+    # if real_fraction is not None and isinstance(dataset, ConcatDataset):
+    #     if not 0 < real_fraction < 1:
+    #         raise ValueError("real_fraction must be strictly between 0 and 1.")
+    #     is_pseudo = torch.cat([
+    #         torch.full(
+    #             (len(child),),
+    #             bool(getattr(child, "use_pseudo_labels", False) or getattr(child, "mark_as_pseudo", False)),
+    #         )
+    #         for child in dataset.datasets
+    #     ])
+    #     # Explicitly reserve sampling mass for real and pseudo-labelled data.
+    #     # This avoids the larger source silently dominating a ConcatDataset.
+    #     if is_pseudo.any() and (~is_pseudo).any():
+    #         for group, target_mass in ((~is_pseudo, real_fraction), (is_pseudo, 1 - real_fraction)):
+    #             weights[group] *= target_mass / weights[group].sum().clamp_min(1e-12)
 
     sampler = WeightedRandomSampler(
         weights=weights,
