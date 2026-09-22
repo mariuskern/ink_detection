@@ -79,7 +79,7 @@ echo
 echo "Running TIFF -> Zarr conversion..."
 echo
 
-python tiff_to_zarr.py \
+python -u tiff_to_zarr.py \
     "$TIFF_DIR" \
     "$ZARR_DIR" \
     $SEGMENTS \
@@ -104,7 +104,7 @@ echo
 echo "Creating tar archives..."
 echo
 
-python create_tar.py \
+python -u create_tar.py \
     "$ZARR_DIR" \
     "$TAR_DIR"
 
