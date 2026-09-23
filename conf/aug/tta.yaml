@@ -1,19 +1,46 @@
-transforms:
-  - name: random_horizontal_flip
-    p: 0.5
+variants:
+  - transforms: []
 
-  - name: random_vertical_flip
-    p: 0.5
+  - transforms:
+      - name: random_horizontal_flip
+        p: 1
 
-  - name: transpose_axes
-    axes: [-2, -1]
+  - transforms:
+      - name: random_vertical_flip
+        p: 1
+
+  - transforms:
+      - name: random_horizontal_flip
+        p: 1
+      - name: random_vertical_flip
+        p: 1
+
+# transforms:
+#   - name: random_horizontal_flip
+#     p: 0.5
+
+#   - name: random_vertical_flip
+#     p: 0.5
+
+#   - name: transpose_axes
+#     axes: [-2, -1]
   
-  - name: gaussian_blur
-    kernel_size: 5
-    sigma: [0.1, 2.0]
-    p: 0.2
+#   - name: gaussian_blur
+#     kernel_size: 5
+#     sigma: [0.1, 2.0]
+#     p: 0.2
 
-  - name: gaussian_noise
-    mean: 0.0
-    sigma: 0.05
-    p: 0.3
+#   # - name: gaussian_blur
+#   #   kernel_size: 25
+#   #   sigma: [0.1, 2.0]
+#   #   p: 0.5
+
+#   - name: gaussian_noise
+#     mean: 0.0
+#     sigma: 0.05
+#     p: 0.3
+
+#   # - name: gaussian_noise
+#   #   mean: 0.0
+#   #   sigma: 0.5
+#   #   p: 0.5

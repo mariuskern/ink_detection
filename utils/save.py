@@ -95,20 +95,76 @@ def save_predictions_as_images(
             )
 
 
+# def _save_image(output_dir, name, segment, image, name_suffix, create_subfolders):
+#     directory = output_dir / name if create_subfolders else output_dir
+#     directory.mkdir(parents=True, exist_ok=True)
+
+#     filename = f"{segment}_{name}{'_' + name_suffix if name_suffix is not None else ''}.png"
+#     filepath = directory / filename
+
+#     # Image.fromarray(image).save(filename)
+
+#     fig, ax = plt.subplots(figsize=(10, 10))
+#     ax.imshow(image, cmap="magma")
+#     ax.axis("off")
+#     fig.savefig(filepath, bbox_inches="tight", pad_inches=0, dpi=300)
+#     plt.close(fig)
+
+
 def _save_image(output_dir, name, segment, image, name_suffix, create_subfolders):
+    # print(
+    #     f"{name}: shape={image.shape}, "
+    #     f"dtype={image.dtype}, "
+    #     f"size={image.nbytes / 1024**3:.2f} GiB"
+    # )
+
     directory = output_dir / name if create_subfolders else output_dir
     directory.mkdir(parents=True, exist_ok=True)
 
     filename = f"{segment}_{name}{'_' + name_suffix if name_suffix is not None else ''}.png"
     filepath = directory / filename
 
-    # Image.fromarray(image).save(filename)
+    image = np.asarray(image)
 
-    fig, ax = plt.subplots(figsize=(10, 10))
-    ax.imshow(image, cmap="magma")
-    ax.axis("off")
-    fig.savefig(filepath, bbox_inches="tight", pad_inches=0, dpi=300)
-    plt.close(fig)
+    if hasattr(image, "detach"):
+        image = image.detach().cpu().numpy()
+
+    image = np.squeeze(image)
+
+    image_min = np.float32(image.min())
+    image_max = np.float32(image.max())
+
+    if image_max > image_min:
+        image = (image - image_min) / (image_max - image_min)
+        image = image.astype(np.float32, copy=False)
+    else:
+        image = np.zeros_like(image)
+
+    # Matplotlib-Colormap direkt auf das Array anwenden
+    # rgba = plt.get_cmap("magma")(image)
+
+    # [0, 1] -> [0, 255]
+    # rgba = (rgba * 255).astype(np.uint8)
+
+    # Alpha-Kanal entfernen -> RGB PNG
+    # rgb = rgba[..., :3]
+
+    # 256-color lookup table
+    cmap = plt.get_cmap("magma", 256)
+    lut = (cmap(np.arange(256))[:, :3] * 255).astype(np.uint8)
+
+    # [0, 1] -> [0, 255]
+    indices = (image * 255).astype(np.uint8)
+
+    # Apply colormap
+    rgb = lut[indices]
+
+    # Image.fromarray(rgb, mode="RGB").save(filepath)
+
+    image_pil = Image.fromarray(rgb, mode="RGB")
+    image_pil.thumbnail((3000, 3000), Image.Resampling.LANCZOS)
+
+    image_pil.save(filepath)
 
 
 def save_predictions_as_zarr(data_dir, predictions, iteration, save_probability=False, save_confidence=False, save_uncertainty=False, save_label=False, save_mask=False, save_label_not_refined=False, save_mask_not_refined=False):

@@ -1,6 +1,8 @@
 import numpy as np
 from dataclasses import dataclass
-import numpy as np
+import shutil
+
+from pathlib import Path
 
 
 @dataclass
@@ -21,21 +23,60 @@ class Prediction:
 
 
 class PredictionMerger:
-    def __init__(self):
+    def __init__(self, cache_dir=None):
         self.buffers = {}
 
+        self.cache_dir = Path(cache_dir) if cache_dir else None
 
-    def add(self, segment, x, y, prediction, shape, target=None, valid_mask=None):
-        if segment not in self.buffers:
-            H, W = shape[1], shape[2]
+        # if self.cache_dir:
+        #     self.cache_dir.mkdir(parents=True, exist_ok=True)
 
-            self.buffers[segment] = {
+
+    def _create_buffer(self, segment, shape):
+        if self.cache_dir:
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
+        
+        H, W = shape[1], shape[2]
+
+        if self.cache_dir is None:
+            return {
                 "prob_sum": np.zeros((H, W), dtype=np.float32),
                 "prob_sq_sum": np.zeros((H, W), dtype=np.float32),
                 "weight_sum": np.zeros((H, W), dtype=np.float32),
                 "target_sum": np.zeros((H, W), dtype=np.float32),
                 "valid_weight_sum": np.zeros((H, W), dtype=np.float32),
             }
+
+        return {
+            name: np.lib.format.open_memmap(
+                self.cache_dir / f"{segment}_{name}.npy",
+                mode="w+",
+                dtype=np.float32,
+                shape=(H, W),
+            )
+            for name in [
+                "prob_sum",
+                "prob_sq_sum",
+                "weight_sum",
+                "target_sum",
+                "valid_weight_sum",
+            ]
+        }
+
+
+    def add(self, segment, x, y, prediction, shape, target=None, valid_mask=None):
+        if segment not in self.buffers:
+            # H, W = shape[1], shape[2]
+
+            # self.buffers[segment] = {
+            #     "prob_sum": np.zeros((H, W), dtype=np.float32),
+            #     "prob_sq_sum": np.zeros((H, W), dtype=np.float32),
+            #     "weight_sum": np.zeros((H, W), dtype=np.float32),
+            #     "target_sum": np.zeros((H, W), dtype=np.float32),
+            #     "valid_weight_sum": np.zeros((H, W), dtype=np.float32),
+            # }
+            
+            self.buffers[segment] = self._create_buffer(segment, shape)
 
         buffer = self.buffers[segment]
 
@@ -59,6 +100,10 @@ class PredictionMerger:
             valid_mask = valid_mask[:h_valid, :w_valid]
             buffer["target_sum"][y:y+h_valid, x:x+w_valid] += target * valid_mask * weight
             buffer["valid_weight_sum"][y:y+h_valid, x:x+w_valid] += valid_mask * weight
+
+        # print("input prediction:", prediction.dtype)
+        # print("weight:", weight.dtype)
+        # print("prob_sum:", buffer["prob_sum"].dtype)
 
 
     def get_predictions(self):
@@ -92,7 +137,23 @@ class PredictionMerger:
 
 
     def clear(self):
+        # Memmaps explizit schließen
+        for buffer in self.buffers.values():
+            for array in buffer.values():
+                if isinstance(array, np.memmap):
+                    array.flush()
+                    array._mmap.close()
+                    
         self.buffers.clear()
+
+        # for segment in self.buffers:
+        #     for name in ["prob_sum", "prob_sq_sum", "weight_sum", "target_sum", "valid_weight_sum"]:
+        #         path = self.cache_dir / f"{segment}_{name}.npy"
+        #         if path.exists():
+        #             path.unlink()
+
+        if self.cache_dir and self.cache_dir.exists():
+            shutil.rmtree(self.cache_dir)
 
 
     def get_binary_metrics(self, threshold=0.5):
@@ -130,6 +191,10 @@ class PredictionMerger:
 
     def _get_prediction(self, buffer):
         prediction = buffer["prob_sum"] / np.maximum(buffer["weight_sum"], 1e-6)
+
+        # print("prob_sum:", buffer["prob_sum"].dtype)
+        # print("weight_sum:", buffer["weight_sum"].dtype)
+        # print("FINAL prediction:", prediction.dtype)
 
         second_moment = buffer["prob_sq_sum"] / np.maximum(buffer["weight_sum"], 1e-6)
         variance = np.maximum(second_moment - prediction**2, 0)

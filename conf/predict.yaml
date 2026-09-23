@@ -12,15 +12,21 @@ experiment:
 
 hydra:
   run:
-    dir: outputs/${train.name}/${model.name}/${experiment.name}
+    dir: outputs/predict/${model.name}/${experiment.name}
 
 train:
   segments:
     # - 20241113090990
     - 0172_20241113090990
+    # - 1667_w028_20251208130119156_2um
+    # - 1667_w029_20251212185248662_2um
+    # - 1667_w031_2025122323_2um
   accelerator: cuda
+  use_validation_mask: false
 
   tta_num: 1
 
   compile: false
   compile_mode: default
+
+checkpoint: null

@@ -14,8 +14,9 @@ warnings.filterwarnings(
 
 import torch
 from tqdm import tqdm
+import hydra
 from hydra import compose, initialize
-from omegaconf import DictConfig
+from omegaconf import OmegaConf, DictConfig
 
 from utils import predict, save_predictions_as_images
 from utils.device import get_device
@@ -30,28 +31,37 @@ for key in ["DATA_DIR", "CODE_DIR", "OUTPUT_DIR"]:
         os.environ[key] = os.path.expandvars(os.environ[key])
 
 
-def parse_args():
-    parser = argparse.ArgumentParser(
-        description="Run model prediction on a dataset."
-    )
+# def parse_args():
+#     parser = argparse.ArgumentParser(
+#         description="Run model prediction on a dataset."
+#     )
 
-    parser.add_argument(
-        "checkpoint",
-        type=Path,
-        help="Path to the checkpoint directory.",
-    )
+#     parser.add_argument(
+#         "checkpoint",
+#         type=Path,
+#         help="Path to the checkpoint directory.",
+#     )
 
-    return parser.parse_args()
+#     return parser.parse_args()
 
 
-def main():
-    args = parse_args()
+@hydra.main(version_base=None, config_path="conf/", config_name="predict")
+def main(cfg: DictConfig):
+    # args = parse_args()
 
-    with initialize(config_path="conf/", version_base=None):
-        cfg = compose(config_name="predict")
+    # with initialize(config_path="conf/", version_base=None):
+    #     cfg = compose(config_name="predict")
 
-    if not args.checkpoint.exists():
-        raise FileNotFoundError(f"Checkpoint directory does not exist: {args.checkpoint}")
+    # if not args.checkpoint.exists():
+    #     raise FileNotFoundError(f"Checkpoint directory does not exist: {args.checkpoint}")
+
+    if not cfg.checkpoint:
+        raise ValueError("Checkpoint has to be given (checkpoint=<path/to/checkpoint.ckpt)")
+
+    checkpoint = Path(cfg.checkpoint)
+
+    if not checkpoint.exists():
+        raise FileNotFoundError(f"Checkpoint directory does not exist: {checkpoint}")
 
     output_dir = Path(cfg.path.output_dir)
 
@@ -59,9 +69,9 @@ def main():
 
     model = build_model(cfg)
     model = model.to(device)
-    if cfg.train.compile:
-        model = torch.compile(model, mode=cfg.train.compile_mode)
-    ckpt = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
+    # if cfg.train.compile:
+    #     model = torch.compile(model, mode=cfg.train.compile_mode)
+    ckpt = torch.load(checkpoint, map_location="cpu", weights_only=False)
 
     state_dict = ckpt["state_dict"]
 
@@ -71,25 +81,35 @@ def main():
     first_model_key = next(iter(model_keys))
     first_checkpoint_key = next(iter(checkpoint_keys))
 
-    if first_checkpoint_key.startswith("model.") and not first_model_key.startswith("model."):
-        state_dict = {key.removeprefix("model."): value for key, value in state_dict.items()}
+    for prefix in ("model.", "_orig_mod."): # Remove model or _orig_mod (used with torch.compile) prefix
+        if first_checkpoint_key.startswith(prefix) and not first_model_key.startswith(prefix):
+            state_dict = {key.removeprefix(prefix): value for key, value in state_dict.items()}
+            break
+
     model.load_state_dict(state_dict)
 
-    transform = build_augmentation(cfg.aug) if cfg.aug is not None else None
-    predict_dataset = build_dataset(cfg, cfg.train.segments, min_mask_fraction=0.0)
+    # transform = build_augmentation(cfg.aug) if cfg.aug is not None else None
+    transforms = []
+    if cfg.aug is not None:
+        for variant in cfg.aug.variants:
+            transforms.append(build_augmentation(variant))
+    predict_dataset = build_dataset(cfg, cfg.train.segments, split="train" if cfg.train.use_validation_mask else None)
     predict_loader = build_dataloader(cfg, predict_dataset, None)
 
-    results = predict(model, predict_loader, device=device, tta_transform=transform, tta_num=cfg.train.tta_num)
+    # results = predict(model, predict_loader, device=device, tta_transform=transform, tta_num=cfg.train.tta_num)
+    i = 0
+    for result in predict(model, predict_loader, device=device, transforms=transforms, tta_num=cfg.train.tta_num, cache_dir=output_dir / "tmp"):
+        save_predictions_as_images(
+            output_dir,
+            [result],
+            save_probability=True,
+            # save_confidence=True,
+            # save_uncertainty=True,
+        )
 
-    save_predictions_as_images(
-        output_dir,
-        results,
-        save_probability=True,
-        save_confidence=True,
-        save_uncertainty=True,
-    )
+        i += 1
 
-    print(f"Predicted {len(results)} segments.")
+    print(f"Predicted {i} segments.")
 
 
 if __name__ == "__main__":

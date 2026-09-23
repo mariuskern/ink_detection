@@ -244,20 +244,23 @@ class InkDataset(Dataset):
         if pseudo_mask is None:
             pseudo_mask = torch.ones_like(label)
 
-        tile = tv_tensors.Image(tile)
-        label = tv_tensors.Mask(label)
-        pseudo_label = tv_tensors.Mask(pseudo_label)
-        mask = tv_tensors.Mask(mask)
-        pseudo_mask = tv_tensors.Mask(pseudo_mask)
+        # tile = tv_tensors.Image(tile)
+        # label = tv_tensors.Mask(label)
+        # pseudo_label = tv_tensors.Mask(pseudo_label)
+        # mask = tv_tensors.Mask(mask)
+        # pseudo_mask = tv_tensors.Mask(pseudo_mask)
 
-        if self.transform is not None:
-            tile, label, pseudo_label, mask, pseudo_mask = self.transform(tile, label, pseudo_label, mask, pseudo_mask)
+        # if self.transform is not None:
+        #     tile, label, pseudo_label, mask, pseudo_mask = self.transform(tile, label, pseudo_label, mask, pseudo_mask)
 
         tile = tile.unsqueeze(0) # [1, D, H, W]
         label = label.unsqueeze(0) # [1, H, W]
         pseudo_label = pseudo_label.unsqueeze(0)
         mask = mask.unsqueeze(0)
         pseudo_mask = pseudo_mask.unsqueeze(0)
+
+        if self.transform is not None:
+            tile, label, pseudo_label, mask, pseudo_mask = self.transform(tile, label, pseudo_label, mask, pseudo_mask)
 
         return {
             "tile": tile,

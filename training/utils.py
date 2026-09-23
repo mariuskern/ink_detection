@@ -41,7 +41,7 @@ from dataclasses import dataclass
 import math
 
 import torch
-import torch.nn.functional as F
+# import torch.nn.functional as F
 from tqdm import tqdm
 
 from data.builder import build_train_dataset, build_dataset, build_sampler, build_dataloader
@@ -52,6 +52,7 @@ from utils.device import get_device
 from .precision import parse_precision, autocast_context
 from .checkpoint import CheckpointManager
 from .logging import LoggingManager
+from utils.interpolate import interpolate, interpolate_reverse
 
 
 @dataclass(frozen=True)
@@ -898,28 +899,28 @@ def get_pseudo_loss_weight(cfg, epoch):
     return weight * factor
 
 
-def interpolate(x, target_size):
-    """
-    Exact equivalent of SupervisedModule.interpolate().
-    """
+# def interpolate(x, target_size):
+#     """
+#     Exact equivalent of SupervisedModule.interpolate().
+#     """
 
-    _, _, height, width = x.shape
+#     _, _, height, width = x.shape
 
-    # x = F.interpolate(x, (height // interpolation_size[0], width // interpolation_size[1]), mode="nearest")
-    x = F.interpolate(x.float(), size=target_size, mode="nearest")
+#     # x = F.interpolate(x, (height // interpolation_size[0], width // interpolation_size[1]), mode="nearest")
+#     x = F.interpolate(x.float(), size=target_size, mode="nearest")
 
-    return x
+#     return x
 
 
-def interpolate_reverse(x, target_size):
-    """
-    Exact equivalent of SupervisedModule.interpolate_reverse().
-    """
+# def interpolate_reverse(x, target_size):
+#     """
+#     Exact equivalent of SupervisedModule.interpolate_reverse().
+#     """
 
-    # x = F.interpolate(x.float(), scale_factor=interpolation_size, mode="bilinear").squeeze(0)
-    x = F.interpolate(x.float(), size=target_size, mode="bilinear")
+#     # x = F.interpolate(x.float(), scale_factor=interpolation_size, mode="bilinear").squeeze(0)
+#     x = F.interpolate(x.float(), size=target_size, mode="bilinear")
 
-    return x
+#     return x
 
 
 # ============================================================================

@@ -18,8 +18,11 @@ Conversion pipeline for transforming volumetric TIFF image stacks into Zarr data
 The script processes sample folders containing 3D TIFF image stacks and optional
 annotation images (labels and masks). TIFF slices are read individually and
 written directly into a chunked Zarr array, avoiding loading the complete
-volume into memory. Spatial dimensions are aligned by cropping the volume,
+volume into memory. TIFF volume data is copied to Zarr without modifying the
+pixel values or dtype. Labels and masks are converted to binary uint8 images
+with values 0 and 1. Spatial dimensions are aligned by cropping the volume,
 label, and mask data to their common minimum height and width.
+
 
 For each processed segment, the script creates a Zarr store containing:
 

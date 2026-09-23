@@ -3,3 +3,4 @@ defaults:
 
 tile_size: 256
 stride: 64
+depth: 62

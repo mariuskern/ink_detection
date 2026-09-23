@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from training.supervised import fit
+from training.utils import fit
 
 from utils import predict, postprocess_predictions, save_predictions_as_images, save_predictions_as_zarr
 from utils.device import get_device
@@ -32,12 +32,16 @@ def train_noisy_student(cfg, logger):
 
 
 def generate_pseudo_labels(cfg, model, iteration, output_dir, device):
-        transform = build_augmentation(cfg.train.teacher.aug) if cfg.train.teacher.aug is not None else None
+        # transform = build_augmentation(cfg.train.teacher.aug) if cfg.train.teacher.aug is not None else None
+        transforms = []
+        if cfg.train.teacher.aug is not None:
+            for variant in cfg.train.teacher.aug.variants:
+                transforms.append(build_augmentation(variant))
         # predict_dataset = build_dataset(cfg, cfg.train.unlabeled, min_mask_fraction=0.0, transform=transform)
-        predict_dataset = build_dataset(cfg, cfg.train.unlabeled, transform=transform, split="train" if cfg.train.use_validation_mask else None)
+        predict_dataset = build_dataset(cfg, cfg.train.unlabeled, transform=None, split="train" if cfg.train.use_validation_mask else None)
         predict_loader = build_dataloader(cfg, predict_dataset, None)
 
-        for prediction in predict(model, predict_loader, device=device):
+        for prediction in predict(model, predict_loader, device=device, transforms=transforms, tta_num=cfg.train.refinement.tta_num, cache_dir=output_dir / "tmp"):
             # results = predict(model, predict_loader, device=device)
             # # results = predict(model, predict_loader, device=device, tta_transform=transform, tta_num=cfg.train.refinement.tta_num)
             results = [prediction]
