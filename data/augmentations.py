@@ -2,7 +2,7 @@ import torch
 
 from monai.data import MetaTensor
 from monai.transforms import Invertd
-from monai.transforms import MapTransform, InvertibleTransform
+from monai.transforms import MapTransform, Randomizable, InvertibleTransform
 from monai.config import KeysCollection
 import monai.transforms as mt
 
@@ -428,8 +428,7 @@ class RandResizedCrop2D(MapTransform, InvertibleTransform):
             x = d[key]
 
             if x.ndim != 4:
-                raise ValueError(f"{key} must have shape (C,H,W,D), got {x.shape}"
-                )
+                raise ValueError(f"{key} must have shape (C,H,W,D), got {x.shape}")
 
             x = x[:, top:top + crop_h, left:left + crop_w, :]
 
@@ -496,6 +495,70 @@ class RandResizedCrop2D(MapTransform, InvertibleTransform):
             d[key] = restored
 
         return d
+
+
+class RandBlankRectangled(Randomizable, MapTransform, InvertibleTransform):
+    def __init__(self, keys: KeysCollection = ("image",), prob: float = 0.5, rectangle_size=((16, 64), (16, 64)), num_rectangles=(1, 5), allow_missing_keys=True):
+        MapTransform.__init__(self, keys=keys, allow_missing_keys=allow_missing_keys)
+        Randomizable.__init__(self)
+        InvertibleTransform.__init__(self)
+
+        self.prob = prob
+        self.rectangle_size = rectangle_size
+        self.num_rectangles = num_rectangles
+
+    def randomize(self, height, width):
+        self._do_transform = self.R.rand() < self.prob
+
+        if not self._do_transform:
+            return
+
+        n = self.R.randint(self.num_rectangles[0], self.num_rectangles[1] + 1)
+
+        self._rectangles = []
+
+        for _ in range(n):
+            rect_h = min(self.R.randint(self.rectangle_size[0][0], self.rectangle_size[0][1] + 1), height)
+            rect_w = min(self.R.randint( self.rectangle_size[1][0], self.rectangle_size[1][1] + 1), width)
+
+            y = self.R.randint(0, height - rect_h + 1)
+            x = self.R.randint(0, width - rect_w + 1)
+
+            self._rectangles.append((y, x, rect_h, rect_w))
+
+    def __call__(self, data):
+        d = dict(data)
+
+        for key in self.key_iterator(d):
+            image = d[key]
+
+            _, height, width, _ = image.shape # (C, H, W, D)
+
+            self.randomize(height, width)
+
+            if not self._do_transform:
+                self.push_transform(image, extra_info={"do_transform": False})
+                continue
+
+            image = image.clone()
+
+            for y, x, rect_h, rect_w in self._rectangles:
+                region = image[..., y:y + rect_h, x:x + rect_w, :]
+                value = region.mean(dim=(-3, -2), keepdim=True)
+
+                image[..., y:y + rect_h, x:x + rect_w, :] = value
+
+            d[key] = image
+
+            self.push_transform(image, extra_info={"do_transform": True})
+
+        return d
+
+    def inverse(self, data):
+        for key in self.key_iterator(data):
+            self.pop_transform(data[key])
+
+        return data
 
 
 def build_augmentation(aug, wrap=True):
@@ -573,7 +636,8 @@ def build_augmentation(aug, wrap=True):
                         mt.RandAffined(
                             keys=["image", "mask"],
                             prob=t.p,
-                            rotate_range=(0, 0, *degrees),
+                            # rotate_range=(0, 0, *degrees),
+                            rotate_range=(0, 0, degrees),
                             translate_range=(
                                 t.translate[0],
                                 t.translate[1],
@@ -660,7 +724,19 @@ def build_augmentation(aug, wrap=True):
                         mt.RandAxisFlipd(
                             keys=["image", "mask"],
                             prob=t.p,
-                            spatial_axis=t.axes,
+                            spatial_axis=(0, 1),
+                            allow_missing_keys=True,
+                        )
+                    )
+                )
+
+            case "random_depth_flip":
+                transforms.append(
+                    TTANotSupported(
+                        mt.RandAxisFlipd(
+                            keys=["image"],
+                            prob=t.p,
+                            spatial_axis=2,
                             allow_missing_keys=True,
                         )
                     )
@@ -775,86 +851,99 @@ def build_augmentation(aug, wrap=True):
                     )
                 )
 
-            case "low_resolution":
-                transforms.extend(
-                    [
-                        TTANotSupported(
-                            mt.RandZoomd(
-                                keys=["image"],
-                                prob=t.p,
-                                min_zoom=t.scale,
-                                max_zoom=t.scale,
-                                mode=("trilinear", "nearest"),
-                                padding_mode="edge",
-                                allow_missing_keys=True,
-                            )
-                        ),
-                        TTANotSupported(
-                            mt.Zoomd(
-                                keys=["image"],
-                                zoom=1.0 / t.scale,
-                                mode=("trilinear", "nearest"),
-                                allow_missing_keys=True,
-                            )
-                        )
-                    ]
-                )
+            # case "low_resolution":
+            #     transforms.extend(
+            #         [
+            #             TTANotSupported(
+            #                 mt.RandZoomd(
+            #                     keys=["image"],
+            #                     prob=t.p,
+            #                     min_zoom=t.scale,
+            #                     max_zoom=t.scale,
+            #                     mode=("trilinear", "nearest"),
+            #                     padding_mode="edge",
+            #                     allow_missing_keys=True,
+            #                 )
+            #             ),
+            #             TTANotSupported(
+            #                 mt.Zoomd(
+            #                     keys=["image"],
+            #                     zoom=1.0 / t.scale,
+            #                     mode=("trilinear", "nearest"),
+            #                     allow_missing_keys=True,
+            #                 )
+            #             )
+            #         ]
+            #     )
 
-            case "motion_blur":
+            case "blank_rectangle":
                 transforms.append(
                     TTANotSupported(
-                        mt.RandGaussianSmoothd(
+                        RandBlankRectangled(
                             keys=["image"],
                             prob=t.p,
-                            sigma_x=t.kernel_size / 3.0,
-                            sigma_y=t.kernel_size / 3.0,
-                            sigma_z=t.kernel_size / 3.0,
+                            rectangle_size=t.rectangle_size,
+                            num_rectangles=t.num_rectangles,
                             allow_missing_keys=True,
                         )
                     )
                 )
+
+            # case "motion_blur":
+            #     transforms.append(
+            #         TTANotSupported(
+            #             mt.RandGaussianSmoothd(
+            #                 keys=["image"],
+            #                 prob=t.p,
+            #                 sigma_x=t.kernel_size / 3.0,
+            #                 sigma_y=t.kernel_size / 3.0,
+            #                 sigma_z=t.kernel_size / 3.0,
+            #                 allow_missing_keys=True,
+            #             )
+            #         )
+            #     )
 
             # =========================================================
             # 3D CT-specific augmentations
             # =========================================================
 
-            case "smear":
-                transforms.append(
-                    TTANotSupported(
-                        mt.RandGaussianSmoothd(
-                            keys=["image"],
-                            prob=t.p,
-                            sigma_x=t.sigma,
-                            sigma_y=t.sigma,
-                            sigma_z=t.sigma * 2,
-                            allow_missing_keys=True,
-                        )
-                    )
-                )
+            # case "smear":
+            #     transforms.append(
+            #         TTANotSupported(
+            #             mt.RandGaussianSmoothd(
+            #                 keys=["image"],
+            #                 prob=t.p,
+            #                 sigma_x=t.sigma,
+            #                 sigma_y=t.sigma,
+            #                 sigma_z=t.sigma * 2,
+            #                 allow_missing_keys=True,
+            #             )
+            #         )
+            #     )
 
-            case "inhomogeneous_slice_illumination":
-                transforms.append(
-                    TTANotSupported(
-                        mt.RandBiasFieldd(
-                            keys=["image"],
-                            prob=t.p,
-                            coeff_range=t.coeff_range,
-                            allow_missing_keys=True,
-                        )
-                    )
-                )
+            # case "inhomogeneous_slice_illumination":
+            #     transforms.append(
+            #         TTANotSupported(
+            #             mt.RandBiasFieldd(
+            #                 keys=["image"],
+            #                 prob=t.p,
+            #                 coeff_range=t.coeff_range,
+            #                 allow_missing_keys=True,
+            #             )
+            #         )
+            #     )
 
-            case "brightness_gradient":
-                transforms.append(
-                    TTANotSupported(
-                        mt.RandBiasFieldd(
-                            keys=["image"],
-                            prob=t.p,
-                            coeff_range=t.coeff_range,
-                            allow_missing_keys=True,
-                        )
-                    )
-                )
+            # case "brightness_gradient":
+            #     transforms.append(
+            #         TTANotSupported(
+            #             mt.RandBiasFieldd(
+            #                 keys=["image"],
+            #                 prob=t.p,
+            #                 coeff_range=t.coeff_range,
+            #                 allow_missing_keys=True,
+            #             )
+            #         )
+            #     )
 
             # =========================================================
             # Cutout
@@ -867,7 +956,8 @@ def build_augmentation(aug, wrap=True):
                             keys=["image"],
                             prob=t.p,
                             holes=t.max_holes,
-                            spatial_size=t.max_size_fraction,
+                            # spatial_size=t.max_size_fraction,
+                            spatial_size=(t.height, t.width, -1),
                             fill_value=t.fill,
                             allow_missing_keys=True,
                         )

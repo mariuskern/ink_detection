@@ -2,18 +2,18 @@ variants:
   - transforms: []
 
   - transforms:
-      - name: random_horizontal_flip
-        p: 1
+    - name: random_horizontal_flip
+      p: 1
 
   - transforms:
-      - name: random_vertical_flip
-        p: 1
+    - name: random_vertical_flip
+      p: 1
 
   - transforms:
-      - name: random_horizontal_flip
-        p: 1
-      - name: random_vertical_flip
-        p: 1
+    - name: random_horizontal_flip
+      p: 1
+    - name: random_vertical_flip
+      p: 1
 
 # transforms:
 #   - name: random_horizontal_flip
