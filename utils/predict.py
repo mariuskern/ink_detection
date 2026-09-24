@@ -108,8 +108,6 @@ def predict(model, dataloader, device, transforms=None, tta_num=1, cache_dir=Non
 
                     tile = torch.stack(transformed_tiles, dim=0)
 
-                output = model(tile)
-
                 # -------------------------------------------------
                 # Model
                 # -------------------------------------------------

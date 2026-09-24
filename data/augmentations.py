@@ -1,7 +1,7 @@
 import torch
 
 from monai.data import MetaTensor
-from monai.transforms import Compose, Invertd
+from monai.transforms import Invertd
 from monai.transforms import MapTransform, InvertibleTransform
 from monai.config import KeysCollection
 import monai.transforms as mt
@@ -158,6 +158,7 @@ class MonaiTransformWrapper:
 
         transformed_image = data[self.IMAGE_KEY]
         transformed_image = transformed_image.permute(0, 3, 1, 2).contiguous()
+        transformed_image = transformed_image.as_tensor()
 
         # --------------------------------------------------------------
         # Masks back to external representation
@@ -178,6 +179,7 @@ class MonaiTransformWrapper:
             #
             # C H W 1 -> C H W
             transformed_mask = transformed_mask[..., 0]
+            transformed_mask = transformed_mask.as_tensor()
 
             # If multiple masks were supplied, they are currently
             # concatenated along C. Split them back.
@@ -244,19 +246,12 @@ class MonaiTransformWrapper:
 
         # C,H,W,1 -> C,H,W
         prediction = prediction[..., 0].contiguous()
+        prediction = prediction.as_tensor()
 
         return prediction
 
     def __repr__(self):
         return f"{self.__class__.__name__}(" f"{self.transforms!r})"
-
-
-from monai.config import KeysCollection
-from monai.transforms import MapTransform, InvertibleTransform
-
-
-from monai.config import KeysCollection
-from monai.transforms import MapTransform, InvertibleTransform
 
 
 class TTANotSupported(MapTransform, InvertibleTransform):
@@ -503,7 +498,7 @@ class RandResizedCrop2D(MapTransform, InvertibleTransform):
         return d
 
 
-def build_augmentation(aug):
+def build_augmentation(aug, wrap=True):
     transforms = []
 
     for t in aug.transforms:
@@ -885,7 +880,7 @@ def build_augmentation(aug):
 
             case "oneof":
                 alternatives = [
-                    build_augmentation(alternative) for alternative in t.transforms
+                    build_augmentation(alternative, wrap=False) for alternative in t.transforms
                 ]
 
                 transforms.append(
@@ -905,7 +900,12 @@ def build_augmentation(aug):
     if not transforms:
         return None
 
-    return MonaiTransformWrapper(mt.Compose(transforms))
+    compose = mt.Compose(transforms)
+
+    if wrap:
+        return MonaiTransformWrapper(compose)
+
+    return compose
 
 
 
