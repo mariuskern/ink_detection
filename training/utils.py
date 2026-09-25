@@ -306,15 +306,43 @@ def fit(cfg, logger, output_dir, *, pseudo_label_version=None, iteration=None, a
     best_score = checkpoint_manager.best_model_score
 
     if best_checkpoint is not None:
-        checkpoint = torch.load(best_checkpoint, map_location="cpu", weights_only=False,)
-        model.load_state_dict(checkpoint["state_dict"])
-        model.to(device)
+        checkpoint = torch.load(best_checkpoint, map_location="cpu", weights_only=False)
+
+        # Build a fresh, uncompiled model
+        inference_model = build_model(cfg)
+
+        if model_dtype is not None:
+            inference_model = inference_model.to(device=device, dtype=model_dtype)
+        else:
+            inference_model = inference_model.to(device)
+
+        inference_model.load_state_dict(checkpoint["state_dict"])
+        inference_model.eval()
+
+    else:
+        # Fallback if no checkpoint exists
+        inference_model = model
+        inference_model.eval()
 
     return TrainingResult(
-        model=model,
+        model=inference_model,
         best_checkpoint=best_checkpoint,
         best_score=best_score,
     )
+
+    # best_checkpoint = checkpoint_manager.best_model_path
+    # best_score = checkpoint_manager.best_model_score
+
+    # if best_checkpoint is not None:
+    #     checkpoint = torch.load(best_checkpoint, map_location="cpu", weights_only=False)
+    #     model.load_state_dict(checkpoint["state_dict"])
+    #     model.to(device)
+
+    # return TrainingResult(
+    #     model=model,
+    #     best_checkpoint=best_checkpoint,
+    #     best_score=best_score,
+    # )
 
 
 # ============================================================================
