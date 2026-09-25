@@ -1,568 +1,471 @@
+from dataclasses import dataclass
+
 import torch
-
-from monai.data import MetaTensor
-from monai.transforms import Invertd
-from monai.transforms import MapTransform, Randomizable, InvertibleTransform
-from monai.config import KeysCollection
-import monai.transforms as mt
+from torchvision.transforms import v2
+from torchvision import tv_tensors
 
 
-class MonaiTransformWrapper:
-    """
-    MONAI wrapper with a torchvision-like external interface.
+@dataclass
+class TransformRecord:
+    transform: torch.nn.Module
+    params: dict | None = None
 
-    External interface
-    ------------------
-    image:
-        (C, D, H, W)
 
-    mask:
-        (C, H, W)
-
-    Internally MONAI receives
-    -------------------------
-    image:
-        (C, H, W, D)
-
-    mask:
-        (C, H, W, 1)
-
-    The transform state belonging to each call is returned explicitly
-    and can later be used to invert a prediction.
-
-    Example
-    -------
-        image_t, mask_t, state = transform(image, mask)
-
-        prediction = model(image_t)
-
-        prediction_original = transform.inverse(
-            prediction,
-            state,
-        )
-    """
-
-    IMAGE_KEY = "image"
-    MASK_KEY = "mask"
+class Pipeline(torch.nn.Module):
+    """Augmentation pipeline with optional TTA replay and inverse support."""
 
     def __init__(self, transforms):
-        self.transforms = transforms
+        super().__init__()
+        self.transforms = torch.nn.ModuleList(transforms)
 
-    def __call__(self, image, *masks, return_state=False):
-        """
-        Apply MONAI transforms.
+    def forward(self, image, *masks, return_params=False):
+        image = tv_tensors.Image(image)
+        masks = tuple(tv_tensors.Mask(mask) for mask in masks)
 
-        Parameters
-        ----------
-        image:
-            torch.Tensor / tv_tensor.Image
-            Shape: (C, D, H, W)
-
-        masks:
-            torch.Tensor / tv_tensor.Mask
-            Shape: (C, H, W)
-
-        Returns
-        -------
-        image_transformed:
-            Shape: (C, D, H, W)
-
-        masks_transformed:
-            Shape: (C, H, W)
-
-        state:
-            Dictionary containing the transformed MetaTensors.
-            This state MUST be passed to inverse().
-        """
-
-        image = torch.as_tensor(image)
-
-        if image.ndim != 4:
-            raise ValueError(f"Expected image with shape (C, D, H, W), " f"got {tuple(image.shape)}")
-
-        data = {}
-
-        # --------------------------------------------------------------
-        # Image
-        #
-        # External:
-        #   C D H W
-        #
-        # MONAI:
-        #   C H W D
-        # --------------------------------------------------------------
-
-        image_monai = image.permute(0, 2, 3, 1).contiguous()
-
-        data[self.IMAGE_KEY] = MetaTensor(image_monai)
-
-        # --------------------------------------------------------------
-        # Masks
-        #
-        # External:
-        #   C H W
-        #
-        # MONAI:
-        #   C H W 1
-        #
-        # The singleton D dimension makes the mask compatible with
-        # 3D MONAI transforms.
-        # --------------------------------------------------------------
-
-        if masks:
-            transformed_masks = []
-
-            for mask in masks:
-                mask = torch.as_tensor(mask)
-
-                if mask.ndim != 3:
-                    raise ValueError(f"Expected mask with shape (C, H, W), got {tuple(mask.shape)}")
-
-                mask_monai = mask.unsqueeze(-1).contiguous()
-
-                transformed_masks.append(MetaTensor(mask_monai))
-
-            # Only one mask key is used internally.
-            #
-            # If multiple masks are passed, stack them along channel.
-            #
-            # Example:
-            #   mask1: (C,H,W,1)
-            #   mask2: (C,H,W,1)
-            #
-            # becomes:
-            #   (N*C,H,W,1)
-            #
-            # For the usual case of one mask this is simply (C,H,W,1).
-
-            if len(transformed_masks) == 1:
-                data[self.MASK_KEY] = transformed_masks[0]
-            else:
-                data[self.MASK_KEY] = MetaTensor(torch.cat(transformed_masks, dim=0))
-
-        # --------------------------------------------------------------
-        # Apply MONAI transforms
-        # --------------------------------------------------------------
-
-        data = self.transforms(data)
-
-        # --------------------------------------------------------------
-        # Image back to external representation
-        #
-        # MONAI:
-        #   C H W D
-        #
-        # External:
-        #   C D H W
-        # --------------------------------------------------------------
-
-        transformed_image = data[self.IMAGE_KEY]
-        transformed_image = transformed_image.permute(0, 3, 1, 2).contiguous()
-        transformed_image = transformed_image.as_tensor()
-
-        # --------------------------------------------------------------
-        # Masks back to external representation
-        #
-        # MONAI:
-        #   C H W 1
-        #
-        # External:
-        #   C H W
-        # --------------------------------------------------------------
-
-        transformed_masks = []
-
-        if masks:
-            transformed_mask = data[self.MASK_KEY]
-
-            # Remove singleton D dimension.
-            #
-            # C H W 1 -> C H W
-            transformed_mask = transformed_mask[..., 0]
-            transformed_mask = transformed_mask.as_tensor()
-
-            # If multiple masks were supplied, they are currently
-            # concatenated along C. Split them back.
-            if len(masks) == 1:
-                transformed_masks.append(transformed_mask)
-            else:
-                channel_sizes = [torch.as_tensor(mask).shape[0] for mask in masks]
-
-                transformed_masks = list(torch.split(transformed_mask, channel_sizes, dim=0))
-
-        # --------------------------------------------------------------
-        # IMPORTANT:
-        #
-        # Keep the MetaTensor itself as the state.
-        #
-        # It contains MONAI's applied_operations history.
-        # --------------------------------------------------------------
-
-        state = {
-            self.IMAGE_KEY: data[self.IMAGE_KEY],
-        }
-
-        if masks:
-            state[self.MASK_KEY] = data[self.MASK_KEY]
-
-        # --------------------------------------------------------------
-        # Return
-        # --------------------------------------------------------------
-
-        if masks:
-            if return_state:
-                return transformed_image, *transformed_masks, state
-            return transformed_image, *transformed_masks
-
-        if return_state:
-            return transformed_image, state
-
-        return transformed_image
-
-    def inverse(self, tensor, state, key="prediction", nearest_interp=True):
-        tensor = torch.as_tensor(tensor)
-
-        if tensor.ndim != 3:
-            raise ValueError(f"Expected prediction with shape (C, H, W), got {tuple(tensor.shape)}")
-
-        # 2D prediction -> MONAI-compatible pseudo-3D tensor
-        prediction_monai = tensor.unsqueeze(-1).contiguous()
-
-        data = {
-            self.IMAGE_KEY: state[self.IMAGE_KEY],
-            key: MetaTensor(prediction_monai),
-        }
-
-        inv = Invertd(
-            keys=key,
-            transform=self.transforms,
-            orig_keys=self.IMAGE_KEY,
-            nearest_interp=nearest_interp,
-        )
+        records = []
         
-        data = inv(data)
+        for transform in self.transforms:
+            if return_params:
+                result = transform(image, *masks, return_params=True)
 
-        prediction = data[key]
+                image = result[0]
+                masks = tuple(result[1:-1])
+                params = result[-1]
 
-        # C,H,W,1 -> C,H,W
-        prediction = prediction[..., 0].contiguous()
-        prediction = prediction.as_tensor()
+                records.append(TransformRecord(transform=transform, params=params))
+            else:
+                result = transform(image, *masks)
+
+                if masks:
+                    image = result[0]
+                    masks = tuple(result[1:])
+                else:
+                    image = result
+
+        if masks:
+            if return_params:
+                return image, *masks, records
+            return image, *masks
+
+        if return_params:
+            return image, records
+        return image
+
+    def inverse(self, prediction, records):
+        for record in reversed(records):
+            prediction = record.transform.inverse(prediction, record.params)
 
         return prediction
 
-    def __repr__(self):
-        return f"{self.__class__.__name__}(" f"{self.transforms!r})"
+        # for record in reversed(records):
+        #     if hasattr(record.transform, "inverse"):
+        #         prediction = record.transform.inverse(prediction, record.params)
+
+        # return prediction
 
 
-class TTANotSupported(MapTransform, InvertibleTransform):
-    """
-    Wrapper for transforms that are valid during forward/training,
-    but must not be inverted for TTA.
-
-    The wrapped transform is executed normally. The wrapper adds
-    itself to MONAI's applied_operations history. If MONAI later
-    tries to invert the transform, an explicit RuntimeError is raised.
-    """
-
-    def __init__(self, transform, keys: KeysCollection = ["image", "mask"], name: str | None = None, allow_missing_keys: bool = True):
-        MapTransform.__init__(self, keys=keys, allow_missing_keys=allow_missing_keys)
-        InvertibleTransform.__init__(self)
+class v2NotInversable(torch.nn.Module):
+    def __init__(self, transform):
+        super().__init__()
 
         self.transform = transform
-        self.name = name or type(transform).__name__
+        self.name = type(transform).__name__
+    
+    def forward(self, image, *masks, return_params=False):
+        if return_params:
+            raise RuntimeError(f"Transform '{self.name}' is not compatible with TTA because it cannot be spatially inverted.")
+        
+        return self.transform(image, *masks)
 
-    def __call__(self, data):
-        data = self.transform(data)
-
-        for key in self.key_iterator(data):
-            self.push_transform(data[key], extra_info={"name": self.name})
-
-        return data
-
-    def inverse(self, data):
+    def inverse(self, prediction, params):
         raise RuntimeError(f"Transform '{self.name}' is not compatible with TTA because it cannot be spatially inverted.")
 
-    def __repr__(self):
-        return f"{self.__class__.__name__}(transform={self.transform!r}, name={self.name!r})"
 
+class v2Inversable(torch.nn.Module):
+    def __init__(self, transform):
+        super().__init__()
 
-class RandResizedCrop2D(MapTransform, InvertibleTransform):
-    """
-    RandomResizedCrop operating only on H/W.
-
-    Input:
-        (C, H, W, D)
-
-    D is treated as an independent slice dimension and is never
-    cropped or resized.
-
-    The transform is invertible in the sense that the prediction
-    can be mapped back into the original H/W canvas. Pixels outside
-    the crop cannot be reconstructed and are therefore filled with 0.
-    """
-
-    def __init__(self, keys, size, scale=(0.08, 1.0), ratio=(3 / 4, 4 / 3), mode=("bilinear", "nearest"), allow_missing_keys=False):
-        MapTransform.__init__(self, keys, allow_missing_keys)
-        InvertibleTransform.__init__(self)
-
-        if isinstance(size, int):
-            size = (size, size)
-
-        self.size = tuple(size)
-        self.scale = scale
-        self.ratio = ratio
-        self.mode = mode
-
-    def _resize_hw(self, x, size, mode):
-        """
-        Resize H/W while keeping D untouched.
-
-        x:
-            (C, H, W, D)
-
-        returns:
-            (C, H_new, W_new, D)
-        """
-
-        C, H, W, D = x.shape
+        self.transform = transform
+        self.name = type(transform).__name__
+    
+    def forward(self, image, *masks, return_params=False):
+        result = self.transform(image, *masks)
         
-        x = x.permute(0, 3, 1, 2) # C,H,W,D -> C,D,H,W
-        x = x.reshape(C * D, H, W) # C,D,H,W -> (C*D),H,W
-        x = x.unsqueeze(1) # Add batch dimension for interpolate
+        if masks:
+            image = result[0]
+            masks = tuple(result[1:])
+        else:
+            image = result
 
-        align_corners = False if mode in {"linear", "bilinear", "bicubic", "trilinear"} else None # (C*D),1,H,W
+        if masks:
+            if return_params:
+                return image, *masks, {}
+            return image, *masks
 
-        x = torch.nn.functional.interpolate(x, size=size, mode=mode, align_corners=align_corners)
+        if return_params:
+            return image, {}
+        return image
 
-        x = x[:, 0] # (C*D),1,H,W -> (C*D),H,W
+    def inverse(self, prediction, params):
+        return prediction
 
-        H_new, W_new = size
+
+class RandomHorizontalFlip(torch.nn.Module):
+    """Random horizontal flip with inverse support."""
+
+    def __init__(self, p=0.5):
+        super().__init__()
+        self.p = p
+
+    def forward(self, image, *masks, return_params=False):
+        apply = torch.rand((), device=image.device).item() < self.p
         
-        x = x.reshape(C, D, H_new, W_new) # (C*D),H,W -> C,D,H,W
-        x = x.permute(0, 2, 3, 1) # C,D,H,W -> C,H,W,D
+        if apply:
+            # image = torch.flip(image, dims=(-1,))
+            # masks = tuple(torch.flip(mask, dims=(-1,)) for mask in masks)
+            image = v2.functional.horizontal_flip(image)
+            masks = tuple(v2.functional.horizontal_flip(mask) for mask in masks)
 
-        return x
+        params = {"apply": apply}   
 
-    def __call__(self, data):
-        d = dict(data)
+        if masks:
+            if return_params:
+                return image, *masks, params
+            return image, *masks
 
-        image = d[self.keys[0]]
+        if return_params:
+            return image, params
+        return image
 
-        if image.ndim != 4:
-            raise ValueError(f"Expected image (C,H,W,D), got {image.shape}")
+    def inverse(self, prediction, params):
+        if params["apply"]:
+            prediction = torch.flip(prediction, dims=(-1,))
 
-        _, H, W, D = image.shape
+        return prediction
 
-        # ----------------------------------------------------------
-        # Sample crop
-        # ----------------------------------------------------------
 
-        area = H * W
+class RandomVerticalFlip(torch.nn.Module):
+    """Random vertical flip with inverse support."""
 
-        log_ratio = (
-            torch.log(torch.tensor(self.ratio[0])),
-            torch.log(torch.tensor(self.ratio[1])),
-        )
+    def __init__(self, p=0.5):
+        super().__init__()
+        self.p = p
 
-        params = None
+    def forward(self, image, *masks, return_params=False):
+        apply = torch.rand((), device=image.device).item() < self.p
+        
+        if apply:
+            # image = torch.flip(image, dims=(-2,))
+            # masks = tuple(torch.flip(mask, dims=(-2,)) for mask in masks)
+            image = v2.functional.vertical_flip(image)
+            masks = tuple(v2.functional.vertical_flip(mask) for mask in masks)
 
-        for _ in range(10):
-            target_area = (torch.empty(1).uniform_(self.scale[0], self.scale[1]).item() * area)
-            aspect_ratio = torch.exp(torch.empty(1).uniform_(log_ratio[0],log_ratio[1])).item()
+        params = {"apply": apply}
 
-            crop_h = int(round((target_area * aspect_ratio) ** 0.5))
-            crop_w = int(round((target_area / aspect_ratio) ** 0.5))
+        if masks:
+            if return_params:
+                return image, *masks, params
+            return image, *masks
 
-            if crop_h > 0 and crop_w > 0 and crop_h <= H and crop_w <= W:
-                top = torch.randint(0, H - crop_h + 1, (1,)).item()
-                left = torch.randint(0, W - crop_w + 1, (1,)).item()
+        if return_params:
+            return image, params
+        return image
 
-                params = (top, left, crop_h, crop_w)
+    def inverse(self, prediction, params):
+        if params["apply"]:
+            prediction = torch.flip(prediction, dims=(-2,))
 
-                break
+        return prediction
 
-        # ----------------------------------------------------------
-        # Fallback
-        # ----------------------------------------------------------
 
-        if params is None:
-            in_ratio = W / H
+class RandomDepthFlip(torch.nn.Module):
+    """Randomly swaps depth layers in the image only."""
 
-            if in_ratio < self.ratio[0]:
-                crop_w = W
-                crop_h = int(round(crop_w / self.ratio[0]))
-            elif in_ratio > self.ratio[1]:
-                crop_h = H
-                crop_w = int(round(crop_h * self.ratio[1]))
-            else:
-                crop_h = H
-                crop_w = W
+    def __init__(self, p=0.5, max_swaps=1):
+        super().__init__()
 
-            top = (H - crop_h) // 2
-            left = (W - crop_w) // 2
+        if max_swaps < 1:
+            raise ValueError("max_swaps must be at least 1")
 
-            params = (top, left, crop_h, crop_w)
+        self.p = p
+        self.max_swaps = max_swaps
 
-        top, left, crop_h, crop_w = params
+    def forward(self, image, *masks, return_params=False):
+        depth = image.shape[-3]
 
-        # ----------------------------------------------------------
-        # Transformation metadata
-        # ----------------------------------------------------------
+        apply = torch.rand((), device=image.device).item() < self.p
 
-        extra_info = {
-            "top": top,
-            "left": left,
-            "crop_h": crop_h,
-            "crop_w": crop_w,
-            "orig_h": H,
-            "orig_w": W,
-            "orig_d": D,
-            "size": self.size,
+        swaps = []
+
+        if apply and depth >= 2:
+            max_swaps = min(self.max_swaps, depth // 2)
+            num_swaps = torch.randint(1, max_swaps + 1, (), device=image.device).item()
+            indices = torch.randperm(depth, device=image.device)[:2 * num_swaps]
+
+            for i in range(num_swaps):
+                a = indices[2 * i].item()
+                b = indices[2 * i + 1].item()
+
+                image[..., [a, b], :, :] = image[..., [b, a], :, :]
+
+                swaps.append((a, b))
+
+        params = {
+            "apply": apply,
+            "swaps": swaps,
         }
 
-        # ----------------------------------------------------------
-        # Apply crop + resize
-        # ----------------------------------------------------------
+        if masks:
+            if return_params:
+                return image, *masks, params
+            return image, *masks
 
-        for i, key in enumerate(self.key_iterator(d)):
-            x = d[key]
+        if return_params:
+            return image, params
+        return image
 
-            if x.ndim != 4:
-                raise ValueError(f"{key} must have shape (C,H,W,D), got {x.shape}")
+    def inverse(self, prediction, params):
+        raise RuntimeError("RandomBlankRectangle is not compatible with TTA because the blanked image content cannot be restored.")
+        for a, b in reversed(params["swaps"]):
+            prediction[..., [a, b], :, :] = prediction[..., [b, a], :, :]
 
-            x = x[:, top:top + crop_h, left:left + crop_w, :]
-
-            mode = self.mode[i] if isinstance(self.mode, (tuple, list)) else self.mode
-
-            x = self._resize_hw(x, self.size, mode)
-
-            d[key] = x
-
-            self.push_transform(d[key], extra_info=extra_info, orig_size=(H, W, D))
-
-        return d
-
-    def inverse(self, data):
-        raise NotImplementedError(
-            "random_resized_crop is not supported for TTA. "
-            "RandomResizedCrop discards spatial information outside "
-            "the crop and therefore cannot be fully inverted."
-        )
-
-        """
-        Invert resize + crop.
-
-        The prediction is resized back to the original crop size and
-        inserted into the original H/W canvas.
-
-        Regions outside the crop are filled with zero.
-        """
-
-        d = dict(data)
-
-        for key in self.key_iterator(d):
-
-            x = d[key]
-
-            info = self.pop_transform(d[key])
-
-            extra_info = info["extra_info"]
-
-            top = extra_info["top"]
-            left = extra_info["left"]
-            crop_h = extra_info["crop_h"]
-            crop_w = extra_info["crop_w"]
-
-            orig_h = extra_info["orig_h"]
-            orig_w = extra_info["orig_w"]
-
-            # ------------------------------------------------------
-            # Resize prediction from output size back to crop size.
-            #
-            # x:
-            #   C,H,W,D
-            # ------------------------------------------------------
-
-            x = self._resize_hw(x, (crop_h, crop_w), mode="nearest")
-
-            # ------------------------------------------------------
-            # Insert into original canvas.
-            # ------------------------------------------------------
-
-            restored = torch.zeros((x.shape[0], orig_h, orig_w, x.shape[3]), dtype=x.dtype, device=x.device)
-            restored[:, top:top + crop_h, left:left + crop_w, :] = x
-
-            d[key] = restored
-
-        return d
+        return prediction
 
 
-class RandBlankRectangled(Randomizable, MapTransform, InvertibleTransform):
-    def __init__(self, keys: KeysCollection = ("image",), prob: float = 0.5, rectangle_size=((16, 64), (16, 64)), num_rectangles=(1, 5), allow_missing_keys=True):
-        MapTransform.__init__(self, keys=keys, allow_missing_keys=allow_missing_keys)
-        Randomizable.__init__(self)
-        InvertibleTransform.__init__(self)
+class RandomBlankRectangle(torch.nn.Module):
+    """Randomly blanks multiple rectangles in the image only."""
 
-        self.prob = prob
-        self.rectangle_size = rectangle_size
-        self.num_rectangles = num_rectangles
+    def __init__(self, height, width, min_rectangles=1, max_rectangles=1, p=0.5, value=0.0):
+        super().__init__()
 
-    def randomize(self, height, width):
-        self._do_transform = self.R.rand() < self.prob
+        if min_rectangles < 1:
+            raise ValueError("min_rectangles must be at least 1")
 
-        if not self._do_transform:
-            return
+        if max_rectangles < min_rectangles:
+            raise ValueError("max_rectangles must be greater than or equal to min_rectangles")
 
-        n = self.R.randint(self.num_rectangles[0], self.num_rectangles[1] + 1)
+        if len(height) != 2 or height[0] > height[1]:
+            raise ValueError("height must be [min, max]")
 
-        self._rectangles = []
+        if len(width) != 2 or width[0] > width[1]:
+            raise ValueError("width must be [min, max]")
 
-        for _ in range(n):
-            rect_h = min(self.R.randint(self.rectangle_size[0][0], self.rectangle_size[0][1] + 1), height)
-            rect_w = min(self.R.randint( self.rectangle_size[1][0], self.rectangle_size[1][1] + 1), width)
+        self.height = height
+        self.width = width
+        self.min_rectangles = min_rectangles
+        self.max_rectangles = max_rectangles
+        self.p = p
+        self.value = value
 
-            y = self.R.randint(0, height - rect_h + 1)
-            x = self.R.randint(0, width - rect_w + 1)
+    def forward(self, image, *masks, return_params=False):
+        H = image.shape[-2]
+        W = image.shape[-1]
 
-            self._rectangles.append((y, x, rect_h, rect_w))
+        apply = torch.rand((), device=image.device).item() < self.p
 
-    def __call__(self, data):
-        d = dict(data)
+        rectangles = []
 
-        for key in self.key_iterator(d):
-            image = d[key]
+        if apply:
+            num_rectangles = torch.randint(self.min_rectangles, self.max_rectangles + 1, (), device=image.device).item()
 
-            _, height, width, _ = image.shape # (C, H, W, D)
+            for _ in range(num_rectangles):
+                height = torch.randint(self.height[0], self.height[1] + 1, (), device=image.device,).item()
+                width = torch.randint(self.width[0], self.width[1] + 1, (), device=image.device,).item()
 
-            self.randomize(height, width)
+                height = min(height, H)
+                width = min(width, W)
 
-            if not self._do_transform:
-                self.push_transform(image, extra_info={"do_transform": False})
-                continue
+                top = torch.randint(0, H - height + 1, (), device=image.device).item()
+                left = torch.randint(0, W - width + 1, (), device=image.device).item()
 
-            image = image.clone()
+                if self.value == "mean":
+                    value = image.mean()
+                else:
+                    value = self.value
 
-            for y, x, rect_h, rect_w in self._rectangles:
-                region = image[..., y:y + rect_h, x:x + rect_w, :]
-                value = region.mean(dim=(-3, -2), keepdim=True)
+                image[..., top:top + height, left:left + width] = value
 
-                image[..., y:y + rect_h, x:x + rect_w, :] = value
+                rectangles.append(
+                    {
+                        "top": top,
+                        "left": left,
+                        "height": height,
+                        "width": width,
+                    }
+                )
 
-            d[key] = image
+        params = {
+            "apply": apply,
+            "rectangles": rectangles,
+        }
 
-            self.push_transform(image, extra_info={"do_transform": True})
+        if masks:
+            if return_params:
+                return image, *masks, params
+            return image, *masks
 
-        return d
+        if return_params:
+            return image, params
+        return image
 
-    def inverse(self, data):
-        for key in self.key_iterator(data):
-            self.pop_transform(data[key])
-
-        return data
+    def inverse(self, prediction, params):
+        raise RuntimeError("RandomBlankRectangle is not compatible with TTA because the blanked image content cannot be restored.")
 
 
-def build_augmentation(aug, wrap=True):
+class RandomApply(torch.nn.Module):
+    """Randomly apply a transform while keeping TTA parameters."""
+
+    def __init__(self, transform, p=0.5):
+        super().__init__()
+
+        if not 0.0 <= p <= 1.0:
+            raise ValueError("p must be between 0 and 1")
+
+        self.transform = transform
+        self.p = p
+
+    def forward(self,  image, *masks, return_params=False):
+        apply = torch.rand((), device=image.device).item() < self.p
+
+        if not apply:
+            params = {
+                "apply": False,
+                "params": None,
+            }
+
+            if masks:
+                if return_params:
+                    return (image, *masks, params)
+                return (image, *masks)
+    
+            if return_params:
+                return image, params
+            return image
+
+        if return_params:
+            result = self.transform(image, *masks, return_params=True)
+
+            image = result[0]
+            masks = tuple(result[1:-1])
+            p = result[-1]
+
+            params = {
+                "apply": True,
+                "params": p,
+            }
+        else:
+            result = self.transform(image, *masks)
+
+            if masks:
+                image = result[0]
+                masks = tuple(result[1:])
+            else:
+                image = result
+        
+        if masks:
+            if return_params:
+                return image, *masks, params
+            return image, *masks
+
+        if return_params:
+            return image, params
+        return image
+
+    def inverse(self, prediction, params):
+        if not params["apply"]:
+            return prediction
+        
+        return self.transform.inverse(prediction, params["params"])
+
+        # if hasattr(self.transform, "inverse"):
+        #     return self.transform.inverse(prediction, params["params"])
+
+        # return prediction
+
+
+class RandomChoice(torch.nn.Module):
+    """Randomly select one transform while keeping TTA parameters."""
+
+    def __init__(self, transforms):
+        super().__init__()
+
+        if not transforms:
+            raise ValueError("TTAOneOf requires at least one transform")
+
+        self.transforms = torch.nn.ModuleList(transforms)
+
+    def forward(self, image, *masks, return_params=False):
+        index = torch.randint(len(self.transforms), (), device=image.device).item()
+
+        transform = self.transforms[index]
+
+        if return_params:
+            result = transform(image, *masks, return_params=True)
+
+            image = result[0]
+            masks = tuple(result[1:-1])
+            p = result[-1]
+
+            params = {
+                "index": index,
+                "params": p,
+            }
+        else:
+            result = transform(image, *masks)
+
+            if masks:
+                image = result[0]
+                masks = tuple(result[1:])
+            else:
+                image = result
+
+        if masks:
+            if return_params:
+                return image, *masks, params
+            return image, *masks
+
+        if return_params:
+            return image, params
+        return image
+
+    def inverse(self, prediction, params):
+        transform = self.transforms[params["index"]]
+        return transform.inverse(prediction, params["params"])
+
+        # if hasattr(transform, "inverse"):
+        #     return transform.inverse(prediction, params["params"])
+
+        # return prediction
+
+
+class Identity(torch.nn.Module):
+    """Identity transform for test-time augmentation."""
+
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, image, *masks, return_params=False):
+        if masks:
+            if return_params:
+                return image, *masks, {}
+            return image, *masks
+
+        if return_params:
+            return image, {}
+        return image
+
+    def inverse(self, prediction, params):
+        return prediction
+
+
+def build_augmentation(aug):
     transforms = []
+
+    def add_with_probability(transform, spec):
+        """Apply non-flip transforms only with the probability from the YAML."""
+        p = getattr(spec, "p", 1.0)
+        # transforms.append(v2.RandomApply([transform], p=p) if p < 1.0 else transform)
+        transforms.append(RandomApply(transform, p=p))
 
     for t in aug.transforms:
         match t.name:
@@ -572,173 +475,54 @@ def build_augmentation(aug, wrap=True):
             # =========================================================
 
             case "random_horizontal_flip":
-                transforms.append(
-                    mt.RandFlipd(
-                        keys=["image", "mask"],
-                        prob=t.p,
-                        spatial_axis=1,
-                        allow_missing_keys=True,
-                    )
-                )
+                # transforms.append(v2.RandomHorizontalFlip(p=t.p))
+                transforms.append(RandomHorizontalFlip(p=t.p))
 
             case "random_vertical_flip":
-                transforms.append(
-                    mt.RandFlipd(
-                        keys=["image", "mask"],
-                        prob=t.p,
-                        spatial_axis=0,
-                        allow_missing_keys=True,
-                    )
-                )
+                # transforms.append(v2.RandomVerticalFlip(p=t.p))
+                transforms.append(RandomVerticalFlip(p=t.p))
 
             case "random_rotation":
-                degrees = t.degrees
-
-                if isinstance(degrees, (int, float)):
-                    degrees = (-degrees, degrees)
-
-                transforms.append(
-                    TTANotSupported(
-                        mt.RandRotated(
-                            keys=["image", "mask"],
-                            prob=t.p,
-                            range_x=degrees,
-                            range_y=0,
-                            range_z=0,
-                            mode=("bilinear", "nearest"),
-                            padding_mode="border",
-                            allow_missing_keys=True,
-                        )
-                    )
+                add_with_probability(
+                    v2NotInversable(
+                        v2.RandomRotation(degrees=t.degrees)
+                    ),
+                    t,
                 )
 
             case "random_affine":
-                degrees = t.degrees
-                if isinstance(degrees, (int, float)):
-                    degrees = (-degrees, degrees)
-
-                # transforms.append(
-                #     mt.RandAffined(
-                #         keys=["image", "mask"],
-                #         prob=t.p,
-                #         rotate_range=degrees,
-                #         translate_range=t.translate,
-                #         scale_range=t.scale,
-                #         shear_range=t.shear,
-                #         mode=("bilinear", "nearest"),
-                #         padding_mode="border",
-                #         allow_missing_keys=True
-                #     )
-                # )
-
-                transforms.append(
-                    TTANotSupported(
-                        mt.RandAffined(
-                            keys=["image", "mask"],
-                            prob=t.p,
-                            # rotate_range=(0, 0, *degrees),
-                            rotate_range=(0, 0, degrees),
-                            translate_range=(
-                                t.translate[0],
-                                t.translate[1],
-                                0,
-                            ),
-                            scale_range=(
-                                t.scale[0],
-                                t.scale[1],
-                                0,
-                            ),
-                            shear_range=(0, 0, 0, 0, 0, 0),
-                            mode=("bilinear", "nearest"),
-                            padding_mode="border",
-                            allow_missing_keys=True,
+                add_with_probability(
+                    v2NotInversable(
+                        v2.RandomAffine(
+                            degrees=t.degrees,
+                            translate=t.translate,
+                            scale=t.scale,
+                            shear=t.shear,
                         )
-                    )
+                    ),
+                    t,
                 )
 
             case "random_resized_crop":
-                # # MONAI does not have a direct 3D equivalent of
-                # # torchvision's RandomResizedCrop.
-                # #
-                # # RandZoomd + RandSpatialCropd is the closest
-                # # 3D-oriented alternative.
-
-                # transforms.append(
-                #     mt.RandZoomd(
-                #         keys=["image", "mask"],
-                #         prob=t.p,
-                #         min_zoom=min(t.scale),
-                #         max_zoom=max(t.scale),
-                #         mode=("trilinear", "nearest"),
-                #         padding_mode="edge",
-                #         allow_missing_keys=True
-                #     )
-                # )
-
-                # transforms.append(
-                #     mt.RandSpatialCropd(
-                #         keys=["image", "mask"],
-                #         roi_size=t.size,
-                #         random_center=True,
-                #         random_size=False,
-                #         allow_missing_keys=True
-                #     )
-                # )
-
-                transforms.append(
-                    TTANotSupported(
-                        RandResizedCrop2D(
-                            keys=["image", "mask"],
+                add_with_probability(
+                    v2NotInversable(
+                        v2.RandomResizedCrop(
                             size=t.size,
                             scale=t.scale,
                             ratio=t.ratio,
-                            mode=("bilinear", "nearest"),
-                            allow_missing_keys=True,
                         )
-                    )
+                    ),
+                    t,
                 )
-
-            # case "transpose_axes":
-            #     transforms.append(
-            #         # mt.Transposed(
-            #         #     keys=["image", "mask"],
-            #         #     indices=t.axes,
-            #         #     allow_missing_keys=True
-            #         # )
-            #         mt.Compose([
-            #             mt.Flip(
-            #                 keys=["image", "mask"],
-            #                 spatial_axis=1,
-            #             ),
-            #             mt.Rotate90(
-            #                 keys=["image", "mask"],
-            #                 k=1,
-            #                 spatial_axes=(0, 1),
-            #             ),
-            #         ])
-            #     )
 
             case "random_axis_flip":
-                transforms.append(
-                    TTANotSupported(
-                        mt.RandAxisFlipd(
-                            keys=["image", "mask"],
-                            prob=t.p,
-                            spatial_axis=(0, 1),
-                            allow_missing_keys=True,
-                        )
-                    )
-                )
+                raise ValueError("'random_axis_flip' has no torchvision v2 implementation.")
 
             case "random_depth_flip":
                 transforms.append(
-                    TTANotSupported(
-                        mt.RandAxisFlipd(
-                            keys=["image"],
-                            prob=t.p,
-                            spatial_axis=2,
-                            allow_missing_keys=True,
-                        )
+                    RandomDepthFlip(
+                        p=t.p,
+                        max_swaps=t.max_swaps,
                     )
                 )
 
@@ -747,77 +531,34 @@ def build_augmentation(aug, wrap=True):
             # =========================================================
 
             case "contrast":
-                transforms.append(
-                    TTANotSupported(
-                        mt.RandAdjustContrastd(
-                            keys=["image"],
-                            prob=t.p,
-                            gamma=(0.8, 1.2),
-                            allow_missing_keys=True,
-                        )
-                    )
-                )
+                raise ValueError("'contrast' has no direct torchvision v2 implementation.")
 
             case "multiplicative_brightness":
-                transforms.append(
-                    TTANotSupported(
-                        mt.RandScaleIntensityd(
-                            keys=["image"],
-                            prob=t.p,
-                            factors=t.multiplier,
-                            allow_missing_keys=True,
-                        )
-                    )
-                )
+                raise ValueError("'multiplicative_brightness' has no direct torchvision v2 implementation.")
 
             case "brightness_additive":
-                transforms.append(
-                    TTANotSupported(
-                        mt.RandShiftIntensityd(
-                            keys=["image"],
-                            prob=t.p,
-                            offsets=(t.min_value, t.max_value),
-                            allow_missing_keys=True,
-                        )
-                    )
-                )
+                raise ValueError("'brightness_additive' has no direct torchvision v2 implementation.")
 
             case "gamma":
-                transforms.append(
-                    TTANotSupported(
-                        mt.RandGammaCorrectiond(
-                            keys=["image"],
-                            prob=t.p,
-                            gamma=t.gamma,
-                            allow_missing_keys=True
-                        )
-                    )
-                )
+                raise ValueError("'gamma' has no torchvision v2 implementation.")
 
             case "invert":
-                transforms.append(
-                    TTANotSupported(
-                        mt.RandScaleIntensityd(
-                            keys=["image"],
-                            prob=t.p,
-                            factors=-1.0,
-                            allow_missing_keys=True
-                        )
-                    )
-                )
+                raise ValueError("'invert' has no torchvision v2 implementation.")
 
             case "sharpening":
-                transforms.append(
-                    TTANotSupported(
-                        mt.RandGaussianSharpend(
-                            keys=["image"],
-                            prob=t.p,
-                            sigma1=0.5,
-                            sigma2=1.0,
-                            alpha=(0.5, t.strength),
-                            allow_missing_keys=True,
+                raise ValueError("'sharpening' has no torchvision v2 implementation.")
+
+            case "color_jitter":
+                add_with_probability(
+                    v2NotInversable(
+                        v2.ColorJitter(
+                            brightness=t.brightness,
+                            contrast=t.contrast,
+                            saturation=t.saturation,
+                            hue=t.hue,
                         )
-                    )
+                    ),
+                    t,
                 )
 
             # =========================================================
@@ -825,177 +566,1096 @@ def build_augmentation(aug, wrap=True):
             # =========================================================
 
             case "gaussian_blur":
-                transforms.append(
-                    TTANotSupported(
-                        mt.RandGaussianSmoothd(
-                            keys=["image"],
-                            prob=t.p,
-                            sigma_x=t.sigma,
-                            sigma_y=t.sigma,
-                            sigma_z=t.sigma,
-                            allow_missing_keys=True,
-                        )
-                    )
+                add_with_probability(
+                    v2NotInversable(
+                        v2.GaussianBlur(
+                            kernel_size=t.kernel_size,
+                            sigma=t.sigma,
+                        ),
+                    ),
+                    t,
                 )
 
             case "gaussian_noise":
-                transforms.append(
-                    TTANotSupported(
-                        mt.RandGaussianNoised(
-                            keys=["image"],
-                            prob=t.p,
+                add_with_probability(
+                    v2NotInversable(
+                        v2.GaussianNoise(
                             mean=t.mean,
-                            std=t.sigma,
-                            allow_missing_keys=True,
-                        )
-                    )
+                            sigma=t.sigma,
+                        ),
+                    ),
+                    t,
                 )
 
-            # case "low_resolution":
-            #     transforms.extend(
-            #         [
-            #             TTANotSupported(
-            #                 mt.RandZoomd(
-            #                     keys=["image"],
-            #                     prob=t.p,
-            #                     min_zoom=t.scale,
-            #                     max_zoom=t.scale,
-            #                     mode=("trilinear", "nearest"),
-            #                     padding_mode="edge",
-            #                     allow_missing_keys=True,
-            #                 )
-            #             ),
-            #             TTANotSupported(
-            #                 mt.Zoomd(
-            #                     keys=["image"],
-            #                     zoom=1.0 / t.scale,
-            #                     mode=("trilinear", "nearest"),
-            #                     allow_missing_keys=True,
-            #                 )
-            #             )
-            #         ]
-            #     )
+            case "low_resolution":
+                raise ValueError("'low_resolution' has no torchvision v2 implementation.")
 
+            case "motion_blur":
+                raise ValueError("'motion_blur' has no torchvision v2 implementation.")
+
+            # =========================================================
+            # CT-specific augmentations
+            # =========================================================
+
+            case "smear":
+                raise ValueError("'smear' has no torchvision v2 implementation.")
+
+            case "inhomogeneous_slice_illumination":
+                raise ValueError("'inhomogeneous_slice_illumination' has no torchvision v2 implementation.")
+
+            case "brightness_gradient":
+                raise ValueError("'brightness_gradient' has no torchvision v2 implementation.")
+
+            # =========================================================
+            # Cutout / masking
+            # =========================================================
+
+            
             case "blank_rectangle":
                 transforms.append(
-                    TTANotSupported(
-                        RandBlankRectangled(
-                            keys=["image"],
-                            prob=t.p,
-                            rectangle_size=t.rectangle_size,
-                            num_rectangles=t.num_rectangles,
-                            allow_missing_keys=True,
-                        )
+                    RandomBlankRectangle(
+                        height=t.height,
+                        width=t.width,
+                        min_rectangles=t.min_rectangles,
+                        max_rectangles=t.max_rectangles,
+                        p=t.p,
+                        value=t.value,
                     )
                 )
-
-            # case "motion_blur":
-            #     transforms.append(
-            #         TTANotSupported(
-            #             mt.RandGaussianSmoothd(
-            #                 keys=["image"],
-            #                 prob=t.p,
-            #                 sigma_x=t.kernel_size / 3.0,
-            #                 sigma_y=t.kernel_size / 3.0,
-            #                 sigma_z=t.kernel_size / 3.0,
-            #                 allow_missing_keys=True,
-            #             )
-            #         )
-            #     )
-
-            # =========================================================
-            # 3D CT-specific augmentations
-            # =========================================================
-
-            # case "smear":
-            #     transforms.append(
-            #         TTANotSupported(
-            #             mt.RandGaussianSmoothd(
-            #                 keys=["image"],
-            #                 prob=t.p,
-            #                 sigma_x=t.sigma,
-            #                 sigma_y=t.sigma,
-            #                 sigma_z=t.sigma * 2,
-            #                 allow_missing_keys=True,
-            #             )
-            #         )
-            #     )
-
-            # case "inhomogeneous_slice_illumination":
-            #     transforms.append(
-            #         TTANotSupported(
-            #             mt.RandBiasFieldd(
-            #                 keys=["image"],
-            #                 prob=t.p,
-            #                 coeff_range=t.coeff_range,
-            #                 allow_missing_keys=True,
-            #             )
-            #         )
-            #     )
-
-            # case "brightness_gradient":
-            #     transforms.append(
-            #         TTANotSupported(
-            #             mt.RandBiasFieldd(
-            #                 keys=["image"],
-            #                 prob=t.p,
-            #                 coeff_range=t.coeff_range,
-            #                 allow_missing_keys=True,
-            #             )
-            #         )
-            #     )
-
-            # =========================================================
-            # Cutout
-            # =========================================================
 
             case "cutout":
-                transforms.append(
-                    TTANotSupported(
-                        mt.RandCoarseDropoutd(
-                            keys=["image"],
-                            prob=t.p,
-                            holes=t.max_holes,
-                            # spatial_size=t.max_size_fraction,
-                            spatial_size=(t.height, t.width, -1),
-                            fill_value=t.fill,
-                            allow_missing_keys=True,
-                        )
-                    )
-                )
+                raise ValueError("'cutout' has no torchvision v2 implementation.")
 
             # =========================================================
             # OneOf
             # =========================================================
 
             case "oneof":
-                alternatives = [
-                    build_augmentation(alternative, wrap=False) for alternative in t.transforms
-                ]
-
-                transforms.append(
-                    mt.OneOf(alternatives, weights=None, allow_missing_keys=True)
-                )
+                alternatives = [build_augmentation(alternative)for alternative in t.transforms]
+                # transforms.append(v2.RandomChoice(alternatives))
+                transforms.append(RandomChoice(alternatives))
 
             # =========================================================
-            # Not recommended for CT
+            # Unsupported / unknown transforms
             # =========================================================
 
-            case "color_jitter":
-                raise ValueError("'color_jitter' is not suitable for CT volumes. Use contrast, brightness, or gamma instead.")
+            case "transpose_axes":
+                raise ValueError("'transpose_axes' has no torchvision v2 implementation.")
 
             case _:
                 raise ValueError(f"Unknown transform: {t.name}")
-    
+
     if not transforms:
-        return None
+        # return v2.Identity()
+        # return Identity()
+        transforms = [Identity()]
 
-    compose = mt.Compose(transforms)
+    # return v2.Compose(transforms)
+    return Pipeline(transforms)
 
-    if wrap:
-        return MonaiTransformWrapper(compose)
 
-    return compose
+
+
+
+# import torch
+
+# from monai.data import MetaTensor
+# from monai.transforms import Invertd
+# from monai.transforms import MapTransform, Randomizable, InvertibleTransform
+# from monai.config import KeysCollection
+# import monai.transforms as mt
+
+
+# class MonaiTransformWrapper:
+#     """
+#     MONAI wrapper with a torchvision-like external interface.
+
+#     External interface
+#     ------------------
+#     image:
+#         (C, D, H, W)
+
+#     mask:
+#         (C, H, W)
+
+#     Internally MONAI receives
+#     -------------------------
+#     image:
+#         (C, H, W, D)
+
+#     mask:
+#         (C, H, W, 1)
+
+#     The transform state belonging to each call is returned explicitly
+#     and can later be used to invert a prediction.
+
+#     Example
+#     -------
+#         image_t, mask_t, state = transform(image, mask)
+
+#         prediction = model(image_t)
+
+#         prediction_original = transform.inverse(
+#             prediction,
+#             state,
+#         )
+#     """
+
+#     IMAGE_KEY = "image"
+#     MASK_KEY = "mask"
+
+#     def __init__(self, transforms):
+#         self.transforms = transforms
+
+#     def __call__(self, image, *masks, return_state=False):
+#         """
+#         Apply MONAI transforms.
+
+#         Parameters
+#         ----------
+#         image:
+#             torch.Tensor / tv_tensor.Image
+#             Shape: (C, D, H, W)
+
+#         masks:
+#             torch.Tensor / tv_tensor.Mask
+#             Shape: (C, H, W)
+
+#         Returns
+#         -------
+#         image_transformed:
+#             Shape: (C, D, H, W)
+
+#         masks_transformed:
+#             Shape: (C, H, W)
+
+#         state:
+#             Dictionary containing the transformed MetaTensors.
+#             This state MUST be passed to inverse().
+#         """
+
+#         image = torch.as_tensor(image)
+
+#         if image.ndim != 4:
+#             raise ValueError(f"Expected image with shape (C, D, H, W), " f"got {tuple(image.shape)}")
+
+#         data = {}
+
+#         # --------------------------------------------------------------
+#         # Image
+#         #
+#         # External:
+#         #   C D H W
+#         #
+#         # MONAI:
+#         #   C H W D
+#         # --------------------------------------------------------------
+
+#         image_monai = image.permute(0, 2, 3, 1).contiguous()
+
+#         data[self.IMAGE_KEY] = MetaTensor(image_monai)
+
+#         # --------------------------------------------------------------
+#         # Masks
+#         #
+#         # External:
+#         #   C H W
+#         #
+#         # MONAI:
+#         #   C H W 1
+#         #
+#         # The singleton D dimension makes the mask compatible with
+#         # 3D MONAI transforms.
+#         # --------------------------------------------------------------
+
+#         if masks:
+#             transformed_masks = []
+
+#             for mask in masks:
+#                 mask = torch.as_tensor(mask)
+
+#                 if mask.ndim != 3:
+#                     raise ValueError(f"Expected mask with shape (C, H, W), got {tuple(mask.shape)}")
+
+#                 mask_monai = mask.unsqueeze(-1).contiguous()
+
+#                 transformed_masks.append(MetaTensor(mask_monai))
+
+#             # Only one mask key is used internally.
+#             #
+#             # If multiple masks are passed, stack them along channel.
+#             #
+#             # Example:
+#             #   mask1: (C,H,W,1)
+#             #   mask2: (C,H,W,1)
+#             #
+#             # becomes:
+#             #   (N*C,H,W,1)
+#             #
+#             # For the usual case of one mask this is simply (C,H,W,1).
+
+#             if len(transformed_masks) == 1:
+#                 data[self.MASK_KEY] = transformed_masks[0]
+#             else:
+#                 data[self.MASK_KEY] = MetaTensor(torch.cat(transformed_masks, dim=0))
+
+#         # --------------------------------------------------------------
+#         # Apply MONAI transforms
+#         # --------------------------------------------------------------
+
+#         data = self.transforms(data)
+
+#         # --------------------------------------------------------------
+#         # Image back to external representation
+#         #
+#         # MONAI:
+#         #   C H W D
+#         #
+#         # External:
+#         #   C D H W
+#         # --------------------------------------------------------------
+
+#         transformed_image = data[self.IMAGE_KEY]
+#         transformed_image = transformed_image.permute(0, 3, 1, 2).contiguous()
+#         transformed_image = transformed_image.as_tensor()
+
+#         # --------------------------------------------------------------
+#         # Masks back to external representation
+#         #
+#         # MONAI:
+#         #   C H W 1
+#         #
+#         # External:
+#         #   C H W
+#         # --------------------------------------------------------------
+
+#         transformed_masks = []
+
+#         if masks:
+#             transformed_mask = data[self.MASK_KEY]
+
+#             # Remove singleton D dimension.
+#             #
+#             # C H W 1 -> C H W
+#             transformed_mask = transformed_mask[..., 0]
+#             transformed_mask = transformed_mask.as_tensor()
+
+#             # If multiple masks were supplied, they are currently
+#             # concatenated along C. Split them back.
+#             if len(masks) == 1:
+#                 transformed_masks.append(transformed_mask)
+#             else:
+#                 channel_sizes = [torch.as_tensor(mask).shape[0] for mask in masks]
+
+#                 transformed_masks = list(torch.split(transformed_mask, channel_sizes, dim=0))
+
+#         # --------------------------------------------------------------
+#         # IMPORTANT:
+#         #
+#         # Keep the MetaTensor itself as the state.
+#         #
+#         # It contains MONAI's applied_operations history.
+#         # --------------------------------------------------------------
+
+#         state = {
+#             self.IMAGE_KEY: data[self.IMAGE_KEY],
+#         }
+
+#         if masks:
+#             state[self.MASK_KEY] = data[self.MASK_KEY]
+
+#         # --------------------------------------------------------------
+#         # Return
+#         # --------------------------------------------------------------
+
+#         if masks:
+#             if return_state:
+#                 return transformed_image, *transformed_masks, state
+#             return transformed_image, *transformed_masks
+
+#         if return_state:
+#             return transformed_image, state
+
+#         return transformed_image
+
+#     def inverse(self, tensor, state, key="prediction", nearest_interp=True):
+#         tensor = torch.as_tensor(tensor)
+
+#         if tensor.ndim != 3:
+#             raise ValueError(f"Expected prediction with shape (C, H, W), got {tuple(tensor.shape)}")
+
+#         # 2D prediction -> MONAI-compatible pseudo-3D tensor
+#         prediction_monai = tensor.unsqueeze(-1).contiguous()
+
+#         data = {
+#             self.IMAGE_KEY: state[self.IMAGE_KEY],
+#             key: MetaTensor(prediction_monai),
+#         }
+
+#         inv = Invertd(
+#             keys=key,
+#             transform=self.transforms,
+#             orig_keys=self.IMAGE_KEY,
+#             nearest_interp=nearest_interp,
+#         )
+        
+#         data = inv(data)
+
+#         prediction = data[key]
+
+#         # C,H,W,1 -> C,H,W
+#         prediction = prediction[..., 0].contiguous()
+#         prediction = prediction.as_tensor()
+
+#         return prediction
+
+#     def __repr__(self):
+#         return f"{self.__class__.__name__}(" f"{self.transforms!r})"
+
+
+# class TTANotSupported(MapTransform, InvertibleTransform):
+#     """
+#     Wrapper for transforms that are valid during forward/training,
+#     but must not be inverted for TTA.
+
+#     The wrapped transform is executed normally. The wrapper adds
+#     itself to MONAI's applied_operations history. If MONAI later
+#     tries to invert the transform, an explicit RuntimeError is raised.
+#     """
+
+#     def __init__(self, transform, keys: KeysCollection = ["image", "mask"], name: str | None = None, allow_missing_keys: bool = True):
+#         MapTransform.__init__(self, keys=keys, allow_missing_keys=allow_missing_keys)
+#         InvertibleTransform.__init__(self)
+
+#         self.transform = transform
+#         self.name = name or type(transform).__name__
+
+#     def __call__(self, data):
+#         data = self.transform(data)
+
+#         for key in self.key_iterator(data):
+#             self.push_transform(data[key], extra_info={"name": self.name})
+
+#         return data
+
+#     def inverse(self, data):
+#         raise RuntimeError(f"Transform '{self.name}' is not compatible with TTA because it cannot be spatially inverted.")
+
+#     def __repr__(self):
+#         return f"{self.__class__.__name__}(transform={self.transform!r}, name={self.name!r})"
+
+
+# class RandResizedCrop2D(MapTransform, InvertibleTransform):
+#     """
+#     RandomResizedCrop operating only on H/W.
+
+#     Input:
+#         (C, H, W, D)
+
+#     D is treated as an independent slice dimension and is never
+#     cropped or resized.
+
+#     The transform is invertible in the sense that the prediction
+#     can be mapped back into the original H/W canvas. Pixels outside
+#     the crop cannot be reconstructed and are therefore filled with 0.
+#     """
+
+#     def __init__(self, keys, size, scale=(0.08, 1.0), ratio=(3 / 4, 4 / 3), mode=("bilinear", "nearest"), allow_missing_keys=False):
+#         MapTransform.__init__(self, keys, allow_missing_keys)
+#         InvertibleTransform.__init__(self)
+
+#         if isinstance(size, int):
+#             size = (size, size)
+
+#         self.size = tuple(size)
+#         self.scale = scale
+#         self.ratio = ratio
+#         self.mode = mode
+
+#     def _resize_hw(self, x, size, mode):
+#         """
+#         Resize H/W while keeping D untouched.
+
+#         x:
+#             (C, H, W, D)
+
+#         returns:
+#             (C, H_new, W_new, D)
+#         """
+
+#         C, H, W, D = x.shape
+        
+#         x = x.permute(0, 3, 1, 2) # C,H,W,D -> C,D,H,W
+#         x = x.reshape(C * D, H, W) # C,D,H,W -> (C*D),H,W
+#         x = x.unsqueeze(1) # Add batch dimension for interpolate
+
+#         align_corners = False if mode in {"linear", "bilinear", "bicubic", "trilinear"} else None # (C*D),1,H,W
+
+#         x = torch.nn.functional.interpolate(x, size=size, mode=mode, align_corners=align_corners)
+
+#         x = x[:, 0] # (C*D),1,H,W -> (C*D),H,W
+
+#         H_new, W_new = size
+        
+#         x = x.reshape(C, D, H_new, W_new) # (C*D),H,W -> C,D,H,W
+#         x = x.permute(0, 2, 3, 1) # C,D,H,W -> C,H,W,D
+
+#         return x
+
+#     def __call__(self, data):
+#         d = dict(data)
+
+#         image = d[self.keys[0]]
+
+#         if image.ndim != 4:
+#             raise ValueError(f"Expected image (C,H,W,D), got {image.shape}")
+
+#         _, H, W, D = image.shape
+
+#         # ----------------------------------------------------------
+#         # Sample crop
+#         # ----------------------------------------------------------
+
+#         area = H * W
+
+#         log_ratio = (
+#             torch.log(torch.tensor(self.ratio[0])),
+#             torch.log(torch.tensor(self.ratio[1])),
+#         )
+
+#         params = None
+
+#         for _ in range(10):
+#             target_area = (torch.empty(1).uniform_(self.scale[0], self.scale[1]).item() * area)
+#             aspect_ratio = torch.exp(torch.empty(1).uniform_(log_ratio[0],log_ratio[1])).item()
+
+#             crop_h = int(round((target_area * aspect_ratio) ** 0.5))
+#             crop_w = int(round((target_area / aspect_ratio) ** 0.5))
+
+#             if crop_h > 0 and crop_w > 0 and crop_h <= H and crop_w <= W:
+#                 top = torch.randint(0, H - crop_h + 1, (1,)).item()
+#                 left = torch.randint(0, W - crop_w + 1, (1,)).item()
+
+#                 params = (top, left, crop_h, crop_w)
+
+#                 break
+
+#         # ----------------------------------------------------------
+#         # Fallback
+#         # ----------------------------------------------------------
+
+#         if params is None:
+#             in_ratio = W / H
+
+#             if in_ratio < self.ratio[0]:
+#                 crop_w = W
+#                 crop_h = int(round(crop_w / self.ratio[0]))
+#             elif in_ratio > self.ratio[1]:
+#                 crop_h = H
+#                 crop_w = int(round(crop_h * self.ratio[1]))
+#             else:
+#                 crop_h = H
+#                 crop_w = W
+
+#             top = (H - crop_h) // 2
+#             left = (W - crop_w) // 2
+
+#             params = (top, left, crop_h, crop_w)
+
+#         top, left, crop_h, crop_w = params
+
+#         # ----------------------------------------------------------
+#         # Transformation metadata
+#         # ----------------------------------------------------------
+
+#         extra_info = {
+#             "top": top,
+#             "left": left,
+#             "crop_h": crop_h,
+#             "crop_w": crop_w,
+#             "orig_h": H,
+#             "orig_w": W,
+#             "orig_d": D,
+#             "size": self.size,
+#         }
+
+#         # ----------------------------------------------------------
+#         # Apply crop + resize
+#         # ----------------------------------------------------------
+
+#         for i, key in enumerate(self.key_iterator(d)):
+#             x = d[key]
+
+#             if x.ndim != 4:
+#                 raise ValueError(f"{key} must have shape (C,H,W,D), got {x.shape}")
+
+#             x = x[:, top:top + crop_h, left:left + crop_w, :]
+
+#             mode = self.mode[i] if isinstance(self.mode, (tuple, list)) else self.mode
+
+#             x = self._resize_hw(x, self.size, mode)
+
+#             d[key] = x
+
+#             self.push_transform(d[key], extra_info=extra_info, orig_size=(H, W, D))
+
+#         return d
+
+#     def inverse(self, data):
+#         raise NotImplementedError(
+#             "random_resized_crop is not supported for TTA. "
+#             "RandomResizedCrop discards spatial information outside "
+#             "the crop and therefore cannot be fully inverted."
+#         )
+
+#         """
+#         Invert resize + crop.
+
+#         The prediction is resized back to the original crop size and
+#         inserted into the original H/W canvas.
+
+#         Regions outside the crop are filled with zero.
+#         """
+
+#         d = dict(data)
+
+#         for key in self.key_iterator(d):
+
+#             x = d[key]
+
+#             info = self.pop_transform(d[key])
+
+#             extra_info = info["extra_info"]
+
+#             top = extra_info["top"]
+#             left = extra_info["left"]
+#             crop_h = extra_info["crop_h"]
+#             crop_w = extra_info["crop_w"]
+
+#             orig_h = extra_info["orig_h"]
+#             orig_w = extra_info["orig_w"]
+
+#             # ------------------------------------------------------
+#             # Resize prediction from output size back to crop size.
+#             #
+#             # x:
+#             #   C,H,W,D
+#             # ------------------------------------------------------
+
+#             x = self._resize_hw(x, (crop_h, crop_w), mode="nearest")
+
+#             # ------------------------------------------------------
+#             # Insert into original canvas.
+#             # ------------------------------------------------------
+
+#             restored = torch.zeros((x.shape[0], orig_h, orig_w, x.shape[3]), dtype=x.dtype, device=x.device)
+#             restored[:, top:top + crop_h, left:left + crop_w, :] = x
+
+#             d[key] = restored
+
+#         return d
+
+
+# class RandBlankRectangled(Randomizable, MapTransform, InvertibleTransform):
+#     def __init__(self, keys: KeysCollection = ("image",), prob: float = 0.5, rectangle_size=((16, 64), (16, 64)), num_rectangles=(1, 5), allow_missing_keys=True):
+#         MapTransform.__init__(self, keys=keys, allow_missing_keys=allow_missing_keys)
+#         Randomizable.__init__(self)
+#         InvertibleTransform.__init__(self)
+
+#         self.prob = prob
+#         self.rectangle_size = rectangle_size
+#         self.num_rectangles = num_rectangles
+
+#     def randomize(self, height, width):
+#         self._do_transform = self.R.rand() < self.prob
+
+#         if not self._do_transform:
+#             return
+
+#         n = self.R.randint(self.num_rectangles[0], self.num_rectangles[1] + 1)
+
+#         self._rectangles = []
+
+#         for _ in range(n):
+#             rect_h = min(self.R.randint(self.rectangle_size[0][0], self.rectangle_size[0][1] + 1), height)
+#             rect_w = min(self.R.randint( self.rectangle_size[1][0], self.rectangle_size[1][1] + 1), width)
+
+#             y = self.R.randint(0, height - rect_h + 1)
+#             x = self.R.randint(0, width - rect_w + 1)
+
+#             self._rectangles.append((y, x, rect_h, rect_w))
+
+#     def __call__(self, data):
+#         d = dict(data)
+
+#         for key in self.key_iterator(d):
+#             image = d[key]
+
+#             _, height, width, _ = image.shape # (C, H, W, D)
+
+#             self.randomize(height, width)
+
+#             if not self._do_transform:
+#                 self.push_transform(image, extra_info={"do_transform": False})
+#                 continue
+
+#             image = image.clone()
+
+#             for y, x, rect_h, rect_w in self._rectangles:
+#                 region = image[..., y:y + rect_h, x:x + rect_w, :]
+#                 value = region.mean(dim=(-3, -2), keepdim=True)
+
+#                 image[..., y:y + rect_h, x:x + rect_w, :] = value
+
+#             d[key] = image
+
+#             self.push_transform(image, extra_info={"do_transform": True})
+
+#         return d
+
+#     def inverse(self, data):
+#         for key in self.key_iterator(data):
+#             self.pop_transform(data[key])
+
+#         return data
+
+
+# def build_augmentation(aug, wrap=True):
+#     transforms = []
+
+#     for t in aug.transforms:
+#         match t.name:
+
+#             # =========================================================
+#             # Spatial augmentations
+#             # =========================================================
+
+#             case "random_horizontal_flip":
+#                 transforms.append(
+#                     mt.RandFlipd(
+#                         keys=["image", "mask"],
+#                         prob=t.p,
+#                         spatial_axis=1,
+#                         allow_missing_keys=True,
+#                     )
+#                 )
+
+#             case "random_vertical_flip":
+#                 transforms.append(
+#                     mt.RandFlipd(
+#                         keys=["image", "mask"],
+#                         prob=t.p,
+#                         spatial_axis=0,
+#                         allow_missing_keys=True,
+#                     )
+#                 )
+
+#             case "random_rotation":
+#                 degrees = t.degrees
+
+#                 if isinstance(degrees, (int, float)):
+#                     degrees = (-degrees, degrees)
+
+#                 transforms.append(
+#                     TTANotSupported(
+#                         mt.RandRotated(
+#                             keys=["image", "mask"],
+#                             prob=t.p,
+#                             range_x=degrees,
+#                             range_y=0,
+#                             range_z=0,
+#                             mode=("bilinear", "nearest"),
+#                             padding_mode="border",
+#                             allow_missing_keys=True,
+#                         )
+#                     )
+#                 )
+
+#             case "random_affine":
+#                 degrees = t.degrees
+#                 if isinstance(degrees, (int, float)):
+#                     degrees = (-degrees, degrees)
+
+#                 # transforms.append(
+#                 #     mt.RandAffined(
+#                 #         keys=["image", "mask"],
+#                 #         prob=t.p,
+#                 #         rotate_range=degrees,
+#                 #         translate_range=t.translate,
+#                 #         scale_range=t.scale,
+#                 #         shear_range=t.shear,
+#                 #         mode=("bilinear", "nearest"),
+#                 #         padding_mode="border",
+#                 #         allow_missing_keys=True
+#                 #     )
+#                 # )
+
+#                 transforms.append(
+#                     TTANotSupported(
+#                         mt.RandAffined(
+#                             keys=["image", "mask"],
+#                             prob=t.p,
+#                             # rotate_range=(0, 0, *degrees),
+#                             rotate_range=(0, 0, degrees),
+#                             translate_range=(
+#                                 t.translate[0],
+#                                 t.translate[1],
+#                                 0,
+#                             ),
+#                             scale_range=(
+#                                 t.scale[0],
+#                                 t.scale[1],
+#                                 0,
+#                             ),
+#                             shear_range=(0, 0, 0, 0, 0, 0),
+#                             mode=("bilinear", "nearest"),
+#                             padding_mode="border",
+#                             allow_missing_keys=True,
+#                         )
+#                     )
+#                 )
+
+#             case "random_resized_crop":
+#                 # # MONAI does not have a direct 3D equivalent of
+#                 # # torchvision's RandomResizedCrop.
+#                 # #
+#                 # # RandZoomd + RandSpatialCropd is the closest
+#                 # # 3D-oriented alternative.
+
+#                 # transforms.append(
+#                 #     mt.RandZoomd(
+#                 #         keys=["image", "mask"],
+#                 #         prob=t.p,
+#                 #         min_zoom=min(t.scale),
+#                 #         max_zoom=max(t.scale),
+#                 #         mode=("trilinear", "nearest"),
+#                 #         padding_mode="edge",
+#                 #         allow_missing_keys=True
+#                 #     )
+#                 # )
+
+#                 # transforms.append(
+#                 #     mt.RandSpatialCropd(
+#                 #         keys=["image", "mask"],
+#                 #         roi_size=t.size,
+#                 #         random_center=True,
+#                 #         random_size=False,
+#                 #         allow_missing_keys=True
+#                 #     )
+#                 # )
+
+#                 transforms.append(
+#                     TTANotSupported(
+#                         RandResizedCrop2D(
+#                             keys=["image", "mask"],
+#                             size=t.size,
+#                             scale=t.scale,
+#                             ratio=t.ratio,
+#                             mode=("bilinear", "nearest"),
+#                             allow_missing_keys=True,
+#                         )
+#                     )
+#                 )
+
+#             # case "transpose_axes":
+#             #     transforms.append(
+#             #         # mt.Transposed(
+#             #         #     keys=["image", "mask"],
+#             #         #     indices=t.axes,
+#             #         #     allow_missing_keys=True
+#             #         # )
+#             #         mt.Compose([
+#             #             mt.Flip(
+#             #                 keys=["image", "mask"],
+#             #                 spatial_axis=1,
+#             #             ),
+#             #             mt.Rotate90(
+#             #                 keys=["image", "mask"],
+#             #                 k=1,
+#             #                 spatial_axes=(0, 1),
+#             #             ),
+#             #         ])
+#             #     )
+
+#             case "random_axis_flip":
+#                 transforms.append(
+#                     TTANotSupported(
+#                         mt.RandAxisFlipd(
+#                             keys=["image", "mask"],
+#                             prob=t.p,
+#                             spatial_axis=(0, 1),
+#                             allow_missing_keys=True,
+#                         )
+#                     )
+#                 )
+
+#             case "random_depth_flip":
+#                 transforms.append(
+#                     TTANotSupported(
+#                         mt.RandAxisFlipd(
+#                             keys=["image"],
+#                             prob=t.p,
+#                             spatial_axis=2,
+#                             allow_missing_keys=True,
+#                         )
+#                     )
+#                 )
+
+#             # =========================================================
+#             # Intensity augmentations
+#             # =========================================================
+
+#             case "contrast":
+#                 transforms.append(
+#                     TTANotSupported(
+#                         mt.RandAdjustContrastd(
+#                             keys=["image"],
+#                             prob=t.p,
+#                             gamma=(0.8, 1.2),
+#                             allow_missing_keys=True,
+#                         )
+#                     )
+#                 )
+
+#             case "multiplicative_brightness":
+#                 transforms.append(
+#                     TTANotSupported(
+#                         mt.RandScaleIntensityd(
+#                             keys=["image"],
+#                             prob=t.p,
+#                             factors=t.multiplier,
+#                             allow_missing_keys=True,
+#                         )
+#                     )
+#                 )
+
+#             case "brightness_additive":
+#                 transforms.append(
+#                     TTANotSupported(
+#                         mt.RandShiftIntensityd(
+#                             keys=["image"],
+#                             prob=t.p,
+#                             offsets=(t.min_value, t.max_value),
+#                             allow_missing_keys=True,
+#                         )
+#                     )
+#                 )
+
+#             case "gamma":
+#                 transforms.append(
+#                     TTANotSupported(
+#                         mt.RandGammaCorrectiond(
+#                             keys=["image"],
+#                             prob=t.p,
+#                             gamma=t.gamma,
+#                             allow_missing_keys=True
+#                         )
+#                     )
+#                 )
+
+#             case "invert":
+#                 transforms.append(
+#                     TTANotSupported(
+#                         mt.RandScaleIntensityd(
+#                             keys=["image"],
+#                             prob=t.p,
+#                             factors=-1.0,
+#                             allow_missing_keys=True
+#                         )
+#                     )
+#                 )
+
+#             case "sharpening":
+#                 transforms.append(
+#                     TTANotSupported(
+#                         mt.RandGaussianSharpend(
+#                             keys=["image"],
+#                             prob=t.p,
+#                             sigma1=0.5,
+#                             sigma2=1.0,
+#                             alpha=(0.5, t.strength),
+#                             allow_missing_keys=True,
+#                         )
+#                     )
+#                 )
+
+#             # =========================================================
+#             # Noise / degradation
+#             # =========================================================
+
+#             case "gaussian_blur":
+#                 transforms.append(
+#                     TTANotSupported(
+#                         mt.RandGaussianSmoothd(
+#                             keys=["image"],
+#                             prob=t.p,
+#                             sigma_x=t.sigma,
+#                             sigma_y=t.sigma,
+#                             sigma_z=t.sigma,
+#                             allow_missing_keys=True,
+#                         )
+#                     )
+#                 )
+
+#             case "gaussian_noise":
+#                 transforms.append(
+#                     TTANotSupported(
+#                         mt.RandGaussianNoised(
+#                             keys=["image"],
+#                             prob=t.p,
+#                             mean=t.mean,
+#                             std=t.sigma,
+#                             allow_missing_keys=True,
+#                         )
+#                     )
+#                 )
+
+#             # case "low_resolution":
+#             #     transforms.extend(
+#             #         [
+#             #             TTANotSupported(
+#             #                 mt.RandZoomd(
+#             #                     keys=["image"],
+#             #                     prob=t.p,
+#             #                     min_zoom=t.scale,
+#             #                     max_zoom=t.scale,
+#             #                     mode=("trilinear", "nearest"),
+#             #                     padding_mode="edge",
+#             #                     allow_missing_keys=True,
+#             #                 )
+#             #             ),
+#             #             TTANotSupported(
+#             #                 mt.Zoomd(
+#             #                     keys=["image"],
+#             #                     zoom=1.0 / t.scale,
+#             #                     mode=("trilinear", "nearest"),
+#             #                     allow_missing_keys=True,
+#             #                 )
+#             #             )
+#             #         ]
+#             #     )
+
+#             case "blank_rectangle":
+#                 transforms.append(
+#                     TTANotSupported(
+#                         RandBlankRectangled(
+#                             keys=["image"],
+#                             prob=t.p,
+#                             rectangle_size=t.rectangle_size,
+#                             num_rectangles=t.num_rectangles,
+#                             allow_missing_keys=True,
+#                         )
+#                     )
+#                 )
+
+#             # case "motion_blur":
+#             #     transforms.append(
+#             #         TTANotSupported(
+#             #             mt.RandGaussianSmoothd(
+#             #                 keys=["image"],
+#             #                 prob=t.p,
+#             #                 sigma_x=t.kernel_size / 3.0,
+#             #                 sigma_y=t.kernel_size / 3.0,
+#             #                 sigma_z=t.kernel_size / 3.0,
+#             #                 allow_missing_keys=True,
+#             #             )
+#             #         )
+#             #     )
+
+#             # =========================================================
+#             # 3D CT-specific augmentations
+#             # =========================================================
+
+#             # case "smear":
+#             #     transforms.append(
+#             #         TTANotSupported(
+#             #             mt.RandGaussianSmoothd(
+#             #                 keys=["image"],
+#             #                 prob=t.p,
+#             #                 sigma_x=t.sigma,
+#             #                 sigma_y=t.sigma,
+#             #                 sigma_z=t.sigma * 2,
+#             #                 allow_missing_keys=True,
+#             #             )
+#             #         )
+#             #     )
+
+#             # case "inhomogeneous_slice_illumination":
+#             #     transforms.append(
+#             #         TTANotSupported(
+#             #             mt.RandBiasFieldd(
+#             #                 keys=["image"],
+#             #                 prob=t.p,
+#             #                 coeff_range=t.coeff_range,
+#             #                 allow_missing_keys=True,
+#             #             )
+#             #         )
+#             #     )
+
+#             # case "brightness_gradient":
+#             #     transforms.append(
+#             #         TTANotSupported(
+#             #             mt.RandBiasFieldd(
+#             #                 keys=["image"],
+#             #                 prob=t.p,
+#             #                 coeff_range=t.coeff_range,
+#             #                 allow_missing_keys=True,
+#             #             )
+#             #         )
+#             #     )
+
+#             # =========================================================
+#             # Cutout
+#             # =========================================================
+
+#             case "cutout":
+#                 transforms.append(
+#                     TTANotSupported(
+#                         mt.RandCoarseDropoutd(
+#                             keys=["image"],
+#                             prob=t.p,
+#                             holes=t.max_holes,
+#                             # spatial_size=t.max_size_fraction,
+#                             spatial_size=(t.height, t.width, -1),
+#                             fill_value=t.fill,
+#                             allow_missing_keys=True,
+#                         )
+#                     )
+#                 )
+
+#             # =========================================================
+#             # OneOf
+#             # =========================================================
+
+#             case "oneof":
+#                 alternatives = [
+#                     build_augmentation(alternative, wrap=False) for alternative in t.transforms
+#                 ]
+
+#                 transforms.append(
+#                     mt.OneOf(alternatives, weights=None, allow_missing_keys=True)
+#                 )
+
+#             # =========================================================
+#             # Not recommended for CT
+#             # =========================================================
+
+#             case "color_jitter":
+#                 raise ValueError("'color_jitter' is not suitable for CT volumes. Use contrast, brightness, or gamma instead.")
+
+#             case _:
+#                 raise ValueError(f"Unknown transform: {t.name}")
+    
+#     if not transforms:
+#         return None
+
+#     compose = mt.Compose(transforms)
+
+#     if wrap:
+#         return MonaiTransformWrapper(compose)
+
+#     return compose
+
 
 
 
@@ -2122,58 +2782,3 @@ def build_augmentation(aug, wrap=True):
 
 #     # return v2.Compose(transforms)
 #     return TTAPipeline(transforms)
-
-
-
-
-# import torch
-# from torchvision.transforms import v2
-
-
-# class AddGaussianNoise(torch.nn.Module):
-#     def __init__(self, mean=0., sigma=0.05):
-#         super().__init__()
-
-#         self.mean = mean
-#         self.sigma = sigma
-
-#     def forward(self, image, *masks):
-#         noise = torch.randn_like(image)
-#         image = image + noise * self.sigma + self.mean
-#         image = torch.clamp(image, 0, 1)
-#         return (image, *masks)
-
-
-# def build_augmentation(aug):
-#     transforms = []
-
-#     def add_with_probability(transform, spec):
-#         """Apply non-flip transforms only with the probability from the YAML."""
-#         p = getattr(spec, "p", 1.0)
-#         transforms.append(v2.RandomApply([transform], p=p) if p < 1.0 else transform)
-
-#     for t in aug.transforms:
-#         match t.name:
-#             case "random_horizontal_flip":
-#                 transforms.append(v2.RandomHorizontalFlip(p=t.p))
-#             case "random_vertical_flip":
-#                 transforms.append(v2.RandomVerticalFlip(p=t.p))
-#             case "random_rotation":
-#                 add_with_probability(v2.RandomRotation(degrees=t.degrees), t)
-#             case "random_affine":
-#                 add_with_probability(v2.RandomAffine(degrees=t.degrees, translate=t.translate, scale=t.scale, shear=t.shear), t)
-#             case "random_resized_crop":
-#                 add_with_probability(v2.RandomResizedCrop(size=t.size, scale=t.scale, ratio=t.ratio), t)
-#             case "color_jitter":
-#                 add_with_probability(v2.ColorJitter(brightness=t.brightness, contrast=t.contrast, saturation=t.saturation, hue=t.hue), t)
-#             case "gaussian_blur":
-#                 add_with_probability(v2.GaussianBlur(kernel_size=t.kernel_size, sigma=t.sigma), t)
-#             case "gaussian_noise":
-#                 add_with_probability(AddGaussianNoise(mean=t.mean, sigma=t.sigma), t)
-#             case _:
-#                 raise ValueError(f"Unknown transform: {t.name}")
-
-#     if not transforms:
-#         return v2.Identity()
-
-#     return v2.Compose(transforms)

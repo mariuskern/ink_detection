@@ -93,20 +93,23 @@ def predict(model, dataloader, device, transforms=None, tta_num=1, cache_dir=Non
                 # Apply transform
                 # -------------------------------------------------
 
-                transform_states = []
+                # transform_states = []
+
+                # if tta_transform is not None:
+                #     transformed_tiles = []
+
+                #     for sample in tile:
+                #         # sample: (C, D, H, W)
+                #         # transformed_sample: (C, D, H, W)
+
+                #         transformed_sample, state = tta_transform(sample, return_params=True)
+                #         transformed_tiles.append(transformed_sample)
+                #         transform_states.append(state)
+
+                #     tile = torch.stack(transformed_tiles, dim=0)
 
                 if tta_transform is not None:
-                    transformed_tiles = []
-
-                    for sample in tile:
-                        # sample: (C, D, H, W)
-                        # transformed_sample: (C, D, H, W)
-
-                        transformed_sample, state = tta_transform(sample, return_state=True)
-                        transformed_tiles.append(transformed_sample)
-                        transform_states.append(state)
-
-                    tile = torch.stack(transformed_tiles, dim=0)
+                    tile, params = tta_transform(tile, return_params=True)
 
                 # -------------------------------------------------
                 # Model
@@ -126,16 +129,19 @@ def predict(model, dataloader, device, transforms=None, tta_num=1, cache_dir=Non
                 # TTA inverse
                 # ----------------------------------------------------------
 
+                # if tta_transform is not None:
+                #     restored_outputs = []
+
+                #     for transformed_output, state in zip(output, transform_states):
+                #         # transformed_output: (C, D, H, W)
+                #         # restored_output: (C, D, H, W)
+                #         restored_output = tta_transform.inverse(transformed_output, state)
+                #         restored_outputs.append(restored_output)
+
+                #     output = torch.stack(restored_outputs, dim=0)
+
                 if tta_transform is not None:
-                    restored_outputs = []
-
-                    for transformed_output, state in zip(output, transform_states):
-                        # transformed_output: (C, D, H, W)
-                        # restored_output: (C, D, H, W)
-                        restored_output = tta_transform.inverse(transformed_output, state)
-                        restored_outputs.append(restored_output)
-
-                    output = torch.stack(restored_outputs, dim=0)
+                    output = tta_transform.inverse(output, params)
 
                 # -------------------------------------------------
                 # Probability

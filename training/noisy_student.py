@@ -9,11 +9,13 @@ from data import build_dataset, build_dataloader, build_augmentation
 
 def train_noisy_student(cfg, logger):
     output_dir = Path(cfg.path.output_dir)
+    tmp_dir = Path(cfg.path.tmp_dir)
 
     for iteration in range(cfg.train.iterations):
         print(f"Starting Noisy Student iteration {iteration}")
 
         output_dir_iteration = output_dir / "iteration" / str(iteration)
+        tmp_dir_iteration = tmp_dir / "iteration" / str(iteration)
 
         device = get_device(cfg)
 
@@ -29,12 +31,12 @@ def train_noisy_student(cfg, logger):
         )
 
         if "predict" in cfg.train and cfg.train.predict is not None and len(cfg.train.predict) > 0:
-            save_predictions(cfg, result.model, output_dir_iteration, device)
+            save_predictions(cfg, result.model, output_dir_iteration, tmp_dir_iteration, device)
 
-        generate_pseudo_labels(cfg, result.model, iteration, output_dir_iteration, device)
+        generate_pseudo_labels(cfg, result.model, iteration, output_dir_iteration, tmp_dir_iteration, device)
 
 
-def generate_pseudo_labels(cfg, model, iteration, output_dir, device):
+def generate_pseudo_labels(cfg, model, iteration, output_dir, tmp_dir, device):
         # transform = build_augmentation(cfg.train.teacher.aug) if cfg.train.teacher.aug is not None else None
         transforms = []
         if cfg.train.teacher.aug is not None:
@@ -44,7 +46,7 @@ def generate_pseudo_labels(cfg, model, iteration, output_dir, device):
         predict_dataset = build_dataset(cfg, cfg.train.unlabeled, transform=None, split="train" if cfg.train.use_validation_mask else None)
         predict_loader = build_dataloader(cfg, predict_dataset, None)
 
-        for prediction in predict(model, predict_loader, device=device, transforms=transforms, tta_num=cfg.train.refinement.tta_num, cache_dir=output_dir / "tmp"):
+        for prediction in predict(model, predict_loader, device=device, transforms=transforms, tta_num=cfg.train.refinement.tta_num, cache_dir=tmp_dir):
             # results = predict(model, predict_loader, device=device)
             # # results = predict(model, predict_loader, device=device, tta_transform=transform, tta_num=cfg.train.refinement.tta_num)
             results = [prediction]
@@ -158,7 +160,7 @@ def generate_pseudo_labels(cfg, model, iteration, output_dir, device):
         # # )
 
 
-def save_predictions(cfg, model, output_dir, device):
+def save_predictions(cfg, model, output_dir, tmp_dir, device):
         # transforms = []
         # if cfg.train.teacher.aug is not None:
         #     for variant in cfg.train.teacher.aug.variants:
@@ -168,7 +170,7 @@ def save_predictions(cfg, model, output_dir, device):
         predict_loader = build_dataloader(cfg, predict_dataset, None)
 
         # for prediction in predict(model, predict_loader, device=device, transforms=transforms, tta_num=cfg.train.refinement.tta_num, cache_dir=output_dir / "tmp"):
-        for prediction in predict(model, predict_loader, device=device, transforms=None, tta_num=1, cache_dir=output_dir / "tmp"):
+        for prediction in predict(model, predict_loader, device=device, transforms=None, tta_num=1, cache_dir=tmp_dir):
             results = [prediction]
 
             save_predictions_as_images(

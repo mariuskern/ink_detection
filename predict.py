@@ -64,6 +64,7 @@ def main(cfg: DictConfig):
         raise FileNotFoundError(f"Checkpoint directory does not exist: {checkpoint}")
 
     output_dir = Path(cfg.path.output_dir)
+    tmp_dir = Path(cfg.path.tmp_dir)
 
     device = get_device(cfg)
 
@@ -98,7 +99,7 @@ def main(cfg: DictConfig):
 
     # results = predict(model, predict_loader, device=device, tta_transform=transform, tta_num=cfg.train.tta_num)
     i = 0
-    for result in predict(model, predict_loader, device=device, transforms=transforms, tta_num=cfg.train.tta_num, cache_dir=output_dir / "tmp"):
+    for result in predict(model, predict_loader, device=device, transforms=transforms, tta_num=cfg.train.tta_num, cache_dir=tmp_dir):
         save_predictions_as_images(
             output_dir,
             [result],

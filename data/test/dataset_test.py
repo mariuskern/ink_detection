@@ -2,7 +2,7 @@ import os
 import sys
 
 import hydra
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig
 
 from dotenv import load_dotenv
 load_dotenv()

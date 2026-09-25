@@ -1,3 +1,4 @@
 stage_dir: null
 data_dir: ${oc.env:DATA_DIR}/data_zarr
 output_dir: ${oc.env:OUTPUT_DIR}/predict/${model.name}/${experiment.name}
+tmp_dir: ${oc.env:TMP_DIR}/predict/${model.name}/${experiment.name}

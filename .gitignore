@@ -1,6 +1,7 @@
 .vscode
 /output
 /outputs
+/tmp
 /wandb
 /logs
 /checkpoints

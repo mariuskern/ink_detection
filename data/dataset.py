@@ -250,8 +250,8 @@ class InkDataset(Dataset):
         # mask = tv_tensors.Mask(mask)
         # pseudo_mask = tv_tensors.Mask(pseudo_mask)
 
-        # if self.transform is not None:
-        #     tile, label, pseudo_label, mask, pseudo_mask = self.transform(tile, label, pseudo_label, mask, pseudo_mask)
+        if self.transform is not None:
+            tile, label, pseudo_label, mask, pseudo_mask = self.transform(tile, label, pseudo_label, mask, pseudo_mask)
 
         tile = tile.unsqueeze(0) # [1, D, H, W]
         label = label.unsqueeze(0) # [1, H, W]
@@ -259,8 +259,8 @@ class InkDataset(Dataset):
         mask = mask.unsqueeze(0)
         pseudo_mask = pseudo_mask.unsqueeze(0)
 
-        if self.transform is not None:
-            tile, label, pseudo_label, mask, pseudo_mask = self.transform(tile, label, pseudo_label, mask, pseudo_mask)
+        # if self.transform is not None:
+        #     tile, label, pseudo_label, mask, pseudo_mask = self.transform(tile, label, pseudo_label, mask, pseudo_mask)
 
         return {
             "tile": tile,
