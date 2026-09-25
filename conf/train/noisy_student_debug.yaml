@@ -33,6 +33,8 @@ unlabeled:
 val:
   - "0172_20241025145701"
   - "0172_20241113090990"
+predict:
+  # - "0172_20241025145341"
 
 use_validation_mask: true
 

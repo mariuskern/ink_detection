@@ -28,6 +28,9 @@ def train_noisy_student(cfg, logger):
             device=device,
         )
 
+        if "predict" in cfg.train and cfg.train.predict is not None and len(cfg.train.predict) > 0:
+            save_predictions(cfg, result.model, output_dir_iteration, device)
+
         generate_pseudo_labels(cfg, result.model, iteration, output_dir_iteration, device)
 
 
@@ -153,3 +156,23 @@ def generate_pseudo_labels(cfg, model, iteration, output_dir, device):
         # #     target=cfg.train.pseudo_target,
         # #     split="train" if cfg.train.use_validation_mask else None
         # # )
+
+
+def save_predictions(cfg, model, output_dir, device):
+        # transforms = []
+        # if cfg.train.teacher.aug is not None:
+        #     for variant in cfg.train.teacher.aug.variants:
+        #         transforms.append(build_augmentation(variant))
+        # predict_dataset = build_dataset(cfg, cfg.train.unlabeled, transform=None, split="train" if cfg.train.use_validation_mask else None)
+        predict_dataset = build_dataset(cfg, cfg.train.predict, transform=None, split=None)
+        predict_loader = build_dataloader(cfg, predict_dataset, None)
+
+        # for prediction in predict(model, predict_loader, device=device, transforms=transforms, tta_num=cfg.train.refinement.tta_num, cache_dir=output_dir / "tmp"):
+        for prediction in predict(model, predict_loader, device=device, transforms=None, tta_num=1, cache_dir=output_dir / "tmp"):
+            results = [prediction]
+
+            save_predictions_as_images(
+                output_dir,
+                results,
+                save_probability=True,
+            )
