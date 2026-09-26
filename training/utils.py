@@ -316,7 +316,17 @@ def fit(cfg, logger, output_dir, *, pseudo_label_version=None, iteration=None, a
         else:
             inference_model = inference_model.to(device)
 
-        inference_model.load_state_dict(checkpoint["state_dict"])
+        # inference_model.load_state_dict(checkpoint["state_dict"])
+
+        state_dict = checkpoint["state_dict"]
+
+        is_compiled_checkpoint  = any(key.startswith("_orig_mod.") for key in state_dict.keys())
+
+        if is_compiled_checkpoint:
+            state_dict = {key.removeprefix("_orig_mod."): value for key, value in state_dict.items()}
+
+        inference_model.load_state_dict(state_dict)
+
         inference_model.eval()
 
     else:
