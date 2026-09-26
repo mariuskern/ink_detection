@@ -2,7 +2,7 @@ from pathlib import Path
 
 from training.utils import fit
 
-from utils import predict, postprocess_predictions, save_predictions_as_images, save_predictions_as_zarr
+from utils import predict, postprocess_prediction, save_predictions_as_images, save_predictions_as_zarr
 from utils.device import get_device
 from data import build_dataset, build_dataloader, build_augmentation
 
@@ -46,19 +46,45 @@ def generate_pseudo_labels(cfg, model, iteration, output_dir, tmp_dir, device):
         predict_dataset = build_dataset(cfg, cfg.train.unlabeled, transform=None, split="train" if cfg.train.use_validation_mask else None)
         predict_loader = build_dataloader(cfg, predict_dataset, None)
 
-        for prediction in predict(model, predict_loader, device=device, transforms=transforms, tta_num=cfg.train.refinement.tta_num, cache_dir=tmp_dir):
+        for prediction in predict(model, predict_loader, device=device, transforms=transforms, tta_num=cfg.train.teacher.tta_num, cache_dir=tmp_dir):
             # results = predict(model, predict_loader, device=device)
             # # results = predict(model, predict_loader, device=device, tta_transform=transform, tta_num=cfg.train.refinement.tta_num)
-            results = [prediction]
 
-            results = postprocess_predictions(
-                results,
-                cfg.train.refinement.threshold,
-                cfg.train.refinement.confidence_threshold,
-                cfg.train.refinement.uncertainty_threshold,
-                use_confidence_mask=cfg.train.refinement.use_confidence_mask,
-                use_uncertainty_mask=cfg.train.refinement.use_uncertainty_mask,
+            prediction = postprocess_prediction(cfg, prediction)
+
+            save_predictions_as_images(
+                output_dir,
+                [prediction],
+                save_probability=True,
+                save_confidence=True,
+                save_uncertainty=True,
+                save_label=True,
+                save_mask=True,
+                save_label_not_refined=True,
+                save_mask_not_refined=True,
             )
+
+            save_predictions_as_zarr(
+                Path(cfg.path.data_dir),
+                [prediction],
+                iteration,
+                save_probability=True,
+                save_label=True,
+                save_mask=True,
+            )
+
+
+            # results = [prediction]
+
+            # results = postprocess_predictions(
+            #     results,
+            #     cfg.train.refinement.threshold,
+            #     cfg.train.refinement.confidence_threshold,
+            #     cfg.train.refinement.uncertainty_threshold,
+            #     use_confidence_mask=cfg.train.refinement.use_confidence_mask,
+            #     use_uncertainty_mask=cfg.train.refinement.use_uncertainty_mask,
+            # )
+
             # results = postprocess_predictions(
             #     results,
             #     strong_threshold=cfg.train.refinement.strong_threshold,
@@ -78,26 +104,26 @@ def generate_pseudo_labels(cfg, model, iteration, output_dir, tmp_dir, device):
             #     use_local_mean=cfg.train.refinement.use_local_mean,
             # )
 
-            save_predictions_as_images(
-                output_dir,
-                results,
-                save_probability=True,
-                save_confidence=True,
-                save_uncertainty=True,
-                save_label=True,
-                save_mask=True,
-                save_label_not_refined=True,
-                save_mask_not_refined=True,
-            )
+            # save_predictions_as_images(
+            #     output_dir,
+            #     results,
+            #     save_probability=True,
+            #     save_confidence=True,
+            #     save_uncertainty=True,
+            #     save_label=True,
+            #     save_mask=True,
+            #     save_label_not_refined=True,
+            #     save_mask_not_refined=True,
+            # )
 
-            save_predictions_as_zarr(
-                Path(cfg.path.data_dir),
-                results,
-                iteration,
-                save_probability=True,
-                save_label=True,
-                save_mask=True,
-            )
+            # save_predictions_as_zarr(
+            #     Path(cfg.path.data_dir),
+            #     results,
+            #     iteration,
+            #     save_probability=True,
+            #     save_label=True,
+            #     save_mask=True,
+            # )
 
         # results = predict(model, predict_loader, device=device)
         # # results = predict(model, predict_loader, device=device, tta_transform=transform, tta_num=cfg.train.refinement.tta_num)

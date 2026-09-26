@@ -1,9 +1,9 @@
 defaults:
-  - data/dataset@dataset: default
-  - data/dataloader@dataloader: default
+  - data/dataset@dataset: default # default resnet3d
+  - data/dataloader@dataloader: debug # default debug
   - model: unetrpp # timesformer unetrpp vesuvius_unet vesuvius_resnet3d
   - path: predict
-  - /aug@aug: tta
+  - /aug@: tta_none
   - _self_
 
 experiment:
@@ -17,10 +17,10 @@ hydra:
 train:
   segments:
     # - 20241113090990
-    - 0172_20241113090990
+    # - 0172_20241113090990
     # - 1667_w028_20251208130119156_2um
     # - 1667_w029_20251212185248662_2um
-    # - 1667_w031_2025122323_2um
+    - 1667_w031_2025122323_2um
   accelerator: cuda
   use_validation_mask: false
 

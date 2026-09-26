@@ -1,0 +1,11 @@
+name: "base"
+debug: false
+steps:
+  - name: threshold
+    threshold: 0.5
+
+  - name: confidence_mask
+    threshold: 0.8 # 0.8 0.9 0.95
+
+  - name: uncertainty_mask
+    threshold: 0.15 # 0.15 0.05 0.05

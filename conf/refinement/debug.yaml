@@ -1,0 +1,19 @@
+name: "debug"
+debug: true
+steps:
+  - name: threshold
+    threshold: 0.5
+
+  - name: confidence_mask
+    threshold: 0.8 # 0.8 0.9 0.95
+
+  - name: uncertainty_mask
+    threshold: 0.15 # 0.15 0.05 0.05
+  
+  - name: remove_small_objects
+    max_size: 2000
+    connectivity: 1
+
+  - name: binary_closing
+    kernel_size: 25
+    iterations: 1

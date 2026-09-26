@@ -1,5 +1,56 @@
-from .label_refiner import LabelRefiner
 import numpy as np
+
+from utils.refinement import build_label_refinement
+
+
+def postprocess_prediction(cfg, prediction):
+    pipeline = build_label_refinement(cfg.train.refinement)
+
+    prediction = pipeline(prediction)
+
+    return prediction
+
+
+
+
+
+# import numpy as np
+
+
+# def postprocess_predictions(
+#     predictions,
+#     threshold,
+#     confidence_threshold,
+#     uncertainty_threshold,
+#     use_confidence_mask=True,
+#     use_uncertainty_mask=True,
+# ):
+#     results = []
+
+#     for prediction in predictions:
+#         label = (prediction.probability >= threshold).astype(np.uint8)
+
+#         mask = np.ones_like(label, dtype=bool)
+
+#         if use_confidence_mask:
+#             mask &= prediction.confidence > confidence_threshold
+
+#         if use_uncertainty_mask:
+#             mask &= prediction.uncertainty < uncertainty_threshold
+
+#         prediction.pseudo_label = label
+#         prediction.pseudo_mask = mask
+
+#         results.append(prediction)
+
+#     return results
+
+
+
+
+
+# from .label_refiner import LabelRefiner
+# import numpy as np
 
 
 # def postprocess_predictions(
@@ -55,32 +106,3 @@ import numpy as np
 
 #     return results
 
-
-
-def postprocess_predictions(
-    predictions,
-    threshold,
-    confidence_threshold,
-    uncertainty_threshold,
-    use_confidence_mask=True,
-    use_uncertainty_mask=True,
-):
-    results = []
-
-    for prediction in predictions:
-        label = (prediction.probability >= threshold).astype(np.uint8)
-
-        mask = np.ones_like(label, dtype=bool)
-
-        if use_confidence_mask:
-            mask &= prediction.confidence > confidence_threshold
-
-        if use_uncertainty_mask:
-            mask &= prediction.uncertainty < uncertainty_threshold
-
-        prediction.pseudo_label = label
-        prediction.pseudo_mask = mask
-
-        results.append(prediction)
-
-    return results

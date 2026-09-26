@@ -1,9 +1,9 @@
 name: vesuvius_resnet3d
-model_depth: 50
+model_depth: 50 # 50 152
 n_input_channels: 1
 forward_features: True
 n_classes: 1039
-with_norm: False
+with_norm: False # True False
 norm: batch
 group_norm_groups: 32
-upscale: 1 # auto
+upscale: 1 # auto 1

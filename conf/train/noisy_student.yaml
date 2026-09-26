@@ -1,7 +1,9 @@
 defaults:
   - base
-  - /aug@teacher.aug: tta
+  # - /aug@teacher.aug: tta
+  - /aug@teacher: tta
   - /aug@student.aug: strong
+  - /refinement@refinement: base
 
 name: noisy_student
 # threshold: 0.5
@@ -13,6 +15,10 @@ pseudo_target: soft # hard | soft
 iterations: 8
 pseudo_loss_weight: 1.0
 pseudo_loss_rampup_epochs: 0
+# teacher:
+#  tta_num: 1
+
+
 # labeled:
 #   - 20241025145341
 #   - 20241025145701
@@ -68,14 +74,14 @@ predict:
   - "p343p_20250511003658"
 use_validation_mask: true
 
-refinement:
-  tta_num: 1
+# refinement:
+#   tta_num: 1
 
-  threshold: 0.5
-  confidence_threshold: 0.8 # 0.8 0.9 0.95
-  uncertainty_threshold: 0.15 # 0.15 0.05 0.05
-  use_confidence_mask: True
-  use_uncertainty_mask: True
+  # threshold: 0.5
+  # confidence_threshold: 0.8 # 0.8 0.9 0.95
+  # uncertainty_threshold: 0.15 # 0.15 0.05 0.05
+  # use_confidence_mask: True
+  # use_uncertainty_mask: True
 
   # strong_threshold: 0.80
   # weak_threshold: 0.30

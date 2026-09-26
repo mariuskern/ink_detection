@@ -60,7 +60,8 @@ def predict(model, dataloader, device, transforms=None, tta_num=1, cache_dir=Non
         tta_transforms = list(transforms)
 
         if len(tta_transforms) == 0:
-            raise ValueError("transforms must not be empty.")
+            # raise ValueError("transforms must not be empty.")
+            tta_transforms = [None]
     else:
         tta_transforms = [transforms]
 
