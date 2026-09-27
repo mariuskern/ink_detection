@@ -42,7 +42,7 @@ def main():
     data_dir = Path(cfg.path.data_dir) # data_zarr
 
     # segments = set(map(str, cfg.dataset.train)) | set(map(str, cfg.dataset.val))
-    segments = set(map(str, cfg.train.labeled)) | set(map(str, cfg.train.val)) | set(map(str, getattr(cfg.train, "unlabeled", []) or []))
+    segments = set(map(str, cfg.train.labeled)) | set(map(str, cfg.train.val)) | set(map(str, getattr(cfg.train, "unlabeled", []) or [])) | set(map(str, getattr(cfg.train, "predict", []) or []))
 
     tasks = []
     for scroll in stage_dir.iterdir():
