@@ -26,7 +26,7 @@ from data import build_dataset, build_dataloader
 
 from dotenv import load_dotenv
 load_dotenv()
-for key in ["DATA_DIR", "CODE_DIR", "OUTPUT_DIR"]:
+for key in ["DATA_DIR", "CODE_DIR", "OUTPUT_DIR", "TMP_DIR"]:
     if key in os.environ:
         os.environ[key] = os.path.expandvars(os.environ[key])
 
