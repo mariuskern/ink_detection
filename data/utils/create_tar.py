@@ -23,6 +23,13 @@ def _get_arguments():
         help="Directory where the tar archives will be stored.",
     )
 
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=4,
+        help="Number of worker threads"
+    )
+
     return parser.parse_args()
 
 
@@ -103,7 +110,7 @@ def main(args):
     else:
         print("tar not found, using Python tarfile")
 
-    with ThreadPoolExecutor(max_workers=2) as executor:
+    with ThreadPoolExecutor(max_workers=args.workers) as executor:
         futures = []
 
         for scroll in args.input_dir.iterdir():

@@ -20,6 +20,8 @@ SEGMENTS=""
 CHUNKS=""
 TILE_SIZES=""
 STRIDES=""
+CROPS=""
+WORKERS=""
 
 
 # Argumente parsen
@@ -47,6 +49,11 @@ while [[ $# -gt 0 ]]; do
                 CROPS+=" $1"
                 shift
             done
+            ;;
+        
+        --workers)
+            WORKERS="--workers $2"
+            shift 2
             ;;
 
         # --tile-sizes)
@@ -93,7 +100,8 @@ python -u tiff_to_zarr.py \
     "$ZARR_DIR" \
     $SEGMENTS \
     $CHUNKS \
-    $CROPS
+    $CROPS \
+    $WORKERS
 
 echo "=============================="
 
@@ -116,7 +124,8 @@ echo
 
 python -u create_tar.py \
     "$ZARR_DIR" \
-    "$TAR_DIR"
+    "$TAR_DIR" \
+    $WORKERS
 
 
 echo

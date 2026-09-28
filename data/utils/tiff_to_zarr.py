@@ -130,6 +130,13 @@ def _get_arguments():
         help="Optional crops per segment. Format: SEGMENT:Y_START,Y_END,X_START,X_END. Can be specified multiple times.",
     )
 
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=4,
+        help="Number of worker threads"
+    )
+
     args = parser.parse_args()
 
     return args
@@ -213,46 +220,25 @@ def _load_binary_image(path):
     return binary_image
 
 
-def _process_folder(folder, output_root, chunks, crop=None):
+def _process_folder(folder, output_root, chunks, crops=None):
     print(f"Processing folder: {folder.name}")
 
-    if crop is None:
-        segment_name = folder.name
-    else:
-        y_start, y_end, x_start, x_end = crop
-        segment_name = f"{folder.name}_crop_y_{y_start}_{y_end}_x_{x_start}_{x_end}"
-    
-    # output_path = args.output / folder.parent.name / folder.name
-    # output_path = output_root / folder.parent.parent.name / folder.parent.name / folder.name
-    output_path = output_root / folder.parent.parent.name / folder.parent.name / segment_name
+    if crops is None:
+        crops = [None]
 
-    if output_path.exists():
-        # print(f"Folder already exists for segment: {folder.name}. Skipping.")
-        print(f"Folder already exists for segment: {segment_name}. Skipping.")
-        return
-
-    # volume_original = _get_volume(folder)
     volume_files = _get_volume_files(folder)
     label_original = _get_label(folder)
     mask_original = _get_mask(folder)
     validation_mask_original = _get_validation_mask(folder)
 
-    # if volume_original is None:
-    #     print(f"Skipping folder {folder.name} due to missing image stack.")
-    #     continue
-
     if volume_files is None:
         print(f"Skipping folder {folder.name} due to missing image stack.")
         return
-
-    output_path.mkdir(parents=True, exist_ok=False)
 
     first_slice = tifffile.imread(volume_files[0])
     d = len(volume_files)
     h = first_slice.shape[0]
     w = first_slice.shape[1]
-
-    # volume, label, mask = _crop_images(volume_original, label_original, mask_original)
 
     arrays = [first_slice]
 
@@ -268,133 +254,134 @@ def _process_folder(folder, output_root, chunks, crop=None):
     h_min = min(a.shape[-2] for a in arrays)
     w_min = min(a.shape[-1] for a in arrays)
 
-    volume_shape = (d, h_min, w_min)
+    label_base = None if label_original is None else label_original[:h_min, :w_min]
+    mask_base = None if mask_original is None else mask_original[:h_min, :w_min]
+    validation_mask_base = None if validation_mask_original is None else validation_mask_original[:h_min, :w_min]
 
-    label = None if label_original is None else label_original[:h_min, :w_min]
-    mask = None if mask_original is None else mask_original[:h_min, :w_min]
-    validation_mask = None if validation_mask_original is None else validation_mask_original[:h_min, :w_min]
+    # ---------------------------------------------------------
+    # Zarr-Arrays für alle Crops anlegen
+    # ---------------------------------------------------------
 
-    if crop is not None:
-        y_start, y_end, x_start, x_end = crop
+    crop_infos = []
 
-        if not (0 <= y_start < y_end <= h_min):
-            raise ValueError(f"Invalid Y crop {y_start}:{y_end} for segment {folder.name} with height {h_min}")
+    for crop in crops:
+        if crop is None:
+            segment_name = folder.name
+            volume_shape = (d, h_min, w_min)
 
-        if not (0 <= x_start < x_end <= w_min):
-            raise ValueError(f"Invalid X crop {x_start}:{x_end} for segment {folder.name} with width {w_min}")
+            label = label_base
+            mask = mask_base
+            validation_mask = validation_mask_base
+        else:
+            y_start, y_end, x_start, x_end = crop
 
-        crop_h = y_end - y_start
-        crop_w = x_end - x_start
+            if not (0 <= y_start < y_end <= h_min):
+                raise ValueError(f"Invalid Y crop {y_start}:{y_end} for segment {folder.name} with height {h_min}")
 
-        volume_shape = (d, crop_h, crop_w)
+            if not (0 <= x_start < x_end <= w_min):
+                raise ValueError(f"Invalid X crop {x_start}:{x_end} for segment {folder.name} with width {w_min}")
 
-        label = None if label is None else label[y_start:y_end, x_start:x_end]
-        mask = None if mask is None else mask[y_start:y_end, x_start:x_end]
+            segment_name = f"{folder.name}_crop_y_{y_start}_{y_end}_x_{x_start}_{x_end}"
 
-        validation_mask = None if validation_mask is None else validation_mask[y_start:y_end, x_start:x_end]
+            volume_shape = (d, y_end - y_start, x_end - x_start)
 
-    meta = {
-        "volume_original_shape": [d, h, w],
-        "label_original_shape": None if label_original is None else label_original.shape,
-        "mask_original_shape": None if mask_original is None else mask_original.shape,
-        "validation_mask_original_shape": None if validation_mask_original is None else validation_mask_original.shape,
-        "volume_shape": volume_shape,
-        "label_shape": None if label is None else label.shape,
-        "mask_shape": None if mask is None else mask.shape,
-        "validation_mask_shape": None if validation_mask is None else validation_mask.shape,
-        "chunks": chunks,
-        "crop": None if crop is None else {
-            "y_start": y_start,
-            "y_end": y_end,
-            "x_start": x_start,
-            "x_end": x_end,
+            label = None if label_base is None else label_base[y_start:y_end, x_start:x_end]
+            mask = None if mask_base is None else mask_base[y_start:y_end, x_start:x_end]
+            validation_mask = None if validation_mask_base is None else validation_mask_base[y_start:y_end, x_start:x_end]
+
+        output_path = output_root / folder.parent.parent.name / folder.parent.name / segment_name
+
+        if output_path.exists():
+            print(f"Skipping existing: {segment_name}")
+            continue
+
+        output_path.mkdir(parents=True)
+
+        z = zarr.open(
+            output_path / f"{segment_name}.zarr",
+            mode="w"
+        )
+
+        z.create_array(
+            "volume",
+            shape=volume_shape,
+            chunks=chunks,
+            dtype=first_slice.dtype,
+        )
+
+        if label is not None:
+            z.create_array(
+                "label",
+                shape=label.shape,
+                chunks=chunks[1:],
+                dtype=label.dtype,
+            )
+            z["label"][:] = label
+
+        if mask is not None:
+            z.create_array(
+                "mask",
+                shape=mask.shape,
+                chunks=chunks[1:],
+                dtype=mask.dtype,
+            )
+            z["mask"][:] = mask
+
+        if validation_mask is not None:
+            z.create_array(
+                "validation_mask",
+                shape=validation_mask.shape,
+                chunks=chunks[1:],
+                dtype=validation_mask.dtype,
+            )
+            z["validation_mask"][:] = validation_mask
+
+        crop_infos.append({
+            "crop": crop,
+            "z": z,
+            "segment_name": segment_name,
+        })
+
+        meta = {
+            "volume_original_shape": [d, h, w],
+            "label_original_shape": None if label_original is None else label_original.shape,
+            "mask_original_shape": None if mask_original is None else mask_original.shape,
+            "validation_mask_original_shape": None if validation_mask_original is None else validation_mask_original.shape,
+            "volume_shape": volume_shape,
+            "label_shape": None if label is None else label.shape,
+            "mask_shape": None if mask is None else mask.shape,
+            "validation_mask_shape": None if validation_mask is None else validation_mask.shape,
+            "chunks": chunks,
+            "crop": None if crop is None else {
+                "y_start": y_start,
+                "y_end": y_end,
+                "x_start": x_start,
+                "x_end": x_end,
+            }
         }
-    }
+    
+        with open(output_path / "metadata.json", "w") as f:
+            json.dump(meta, f, indent=4)
 
-    with open(output_path / "metadata.json", "w") as f:
-        json.dump(meta, f, indent=4)
+    # ---------------------------------------------------------
+    # TIFFs Ebene für Ebene laden und in ALLE Crops schreiben
+    # ---------------------------------------------------------
 
-    z = zarr.open(
-        # output_path / f"{folder.name}.zarr",
-        output_path / f"{segment_name}.zarr",
-        mode="w"
-    )
-
-
-    # Save volume
-
-    z.create_array(
-        "volume",
-        shape=volume_shape,
-        chunks=chunks,
-        dtype=first_slice.dtype,
-    )
-
-    # z["volume"][:] = volume
-
-    volume_ds = z["volume"]
-
-    # for i, file in tqdm(enumerate(volume_files), desc="Loading and saving TIFFs", total=len(volume_files)):
     for i, file in enumerate(volume_files):
         img = tifffile.imread(file)
 
-        # volume_ds[i] = img[:h_min, :w_min]
+        for info in crop_infos:
+            crop = info["crop"]
+            volume_ds = info["z"]["volume"]
 
-        if crop is None:
-            volume_ds[i] = img[:h_min, :w_min]
-        else:
-            y_start, y_end, x_start, x_end = crop
-            volume_ds[i] = img[y_start:y_end, x_start:x_end]
+            if crop is None:
+                volume_ds[i] = img[:h_min, :w_min]
+            else:
+                y_start, y_end, x_start, x_end = crop
 
+                volume_ds[i] = img[y_start:y_end, x_start:x_end]
 
-    # Save label
-
-    if label is not None:
-        z.create_array(
-            "label",
-            shape=label.shape,
-            chunks=chunks[1:],
-            dtype=label.dtype,
-        )
-
-        z["label"][:] = label
-    # else:
-    #     print("No label")
-
-
-    # Save mask
-
-    if mask is not None:
-        z.create_array(
-            "mask",
-            shape=mask.shape,
-            chunks=chunks[1:],
-            dtype=mask.dtype,
-        )
-
-        z["mask"][:] = mask
-    # else:
-    #     print("No mask")
-
-
-    # Save validation mask
-
-    if validation_mask is not None:
-        z.create_array(
-            "validation_mask",
-            shape=validation_mask.shape,
-            chunks=chunks[1:],
-            dtype=validation_mask.dtype,
-        )
-
-        z["validation_mask"][:] = validation_mask
-    # else:
-    #     print("No validation mask")
-
-    # print(f"Saved Zarr archive to: {output_path}")
-    # print("")
-
-    return f"Zarr archive saved to: {output_path} (label: {label is not None}, mask: {mask is not None}, validation mask: {validation_mask is not None})"
+    return f"Finished processing folder: {folder.name}"
 
 
 def main(args):
@@ -433,7 +420,7 @@ def main(args):
 
     crops = _parse_crops(args.crops)
 
-    with ThreadPoolExecutor(max_workers=8) as executor:
+    with ThreadPoolExecutor(max_workers=args.workers) as executor:
         futures = []
         
         # for folder in folders:
@@ -444,22 +431,38 @@ def main(args):
         #         args.chunks
         #     ))
 
+        # for folder in folders:
+        #     segment_crops = crops.get(folder.name)
+
+        #     if segment_crops is None:
+        #         segment_crops = [None]
+
+        #     for crop in segment_crops:
+        #         futures.append(
+        #             executor.submit(
+        #                 _process_folder,
+        #                 folder,
+        #                 args.output,
+        #                 args.chunks,
+        #                 crop
+        #             )
+        #         )
+
         for folder in folders:
             segment_crops = crops.get(folder.name)
 
             if segment_crops is None:
                 segment_crops = [None]
 
-            for crop in segment_crops:
-                futures.append(
-                    executor.submit(
-                        _process_folder,
-                        folder,
-                        args.output,
-                        args.chunks,
-                        crop
-                    )
+            futures.append(
+                executor.submit(
+                    _process_folder,
+                    folder,
+                    args.output,
+                    args.chunks,
+                    segment_crops
                 )
+            )
 
         for future in as_completed(futures):
             print(future.result())
