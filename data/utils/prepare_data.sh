@@ -40,23 +40,32 @@ while [[ $# -gt 0 ]]; do
             shift 4
             ;;
 
-        --tile-sizes)
+        --crops)
             shift
-            TILE_SIZES="--tile-sizes"
+            CROPS="--crops"
             while [[ $# -gt 0 && $1 != --* ]]; do
-                TILE_SIZES+=" $1"
+                CROPS+=" $1"
                 shift
             done
             ;;
 
-        --strides)
-            shift
-            STRIDES="--strides"
-            while [[ $# -gt 0 && $1 != --* ]]; do
-                STRIDES+=" $1"
-                shift
-            done
-            ;;
+        # --tile-sizes)
+        #     shift
+        #     TILE_SIZES="--tile-sizes"
+        #     while [[ $# -gt 0 && $1 != --* ]]; do
+        #         TILE_SIZES+=" $1"
+        #         shift
+        #     done
+        #     ;;
+
+        # --strides)
+        #     shift
+        #     STRIDES="--strides"
+        #     while [[ $# -gt 0 && $1 != --* ]]; do
+        #         STRIDES+=" $1"
+        #         shift
+        #     done
+        #     ;;
 
         *)
             echo "Unknown argument: $1"
@@ -83,7 +92,8 @@ python -u tiff_to_zarr.py \
     "$TIFF_DIR" \
     "$ZARR_DIR" \
     $SEGMENTS \
-    $CHUNKS
+    $CHUNKS \
+    $CROPS
 
 echo "=============================="
 
