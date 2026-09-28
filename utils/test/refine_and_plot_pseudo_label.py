@@ -232,7 +232,9 @@ def plot_refinement(prediction):
 
 
 @hydra.main( version_base=None, config_path="../../conf/refinement", config_name="debug")
+# @hydra.main( version_base=None, config_path="../../conf/", config_name="debug")
 def main(cfg):
+    # cfg = cfg.train.refinement
 
     # ---------------------------------------------------------
     # Load predictions

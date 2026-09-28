@@ -1,6 +1,7 @@
 defaults:
   - noisy_student
   - override /aug@teacher: tta_none
+  - override /refinement@refinement: debug
 
 max_epochs: 1
 warmup_epochs: 0
@@ -36,6 +37,11 @@ val:
   - "0172_20241113090990"
 predict:
   - "0172_20241025145341"
+
+segment_crops:
+  "0172_20241025145341": [500, 500, 5000, 1000]
+  "0172_20241113090990": [500, 500, 5000, 1000]
+  "0172_20241025145701": [500, 500, 5000, 1000]
 
 use_validation_mask: true
 

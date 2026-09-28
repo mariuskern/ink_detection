@@ -14,9 +14,11 @@ steps:
     min_size: 20000 # 1000
     connectivity: 4
     update_mask: true
+    # chunk_size: 4000
+    # tmp_dir: ${path.tmp_dir}
   
-  - name: binary_closing
-    kernel_size: 25
-    iterations: 1
-    probability_threshold: 0
-    update_mask: false
+  # - name: binary_closing
+  #   kernel_size: 25
+  #   iterations: 1
+  #   probability_threshold: 0
+  #   update_mask: false

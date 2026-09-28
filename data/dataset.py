@@ -94,6 +94,13 @@ class InkDataset(Dataset):
     segments:
         Optional iterable specifying the segments to include. If `None`,
         all available segments are used.
+    
+    segment_crops:
+        Optional dictionary specifying a spatial crop for individual segments.
+        The crop is defined as `(x_min, y_min, x_max, y_max)` in the original
+        segment coordinates. Only tiles that lie completely within the
+        specified crop are used. Segments without a specified crop are used
+        without spatial restriction.
 
     tile_size:
         Spatial size of each square tile.
@@ -135,6 +142,7 @@ class InkDataset(Dataset):
         self,
         data_dir,
         segments=None,
+        segment_crops=None,
         tile_size=64,
         stride=None,
         n_layers=65,
@@ -160,6 +168,7 @@ class InkDataset(Dataset):
         self.pseudo_target = pseudo_target
         self.transform = transform
         self.split = split
+        self.segment_crops = segment_crops or {}
 
         if self.norm not in ["global", "local"]:
             raise ValueError(f"Invalid normalization mode: {self.norm}. Must be 'global' or 'local'.")
@@ -191,7 +200,7 @@ class InkDataset(Dataset):
             self.zarr_data[segment] = self._get_zarr_data_for_segment(segment_path)
 
             # Load tiles
-            self.tiles.extend(self._get_tiles_for_segment(segment, min_mask_fraction))
+            self.tiles.extend(self._get_tiles_for_segment(segment, min_mask_fraction, crop=self.segment_crops.get(segment)))
 
             # Load meta
             self.segment_shapes[segment] = torch.tensor(self._get_meta_for_segment(segment_path)["volume_shape"])
@@ -340,7 +349,7 @@ class InkDataset(Dataset):
 
         return torch.from_numpy(zarr_array[group][version][y:y+self.tile_size, x:x+self.tile_size]).float()
 
-    def _get_tiles_for_segment(self, segment, min_mask_fraction):
+    def _get_tiles_for_segment(self, segment, min_mask_fraction, crop=None):
         segment_path = self.segment_paths[segment]
 
         if self.pseudo_label_version is not None:
@@ -387,6 +396,16 @@ class InkDataset(Dataset):
 
             tile_path.parent.mkdir(parents=True, exist_ok=True)
             save_tiles(tiles, tile_path, csv_path)
+
+        if crop is not None:
+            x_min, y_min, x_max, y_max = crop
+
+            tiles = [t for t in tiles if (
+                x_min <= int(t["x"])
+                and int(t["x"]) + self.tile_size <= x_max
+                and y_min <= int(t["y"])
+                and int(t["y"]) + self.tile_size <= y_max
+            )]
 
         tile_list = []
 
