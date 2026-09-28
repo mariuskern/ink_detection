@@ -3,7 +3,7 @@ defaults:
   # - /aug@teacher.aug: tta
   - /aug@teacher: tta
   - /aug@student.aug: strong
-  - /refinement@refinement: base
+  - /refinement@refinement: advanced
 
 name: noisy_student
 # threshold: 0.5
@@ -12,7 +12,7 @@ pseudo_target: soft # hard | soft
 # confidence_threshold: 0.7 # 0.9
 # use_uncertainty_mask: True
 # uncertainty_threshold: 0.2 # 0.05
-iterations: 8
+iterations: 5
 pseudo_loss_weight: 1.0
 pseudo_loss_rampup_epochs: 0
 # teacher:
@@ -32,47 +32,47 @@ pseudo_loss_rampup_epochs: 0
 #   - 20251115002740-auto_grown_20251115002740308_0_flatboi
 # val:
 #   - 20241113090990
-# labeled:
-#   - "0172_20241025145341"
-#   - "0172_20241025145701"
-#   - "0172_20241030152031"
-#   - "0172_20241108111522"
-# unlabeled:
-#   - "0172_20241108115232"
-#   - "0172_20241108120732"
-#   - "0172_20241113070770"
-#   - "0172_20241113080880"
-#   - "0172_20251115002740-auto_grown_20251115002740308_0_flatboi"
-# val:
-#   - "0172_20241113090990"
-
 labeled:
-  - "500p2_-1"                                      # Looks good on scrollprize.org 2,215
-  - "814_814_46527_2um_try2"                        # ? Looks good on scrollprize.org
-  - "841_auto_grown_20260220144552896"              # Looks good on scrollprize.org
-  - "841_auto_grown_20260220174252405"              # Just black on scrollprize.org
-  - "841_w00"                                       # Looks good on scrollprize.org
-  - "9b_auto_grown_20250919055754487_inp_hr_2um"    # Looks good on scrollprize.org
-  # - "p343p_20250511003658"                          # Not on scrollprize.org 2,215?
+  - "0172_20241025145341"
+  - "0172_20241025145701"
+  - "0172_20241030152031"
+  - "0172_20241108111522"
 unlabeled:
-  - "1667_w018_20240304144031_2um"
-  # - "1667_w028_20251208130119156_2um"
-  # - "1667_w029_20251212185248662_2um"
-  # - "1667_w031_2025122323_2um"
+  - "0172_20241108115232"
+  - "0172_20241108120732"
+  - "0172_20241113070770"
+  - "0172_20241113080880"
+  - "0172_20251115002740-auto_grown_20251115002740308_0_flatboi"
 val:
-  - "1667_w018_20240304144031_2um"
-  # - "1667_w028_20251208130119156_2um"
-  # - "1667_w029_20251212185248662_2um"
-  # - "1667_w031_2025122323_2um"
-predict:
-  - "500p2_-1"
-  - "814_814_46527_2um_try2"
-  - "841_auto_grown_20260220144552896"
-  - "841_auto_grown_20260220174252405"
-  - "841_w00"
-  - "9b_auto_grown_20250919055754487_inp_hr_2um"
-  - "p343p_20250511003658"
-use_validation_mask: true
+  - "0172_20241113090990"
+
+# labeled:
+#   - "500p2_-1"                                      # Looks good on scrollprize.org 2,215
+#   - "814_814_46527_2um_try2"                        # ? Looks good on scrollprize.org
+#   - "841_auto_grown_20260220144552896"              # Looks good on scrollprize.org
+#   - "841_auto_grown_20260220174252405"              # Just black on scrollprize.org
+#   - "841_w00"                                       # Looks good on scrollprize.org
+#   - "9b_auto_grown_20250919055754487_inp_hr_2um"    # Looks good on scrollprize.org
+#   # - "p343p_20250511003658"                          # Not on scrollprize.org 2,215?
+# unlabeled:
+#   - "1667_w018_20240304144031_2um"
+#   # - "1667_w028_20251208130119156_2um"
+#   # - "1667_w029_20251212185248662_2um"
+#   # - "1667_w031_2025122323_2um"
+# val:
+#   - "1667_w018_20240304144031_2um"
+#   # - "1667_w028_20251208130119156_2um"
+#   # - "1667_w029_20251212185248662_2um"
+#   # - "1667_w031_2025122323_2um"
+# predict:
+#   - "500p2_-1"
+#   - "814_814_46527_2um_try2"
+#   - "841_auto_grown_20260220144552896"
+#   - "841_auto_grown_20260220174252405"
+#   - "841_w00"
+#   - "9b_auto_grown_20250919055754487_inp_hr_2um"
+#   - "p343p_20250511003658"
+# use_validation_mask: true
 
 # refinement:
 #   tta_num: 1

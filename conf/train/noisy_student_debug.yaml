@@ -1,5 +1,6 @@
 defaults:
   - noisy_student
+  - override /aug@teacher: tta_none
 
 max_epochs: 1
 warmup_epochs: 0
@@ -38,5 +39,5 @@ predict:
 
 use_validation_mask: true
 
-refinement:
-  tta_num: 1
+# refinement:
+#   tta_num: 1

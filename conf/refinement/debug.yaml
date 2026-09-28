@@ -2,7 +2,7 @@ name: "debug"
 debug: true
 steps:
   - name: threshold
-    threshold: 0.5
+    threshold: 0.8
 
   - name: confidence_mask
     threshold: 0.8 # 0.8 0.9 0.95
@@ -11,9 +11,12 @@ steps:
     threshold: 0.15 # 0.15 0.05 0.05
   
   - name: remove_small_objects
-    max_size: 2000
-    connectivity: 1
-
+    min_size: 20000 # 1000
+    connectivity: 4
+    update_mask: true
+  
   - name: binary_closing
     kernel_size: 25
     iterations: 1
+    probability_threshold: 0
+    update_mask: false

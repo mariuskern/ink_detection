@@ -5,7 +5,9 @@ from pathlib import Path
 from PIL import Image
 import numpy as np
 import hydra
-import matplotlib.pyplot as plt
+import cv2
+
+Image.MAX_IMAGE_PIXELS = None
 
 from dotenv import load_dotenv
 
@@ -17,13 +19,11 @@ from utils import Prediction
 from utils.refinement import build_label_refinement
 
 
-PREDICTION_PATH = Path(
-    "C:/Users/mariu/Documents/Studium/Masterarbeit/label_refinement_test_data"
-)
+PREDICTION_PATH = Path("C:/Users/mariu/Documents/Studium/Masterarbeit/label_refinement_test_data")
 
 PROBABILITY_PATH = PREDICTION_PATH / "prediction"
-CONFIDENCE_PATH = PREDICTION_PATH / "confidence"
-UNCERTAINTY_PATH = PREDICTION_PATH / "uncertainty"
+CONFIDENCE_PATH = None # PREDICTION_PATH / "confidence"
+UNCERTAINTY_PATH = None # PREDICTION_PATH / "uncertainty"
 
 
 def load_image(path):
@@ -40,11 +40,7 @@ def load_image(path):
     return image
 
 
-def load_predictions(
-    probability_dir,
-    confidence_dir=None,
-    uncertainty_dir=None,
-):
+def load_predictions(probability_dir, confidence_dir=None, uncertainty_dir=None):
     probability_dir = Path(probability_dir)
 
     extensions = {
@@ -55,20 +51,11 @@ def load_predictions(
         ".tiff",
     }
 
-    probability_files = sorted(
-        p
-        for p in probability_dir.iterdir()
-        if (
-            p.is_file()
-            and p.suffix.lower() in extensions
-            and p.stem.endswith("_prediction")
-        )
-    )
+    # probability_files = sorted(p for p in probability_dir.iterdir() if p.is_file() and p.suffix.lower() in extensions and p.stem.endswith("_prediction"))
+    probability_files = sorted(p for p in probability_dir.iterdir() if p.is_file() and p.suffix.lower() in extensions)
 
     if not probability_files:
-        raise FileNotFoundError(
-            f"Keine Prediction-Bilder gefunden in {probability_dir}"
-        )
+        raise FileNotFoundError(f"Keine Prediction-Bilder gefunden in {probability_dir}")
 
     results = []
 
@@ -82,10 +69,7 @@ def load_predictions(
         confidence = None
 
         if confidence_dir is not None:
-            confidence_path = (
-                Path(confidence_dir)
-                / f"{segment}_confidence{probability_path.suffix}"
-            )
+            confidence_path = Path(confidence_dir) / f"{segment}_confidence{probability_path.suffix}"
 
             if not confidence_path.exists():
                 raise FileNotFoundError(
@@ -94,14 +78,13 @@ def load_predictions(
                 )
 
             confidence = load_image(confidence_path)
+        else:
+            confidence = np.ones_like(probability)
 
         uncertainty = None
 
         if uncertainty_dir is not None:
-            uncertainty_path = (
-                Path(uncertainty_dir)
-                / f"{segment}_uncertainty{probability_path.suffix}"
-            )
+            uncertainty_path = Path(uncertainty_dir) / f"{segment}_uncertainty{probability_path.suffix}"
 
             if not uncertainty_path.exists():
                 raise FileNotFoundError(
@@ -110,6 +93,8 @@ def load_predictions(
                 )
 
             uncertainty = load_image(uncertainty_path)
+        else:
+            uncertainty = np.zeros_like(probability)
 
         prediction = Prediction(
             segment=segment,
@@ -125,6 +110,22 @@ def load_predictions(
     return results
 
 
+def resize_for_plot(array, max_size=1500, interpolation=cv2.INTER_AREA):
+    array = array.astype(np.uint8)
+
+    h, w = array.shape[-2:]
+
+    scale = min(max_size / h, max_size / w)
+
+    if scale >= 1:
+        return array
+
+    new_h = int(h * scale)
+    new_w = int(w * scale)
+
+    return cv2.resize(array, (new_w, new_h), interpolation=interpolation)
+
+
 def plot_refinement(prediction):
     import matplotlib
     matplotlib.use("TkAgg", force=True)
@@ -136,54 +137,45 @@ def plot_refinement(prediction):
     debug = getattr(prediction, "refinement_debug", {})
 
     if not debug:
-        raise ValueError(
-            "Keine Refinement-Debug-Daten vorhanden. "
-            "Aktiviere debug=True in der Refinement-Pipeline."
-        )
+        raise ValueError("Keine Refinement-Debug-Daten vorhanden. Aktiviere debug=True in der Refinement-Pipeline.")
 
     debug_items = list(debug.items())
 
     max_steps_per_block = 5
 
     # In Blöcke mit jeweils maximal 5 Schritten aufteilen
-    blocks = [
-        debug_items[i:i + max_steps_per_block]
-        for i in range(0, len(debug_items), max_steps_per_block)
-    ]
+    blocks = [debug_items[i:i + max_steps_per_block] for i in range(0, len(debug_items), max_steps_per_block)]
 
     n_blocks = len(blocks)
 
-    # 4 Bilder pro Schritt:
-    # Label | Mask | Label ∩ Mask | Change
-    n_cols = n_blocks * 4
+    # 5 Bilder pro Schritt:
+    # Prediction | Label | Mask | Label ∩ Mask | Change
+    n_cols = 1 + n_blocks * 4
     n_rows = max_steps_per_block
 
-    fig, axes = plt.subplots(
-        n_rows,
-        n_cols,
-        figsize=(4 * n_cols, 4 * n_rows),
-        squeeze=False,
-    )
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(4 * n_cols, 4 * n_rows), squeeze=False)
 
-    fig.suptitle(
-        f"Label Refinement - {prediction.segment}",
-        fontsize=18,
-    )
+    fig.suptitle(f"Label Refinement - {prediction.segment}", fontsize=18,)
 
     # Alles zunächst deaktivieren
     for ax in axes.flat:
         ax.axis("off")
+
+    # # ---------------------------------------------------------
+    # # Original Prediction
+    # # ---------------------------------------------------------
+
+    # axes[0, 0].imshow(probability, cmap="gray", vmin=0, vmax=1)
+    # axes[0, 0].set_title("Original Prediction Probability", fontsize=11)
 
     # ---------------------------------------------------------
     # Refinement-Schritte
     # ---------------------------------------------------------
 
     for block_idx, block in enumerate(blocks):
-
-        col_offset = block_idx * 4
+        col_offset = 1 + block_idx * 4
 
         for row, (step_name, state) in enumerate(block):
-
             global_idx = block_idx * max_steps_per_block + row
 
             pseudo_label = state["pseudo_label"]
@@ -193,85 +185,47 @@ def plot_refinement(prediction):
             if global_idx == 0:
                 previous_label = probability >= 0.5
             else:
-                previous_label = debug_items[global_idx - 1][1][
-                    "pseudo_label"
-                ]
+                previous_label = debug_items[global_idx - 1][1]["pseudo_label"]
 
             # Änderungen dieses Schrittes
-            difference = np.logical_xor(
-                previous_label,
-                pseudo_label,
-            )
+            difference = np.logical_xor(previous_label, pseudo_label)
+
+            # -------------------------------------------------
+            # Prediction
+            # -------------------------------------------------
+
+            axes[row, col_offset - 1].imshow(resize_for_plot(probability), cmap="gray", vmin=0, vmax=1)
+            axes[row, col_offset - 1].set_title("Original Prediction Probability", fontsize=11)
 
             # -------------------------------------------------
             # Label
             # -------------------------------------------------
 
-            axes[row, col_offset].imshow(
-                pseudo_label,
-                cmap="gray",
-                vmin=0,
-                vmax=1,
-            )
-
-            axes[row, col_offset].set_title(
-                f"{global_idx + 1}: {step_name}\nLabel",
-                fontsize=11,
-            )
+            axes[row, col_offset].imshow(resize_for_plot(pseudo_label), cmap="gray", vmin=0, vmax=1)
+            axes[row, col_offset].set_title(f"{global_idx + 1}: {step_name}\nLabel", fontsize=11)
 
             # -------------------------------------------------
             # Training Mask
             # -------------------------------------------------
 
-            axes[row, col_offset + 1].imshow(
-                pseudo_mask,
-                cmap="gray",
-                vmin=0,
-                vmax=1,
-            )
-
-            axes[row, col_offset + 1].set_title(
-                f"{global_idx + 1}: {step_name}\nTraining Mask",
-                fontsize=11,
-            )
+            axes[row, col_offset + 1].imshow(resize_for_plot(pseudo_mask), cmap="gray", vmin=0, vmax=1)
+            axes[row, col_offset + 1].set_title(f"{global_idx + 1}: {step_name}\nTraining Mask", fontsize=11)
 
             # -------------------------------------------------
             # Label ∩ Mask
             # -------------------------------------------------
 
-            masked_label = np.where(
-                pseudo_mask,
-                pseudo_label,
-                0,
-            )
+            masked_label = np.where(pseudo_mask, pseudo_label, 0)
 
-            axes[row, col_offset + 2].imshow(
-                masked_label,
-                cmap="gray",
-                vmin=0,
-                vmax=1,
-            )
-
-            axes[row, col_offset + 2].set_title(
-                f"{global_idx + 1}: {step_name}\nLabel ∩ Mask",
-                fontsize=11,
-            )
+            axes[row, col_offset + 2].imshow(resize_for_plot(masked_label), cmap="gray", vmin=0, vmax=1)
+            axes[row, col_offset + 2].set_title(f"{global_idx + 1}: {step_name}\nLabel ∩ Mask", fontsize=11)
 
             # -------------------------------------------------
             # Label Change
             # -------------------------------------------------
 
-            axes[row, col_offset + 3].imshow(
-                difference,
-                cmap="gray",
-                vmin=0,
-                vmax=1,
-            )
-
-            axes[row, col_offset + 3].set_title(
-                f"{global_idx + 1}: {step_name}\nLabel Change",
-                fontsize=11,
-            )
+            axes[row, col_offset + 3].imshow(resize_for_plot(difference), cmap="gray", vmin=0, vmax=1)
+            axes[row, col_offset + 3].set_title(f"{global_idx + 1}: {step_name}\nLabel Change", fontsize=11)
 
     plt.tight_layout(rect=(0, 0, 1, 0.96))
     plt.show()
@@ -294,9 +248,7 @@ def main(cfg):
     # Build refinement pipeline
     # ---------------------------------------------------------
 
-    refinement = build_label_refinement(
-        cfg
-    )
+    refinement = build_label_refinement(cfg)
 
     # ---------------------------------------------------------
     # Refine
@@ -309,11 +261,7 @@ def main(cfg):
     # ---------------------------------------------------------
 
     for i, prediction in enumerate(predictions):
-        print(
-            f"\nProcessing segment "
-            f"{i + 1}/{len(predictions)}: "
-            f"{prediction.segment}"
-        )
+        print(f"\nProcessing segment {i + 1}/{len(predictions)}: {prediction.segment}")
 
         plot_refinement(prediction)
 
