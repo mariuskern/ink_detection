@@ -97,7 +97,7 @@ class InkDataset(Dataset):
     
     segment_crops:
         Optional dictionary specifying a spatial crop for individual segments.
-        The crop is defined as `(x_min, y_min, x_max, y_max)` in the original
+        The crop is defined as `(y_start, y_end, x_start, x_end)` in the original
         segment coordinates. Only tiles that lie completely within the
         specified crop are used. Segments without a specified crop are used
         without spatial restriction.
@@ -398,13 +398,14 @@ class InkDataset(Dataset):
             save_tiles(tiles, tile_path, csv_path)
 
         if crop is not None:
-            x_min, y_min, x_max, y_max = crop
+            # x_min, y_min, x_max, y_max = crop
+            y_start, y_end, x_start, x_end = crop
 
             tiles = [t for t in tiles if (
-                x_min <= int(t["x"])
-                and int(t["x"]) + self.tile_size <= x_max
-                and y_min <= int(t["y"])
-                and int(t["y"]) + self.tile_size <= y_max
+                x_start <= int(t["x"])
+                and int(t["x"]) + self.tile_size <= x_end
+                and y_start <= int(t["y"])
+                and int(t["y"]) + self.tile_size <= y_end
             )]
 
         tile_list = []
