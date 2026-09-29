@@ -46,7 +46,7 @@ def generate_pseudo_labels(cfg, model, iteration, output_dir, tmp_dir, device):
         predict_dataset = build_dataset(cfg, cfg.train.unlabeled, transform=None, split="train" if cfg.train.use_validation_mask else None)
         predict_loader = build_dataloader(cfg, predict_dataset, None)
 
-        for prediction in predict(model, predict_loader, device=device, transforms=transforms, tta_num=cfg.train.teacher.tta_num, cache_dir=tmp_dir):
+        for prediction in predict(model, predict_loader, device=device, precision=cfg.train.precision, transforms=transforms, tta_num=cfg.train.teacher.tta_num, cache_dir=tmp_dir):
             # results = predict(model, predict_loader, device=device)
             # # results = predict(model, predict_loader, device=device, tta_transform=transform, tta_num=cfg.train.refinement.tta_num)
 
@@ -196,7 +196,7 @@ def save_predictions(cfg, model, output_dir, tmp_dir, device):
         predict_loader = build_dataloader(cfg, predict_dataset, None)
 
         # for prediction in predict(model, predict_loader, device=device, transforms=transforms, tta_num=cfg.train.refinement.tta_num, cache_dir=output_dir / "tmp"):
-        for prediction in predict(model, predict_loader, device=device, transforms=None, tta_num=1, cache_dir=tmp_dir):
+        for prediction in predict(model, predict_loader, device=device, precision=cfg.train.precision, transforms=None, tta_num=1, cache_dir=tmp_dir):
             results = [prediction]
 
             save_predictions_as_images(

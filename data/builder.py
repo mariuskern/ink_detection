@@ -72,7 +72,7 @@ def build_dataset(
     return InkDataset(
         cfg.path.data_dir,
         segments=segments,
-        segment_crops=cfg.train.segment_crops,
+        segment_crops=cfg.train.get("segment_crops", None),
         tile_size=cfg.dataset.tile_size,
         stride=cfg.dataset.stride if stride is None else stride,
         n_layers=cfg.dataset.n_layers,

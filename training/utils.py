@@ -39,6 +39,7 @@ fit()
 from pathlib import Path
 from dataclasses import dataclass
 import math
+import gc
 
 import torch
 # import torch.nn.functional as F
@@ -326,13 +327,23 @@ def fit(cfg, logger, output_dir, *, pseudo_label_version=None, iteration=None, a
             state_dict = {key.removeprefix("_orig_mod."): value for key, value in state_dict.items()}
 
         inference_model.load_state_dict(state_dict)
-
         inference_model.eval()
 
+        del checkpoint
+        del state_dict
+
+        del model
+        del optimizer
+        del scheduler
+        del scaler
+        # torch.cuda.empty_cache()
     else:
         # Fallback if no checkpoint exists
         inference_model = model
         inference_model.eval()
+
+    gc.collect()
+    torch.cuda.empty_cache()
 
     return TrainingResult(
         model=inference_model,

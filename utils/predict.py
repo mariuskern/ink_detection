@@ -1,9 +1,9 @@
 from tqdm import tqdm
 import torch
-from torchvision import tv_tensors
 
 from .prediction_merger import PredictionMerger
 from .interpolate import interpolate_reverse
+from training.precision import parse_precision, autocast_context
 
 
 # @torch.no_grad()
@@ -39,14 +39,17 @@ from .interpolate import interpolate_reverse
 #     yield from prediction_merger.iter_predictions()
 
 
-import torch
-from tqdm import tqdm
+
 
 
 @torch.no_grad()
-def predict(model, dataloader, device, transforms=None, tta_num=1, cache_dir=None):
+def predict(model, dataloader, device, precision, transforms=None, tta_num=1, cache_dir=None):
     model.to(device)
     model.eval()
+
+    if device.type == "cuda":
+        print(f"[predict] CUDA memory allocated: {torch.cuda.memory_allocated(device) / 1024**3:.2f} GiB")
+        print(f"[predict] CUDA memory reserved:  {torch.cuda.memory_reserved(device) / 1024**3:.2f} GiB")
 
     if tta_num < 1:
         raise ValueError("tta_num must be >= 1")
@@ -66,6 +69,8 @@ def predict(model, dataloader, device, transforms=None, tta_num=1, cache_dir=Non
         tta_transforms = [transforms]
 
     prediction_merger = PredictionMerger(cache_dir=cache_dir)
+
+    autocast_dtype, _, _ = parse_precision(precision)
 
     # ---------------------------------------------------------
     # TTA
@@ -116,7 +121,9 @@ def predict(model, dataloader, device, transforms=None, tta_num=1, cache_dir=Non
                 # Model
                 # -------------------------------------------------
 
-                output = model(tile)
+                # output = model(tile)
+                with autocast_context(device.type, autocast_dtype):
+                    output = model(tile)
 
                 # ----------------------------------------------------------
                 # Resize model output back to transformed tile size
