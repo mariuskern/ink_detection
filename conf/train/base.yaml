@@ -13,7 +13,7 @@ val_image_every_n_epochs: 10
 seed: null # null 42
 checkpoint:
   checkpoint_every_n_epochs: 1
-  save_top_k: 1
+  save_top_k: 5
   save_last: True
   save_last_every_epoch: True
   monitor: val/loss # val/loss train/loss

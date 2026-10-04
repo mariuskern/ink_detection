@@ -1,7 +1,7 @@
 defaults:
   - base
   # - /aug@teacher.aug: tta
-  - /aug@teacher: tta
+  - /aug@teacher: tta_none
   - /aug@student.aug: strong_v2
   - /refinement@refinement: advanced # base advanced
 

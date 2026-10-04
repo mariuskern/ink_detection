@@ -58,9 +58,14 @@ from utils.interpolate import interpolate, interpolate_reverse
 
 @dataclass(frozen=True)
 class TrainingResult:
-    model: torch.nn.Module
+    # model: torch.nn.Module
     best_checkpoint: Path | None
     best_score: float | None
+
+    # top_models: list[torch.nn.Module]
+    top_checkpoints: list[Path]
+    # last_model: torch.nn.Module | None
+    last_checkpoint: Path | None
 
 
 def fit(cfg, logger, output_dir, *, pseudo_label_version=None, iteration=None, augmentation=None, device=None):
@@ -298,58 +303,127 @@ def fit(cfg, logger, output_dir, *, pseudo_label_version=None, iteration=None, a
         # ====================================================================
 
         logging_manager.log_epoch()
+    
 
     # ------------------------------------------------------------------------
-    # Load best model
+    # Load top-k models and last model
     # ------------------------------------------------------------------------
 
+    top_checkpoints = checkpoint_manager.top_k_model_paths
+    last_checkpoint = checkpoint_manager.last_model_path
     best_checkpoint = checkpoint_manager.best_model_path
     best_score = checkpoint_manager.best_model_score
 
-    if best_checkpoint is not None:
-        checkpoint = torch.load(best_checkpoint, map_location="cpu", weights_only=False)
+    # def load_model_from_checkpoint(checkpoint_path: Path) -> torch.nn.Module:
+    #     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
 
-        # Build a fresh, uncompiled model
-        inference_model = build_model(cfg)
+    #     # Build a fresh, uncompiled model
+    #     loaded_model = build_model(cfg)
 
-        if model_dtype is not None:
-            inference_model = inference_model.to(device=device, dtype=model_dtype)
-        else:
-            inference_model = inference_model.to(device)
+    #     if model_dtype is not None:
+    #         loaded_model = loaded_model.to(device=device, dtype=model_dtype)
+    #     else:
+    #         loaded_model = loaded_model.to(device)
 
-        # inference_model.load_state_dict(checkpoint["state_dict"])
+    #     state_dict = checkpoint["state_dict"]
 
-        state_dict = checkpoint["state_dict"]
+    #     # Remove torch.compile prefix if necessary
+    #     if any(key.startswith("_orig_mod.") for key in state_dict):
+    #         state_dict = {key.removeprefix("_orig_mod."): value for key, value in state_dict.items()}
 
-        is_compiled_checkpoint  = any(key.startswith("_orig_mod.") for key in state_dict.keys())
+    #     loaded_model.load_state_dict(state_dict)
+    #     loaded_model.eval()
 
-        if is_compiled_checkpoint:
-            state_dict = {key.removeprefix("_orig_mod."): value for key, value in state_dict.items()}
+    #     del checkpoint
+    #     del state_dict
 
-        inference_model.load_state_dict(state_dict)
-        inference_model.eval()
+    #     return loaded_model
 
-        del checkpoint
-        del state_dict
+    # Load the top-k models in best-first order
+    # top_models = [load_model_from_checkpoint(path) for path in top_checkpoints]
 
-        del model
-        del optimizer
-        del scheduler
-        del scaler
-        # torch.cuda.empty_cache()
-    else:
-        # Fallback if no checkpoint exists
-        inference_model = model
-        inference_model.eval()
+    # Load the last model independently
+    # last_model = (load_model_from_checkpoint(last_checkpoint) if last_checkpoint is not None else None)
+
+    # Backward compatibility: result.model is still the best model
+    # if top_models:
+    #     best_model = top_models[0]
+    # elif last_model is not None:
+    #     best_model = last_model
+    # else:
+    #     best_model = model
+    #     best_model.eval()
+
+    # Clean up training resources
+    del optimizer
+    del scheduler
+    del scaler
 
     gc.collect()
-    torch.cuda.empty_cache()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
     return TrainingResult(
-        model=inference_model,
+        # model=best_model,
         best_checkpoint=best_checkpoint,
         best_score=best_score,
+        # top_models=top_models,
+        top_checkpoints=top_checkpoints,
+        # last_model=last_model,
+        last_checkpoint=last_checkpoint,
     )
+
+    # # ------------------------------------------------------------------------
+    # # Load best model
+    # # ------------------------------------------------------------------------
+
+    # best_checkpoint = checkpoint_manager.best_model_path
+    # best_score = checkpoint_manager.best_model_score
+
+    # if best_checkpoint is not None:
+    #     checkpoint = torch.load(best_checkpoint, map_location="cpu", weights_only=False)
+
+    #     # Build a fresh, uncompiled model
+    #     inference_model = build_model(cfg)
+
+    #     if model_dtype is not None:
+    #         inference_model = inference_model.to(device=device, dtype=model_dtype)
+    #     else:
+    #         inference_model = inference_model.to(device)
+
+    #     # inference_model.load_state_dict(checkpoint["state_dict"])
+
+    #     state_dict = checkpoint["state_dict"]
+
+    #     is_compiled_checkpoint = any(key.startswith("_orig_mod.") for key in state_dict.keys())
+
+    #     if is_compiled_checkpoint:
+    #         state_dict = {key.removeprefix("_orig_mod."): value for key, value in state_dict.items()}
+
+    #     inference_model.load_state_dict(state_dict)
+    #     inference_model.eval()
+
+    #     del checkpoint
+    #     del state_dict
+
+    #     del model
+    #     del optimizer
+    #     del scheduler
+    #     del scaler
+    #     # torch.cuda.empty_cache()
+    # else:
+    #     # Fallback if no checkpoint exists
+    #     inference_model = model
+    #     inference_model.eval()
+
+    # gc.collect()
+    # torch.cuda.empty_cache()
+
+    # return TrainingResult(
+    #     model=inference_model,
+    #     best_checkpoint=best_checkpoint,
+    #     best_score=best_score,
+    # )
 
     # best_checkpoint = checkpoint_manager.best_model_path
     # best_score = checkpoint_manager.best_model_score

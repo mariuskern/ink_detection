@@ -222,6 +222,29 @@ class CheckpointManager:
 
         return self._best_score
 
+    @property
+    def top_k_model_paths(self) -> list[Path]:
+        """
+        Checkpoint-Pfade, sortiert vom besten zum schlechtesten Modell.
+        """
+
+        return [path for _, path in self._top_k]
+
+
+    @property
+    def top_k_model_scores(self) -> list[float]:
+        """
+        Scores der gespeicherten Top-k-Modelle.
+        """
+        
+        return [score for score, _ in self._top_k]
+
+
+    @property
+    def last_model_path(self) -> Path | None:
+        path = self.dirpath / "last.ckpt"
+        return path if path.exists() else None
+
     # ------------------------------------------------------------------
     # Internal
     # ------------------------------------------------------------------
