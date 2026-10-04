@@ -225,10 +225,49 @@ class RandomDepthFlip(torch.nn.Module):
         return image
 
     def inverse(self, prediction, params):
-        raise RuntimeError("RandomBlankRectangle is not compatible with TTA because the blanked image content cannot be restored.")
+        raise RuntimeError("RandomDepthFlip is not compatible with TTA.")
         for a, b in reversed(params["swaps"]):
             prediction[..., [a, b], :, :] = prediction[..., [b, a], :, :]
 
+        return prediction
+
+
+
+class RandomDepthReverse(torch.nn.Module):
+    """Randomly reverses the order of depth slices.
+
+    Expected image shape: [D, H, W]
+    The 2D target mask remains unchanged.
+    """
+
+    def __init__(self, p=0.5):
+        super().__init__()
+
+        if not 0.0 <= p <= 1.0:
+            raise ValueError("p must be between 0 and 1")
+
+        self.p = p
+
+    def forward(self, image, *masks, return_params=False):
+        apply = torch.rand((), device=image.device).item() < self.p
+
+        if apply:
+            image = torch.flip(image, dims=(-3,))
+
+        params = {"apply": apply}
+
+        if masks:
+            if return_params:
+                return image, *masks, params
+            return image, *masks
+
+        if return_params:
+            return image, params
+
+        return image
+
+    def inverse(self, prediction, params):
+        raise RuntimeError("RandomDepthReverse is not compatible with TTA.")
         return prediction
 
 
@@ -525,6 +564,9 @@ def build_augmentation(aug):
                         max_swaps=t.max_swaps,
                     )
                 )
+
+            case "random_depth_reverse":
+                transforms.append(RandomDepthReverse(p=t.p))
 
             # =========================================================
             # Intensity augmentations

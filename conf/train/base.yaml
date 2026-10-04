@@ -16,9 +16,9 @@ checkpoint:
   save_top_k: 1
   save_last: True
   save_last_every_epoch: True
-  monitor: train/loss # val/loss
+  monitor: val/loss # val/loss train/loss
   mode: min
-benchmark: true
+benchmark: false
 deterministic: false
 threshold: 0.5                  # Used to calculate dice and iou
 gradient_accumulation_steps: 1

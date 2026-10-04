@@ -1,4 +1,5 @@
 name: strong
+
 transforms:
   # Geometrische Augmentierungen
   - name: random_horizontal_flip

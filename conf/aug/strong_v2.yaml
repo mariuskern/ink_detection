@@ -1,0 +1,66 @@
+name: strong_v2
+
+transforms:
+  # =========================================================
+  # Geometrische Augmentierungen
+  # =========================================================
+
+  - name: random_horizontal_flip
+    p: 0.5
+
+  - name: random_vertical_flip
+    p: 0.5
+
+  - name: random_rotation
+    degrees: 15
+    p: 0.4
+
+  - name: random_affine
+    degrees: 5
+    translate: [0.05, 0.05]
+    scale: [0.9, 1.1]
+    shear: 3
+    p: 0.35
+
+  # =========================================================
+  # Crop und Skalierung
+  # =========================================================
+
+  - name: random_resized_crop
+    size: ${dataset.tile_size}
+    scale: [0.85, 1.0]
+    ratio: [0.95, 1.05]
+    p: 0.35
+
+  # =========================================================
+  # Tiefenaugmentation
+  # =========================================================
+
+  - name: random_depth_reverse
+    p: 0.5
+
+  # =========================================================
+  # Bildqualität
+  # =========================================================
+
+  - name: gaussian_blur
+    kernel_size: 5
+    sigma: [0.1, 1.0]
+    p: 0.15
+
+  - name: gaussian_noise
+    mean: 0.0
+    sigma: 0.03
+    p: 0.3
+
+  # =========================================================
+  # Verdeckungen / Occlusion
+  # =========================================================
+
+  - name: blank_rectangle
+    height: [8, 32]
+    width: [8, 32]
+    min_rectangles: 1
+    max_rectangles: 2
+    p: 0.15
+    value: mean

@@ -155,7 +155,8 @@ def predict(model, dataloader, device, precision, transforms=None, tta_num=1, ca
                 # Probability
                 # -------------------------------------------------
 
-                probs = torch.sigmoid(output).squeeze(1).cpu().numpy()
+                # probs = torch.sigmoid(output).squeeze(1).cpu().numpy()
+                probs = torch.sigmoid(output).squeeze(1).float().cpu().numpy()
 
                 # -------------------------------------------------
                 # Prediction merger
