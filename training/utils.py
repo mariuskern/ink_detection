@@ -484,6 +484,12 @@ def train_one_epoch(
         has_pseudo_label = batch["has_pseudo_label"].to(device)
         has_pseudo_mask = batch["has_pseudo_mask"].to(device)
 
+        if (has_label & has_pseudo_label).any():
+            raise RuntimeError("Sample cannot be both labeled and pseudo-labeled.")
+
+        if (~(has_label | has_pseudo_label)).any():
+            raise RuntimeError("Sample has neither label nor pseudo-label.")
+
         # --------------------------------------------------------------------
         # Interpolation
         # --------------------------------------------------------------------
@@ -537,11 +543,10 @@ def train_one_epoch(
             # Pseudo loss weight
             # --------------------------------------------------------------------
 
-            # pseudo_weight = get_pseudo_loss_weight(cfg, epoch)
-            if pseudo_labels_used:
-                pseudo_weight = get_pseudo_loss_weight(cfg, epoch)
-            else:
-                pseudo_weight = 0.0
+            # if pseudo_labels_used:
+            #     pseudo_weight = get_pseudo_loss_weight(cfg, epoch)
+            # else:
+            #     pseudo_weight = 0.0
 
             # --------------------------------------------------------------------
             # Total loss
@@ -558,9 +563,10 @@ def train_one_epoch(
             combined_mask[has_label] = mask[has_label]
             combined_mask[has_pseudo_label] = pseudo_mask[has_pseudo_label]
 
-            sample_weight = torch.where(has_label, torch.ones_like(has_label, dtype=torch.float32), torch.full_like(has_label, pseudo_weight, dtype=torch.float32))
-
-            loss = loss_fn(output, combined_label, combined_mask, sample_weight=sample_weight)
+            # sample_weight = torch.where(has_label, torch.ones_like(has_label, dtype=torch.float32), torch.full_like(has_label, pseudo_weight, dtype=torch.float32))
+            # loss = loss_fn(output, combined_label, combined_mask, sample_weight=sample_weight)
+            
+            loss = loss_fn(output, combined_label, combined_mask)
 
         # --------------------------------------------------------------------
         # Backward
@@ -736,7 +742,7 @@ def train_one_epoch(
                 {
                     "labeled_loss": labeled_loss,
                     "pseudo_loss": pseudo_loss,
-                    "pseudo_weight": pseudo_weight,
+                    # "pseudo_weight": pseudo_weight,
                 },
                 batch_size=cfg.dataloader.batch_size,
                 on_step=True,
@@ -1005,21 +1011,21 @@ def validate(
 # ============================================================================
 
 
-def get_pseudo_loss_weight(cfg, epoch):
-    """
-    Exact equivalent of:
+# def get_pseudo_loss_weight(cfg, epoch):
+#     """
+#     Exact equivalent of:
 
-        SupervisedModule._pseudo_loss_weight()
-    """
+#         SupervisedModule._pseudo_loss_weight()
+#     """
 
-    weight = cfg.train.pseudo_loss_weight
+#     weight = cfg.train.pseudo_loss_weight
 
-    if cfg.train.pseudo_loss_rampup_epochs <= 0:
-        return weight
+#     if cfg.train.pseudo_loss_rampup_epochs <= 0:
+#         return weight
 
-    factor = min(epoch / cfg.train.pseudo_loss_rampup_epochs, 1.0)
+#     factor = min(epoch / cfg.train.pseudo_loss_rampup_epochs, 1.0)
 
-    return weight * factor
+#     return weight * factor
 
 
 # def interpolate(x, target_size):
