@@ -1,5 +1,5 @@
 name: "dice_bce"
 w: 0.5
 eps: 1e-6
-bce_label_smoothing: 0.05 # 0 0.05 0.25
-dice_label_smoothing: 0.05 # 0 0.05 0.25
+bce_label_smoothing: 0 # 0 0.05 0.25
+dice_label_smoothing: 0 # 0 0.05 0.25

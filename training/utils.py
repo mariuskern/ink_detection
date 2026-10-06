@@ -254,7 +254,7 @@ def fit(cfg, logger, output_dir, *, pseudo_label_version=None, iteration=None, a
         # VALIDATION
         # ====================================================================
 
-        export_predictions = epoch % cfg.train.val_image_every_n_epochs == 0
+        export_predictions = (epoch + 1) % cfg.train.val_image_every_n_epochs == 0
 
         val_metrics = validate(
             model=model,
