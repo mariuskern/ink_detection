@@ -1,10 +1,14 @@
 from pathlib import Path
 
-from training.utils import fit
+import torch
+from torch.optim.swa_utils import AveragedModel
 
+from training.utils import fit
 from utils import predict, postprocess_prediction, save_predictions_as_images, save_predictions_as_zarr
 from utils.device import get_device
 from data import build_dataset, build_dataloader, build_augmentation
+from training.precision import parse_precision
+from utils.load_model import load_model_from_checkpoint
 
 
 def train_noisy_student(cfg, logger):
@@ -30,10 +34,12 @@ def train_noisy_student(cfg, logger):
             device=device,
         )
 
-        if "predict" in cfg.train and cfg.train.predict is not None and len(cfg.train.predict) > 0:
-            save_predictions(cfg, result.top_checkpoints, output_dir_iteration, tmp_dir_iteration, device)
+        checkpoint_paths = get_checkpoint_paths(cfg, result, device)
 
-        generate_pseudo_labels(cfg, result.top_checkpoints, iteration, output_dir_iteration, tmp_dir_iteration, device)
+        if "predict" in cfg.train and cfg.train.predict is not None and len(cfg.train.predict) > 0:
+            save_predictions(cfg, checkpoint_paths, output_dir_iteration, tmp_dir_iteration, device)
+
+        generate_pseudo_labels(cfg, checkpoint_paths, iteration, output_dir_iteration, tmp_dir_iteration, device)
 
 
 def generate_pseudo_labels(cfg, checkpoint_paths, iteration, output_dir, tmp_dir, device):
@@ -92,3 +98,64 @@ def save_predictions(cfg, checkpoint_paths, output_dir, tmp_dir, device):
                 results,
                 save_probability=True,
             )
+
+
+def get_checkpoint_paths(cfg, result, device):
+    checkpoint_paths = []
+
+    # if cfg.train.teacher.use_best and result.best_checkpoint:
+    #     checkpoint_paths.append(result.best_checkpoint)
+
+    if cfg.train.teacher.use_top_k and result.top_checkpoints:
+        match cfg.train.teacher.top_k_mode:
+            case "average":
+                top_k_average_path = result.top_checkpoints[0].parent / "top_k_average.pt"
+                save_average_checkpoint(cfg, result.top_checkpoints, device=device, output_path=top_k_average_path)
+                checkpoint_paths.append(top_k_average_path)
+            case "individual":
+                checkpoint_paths.extend(result.top_checkpoints)
+            case _:
+                raise ValueError(f"Invalid top_k_mode: {cfg.train.teacher.top_k_mode}")
+
+    if cfg.train.teacher.use_swa and result.swa_checkpoints:
+        match cfg.train.teacher.swa_mode:
+            case "average":
+                swa_average_path = result.swa_checkpoints[0].parent / "swa_average.pt"
+                save_average_checkpoint(cfg, result.swa_checkpoints, device=device, output_path=swa_average_path)
+                checkpoint_paths.append(swa_average_path)
+            case "individual":
+                checkpoint_paths.extend(result.swa_checkpoints)
+            case _:
+                raise ValueError(f"Invalid swa_mode: {cfg.train.teacher.swa_mode}")
+
+    return checkpoint_paths
+
+
+def save_average_checkpoint(cfg, checkpoint_paths: list[Path], device, output_path: Path) -> None:
+    if not checkpoint_paths:
+        raise ValueError("No checkpoint paths provided.")
+
+    _, _, model_dtype = parse_precision(cfg.train.precision)
+
+    averaged_model = None
+
+    for checkpoint_path in checkpoint_paths:
+        loaded_model = load_model_from_checkpoint(cfg=cfg, checkpoint_path=checkpoint_path, model_dtype=model_dtype, device=device)
+
+        if averaged_model is None:
+            averaged_model = AveragedModel(loaded_model)
+        else:
+            averaged_model.update_parameters(loaded_model)
+
+        del loaded_model
+
+    torch.save(
+        {
+            "state_dict": averaged_model.module.state_dict(),
+        },
+        output_path,
+    )
+
+    del averaged_model
+
+    # return output_path

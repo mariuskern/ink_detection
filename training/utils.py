@@ -64,6 +64,7 @@ class TrainingResult:
 
     # top_models: list[torch.nn.Module]
     top_checkpoints: list[Path]
+    swa_checkpoints: list[Path]
     # last_model: torch.nn.Module | None
     last_checkpoint: Path | None
 
@@ -210,6 +211,7 @@ def fit(cfg, logger, output_dir, *, pseudo_label_version=None, iteration=None, a
         save_last_every_epoch=cfg.train.checkpoint.save_last_every_epoch,
         filename_template=cfg.model.name + "_{epoch:03d}_{val_loss:.3f}",
         every_n_epochs=cfg.train.checkpoint.checkpoint_every_n_epochs,
+        swa_save_k=cfg.train.checkpoint.swa_save_k,
     )
 
     logging_manager = LoggingManager(
@@ -309,7 +311,10 @@ def fit(cfg, logger, output_dir, *, pseudo_label_version=None, iteration=None, a
     # Load top-k models and last model
     # ------------------------------------------------------------------------
 
+    checkpoint_manager.clear()
+
     top_checkpoints = checkpoint_manager.top_k_model_paths
+    swa_checkpoints = checkpoint_manager.swa_model_paths
     last_checkpoint = checkpoint_manager.last_model_path
     best_checkpoint = checkpoint_manager.best_model_path
     best_score = checkpoint_manager.best_model_score
@@ -369,6 +374,7 @@ def fit(cfg, logger, output_dir, *, pseudo_label_version=None, iteration=None, a
         best_score=best_score,
         # top_models=top_models,
         top_checkpoints=top_checkpoints,
+        swa_checkpoints=swa_checkpoints,
         # last_model=last_model,
         last_checkpoint=last_checkpoint,
     )

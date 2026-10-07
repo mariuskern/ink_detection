@@ -3,11 +3,13 @@ defaults:
   - override /aug@teacher: tta_none
   - override /refinement@refinement: debug
 
-max_epochs: 2
+max_epochs: 10
 warmup_epochs: 0
-checkpoint_every_n_epochs: 1
 compile: false
 val_image_every_n_epochs: 1
+checkpoint:
+  save_top_k: 2
+  swa_save_k: 2
 
 iterations: 4
 

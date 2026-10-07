@@ -1,3 +1,9 @@
 tta_num: 1
+
+use_top_k: true
+top_k_mode: "average" # average individual
+use_swa: false
+swa_mode: "average" # average individual
+
 aug:
   variants: []
