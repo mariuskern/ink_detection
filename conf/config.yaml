@@ -1,2 +1,2 @@
 defaults:
-  - config_default
+  - config_resnet3d # config_default config_resnet3d

@@ -52,8 +52,8 @@ transforms:
 
   - name: blank_rectangle
     p: 1
-    height: [8, 16]
-    width: [8, 16]
+    height: [0.125, 0.25] # [8, 16]
+    width: [0.125, 0.25] # [8, 16]
     min_rectangles: 1
     max_rectangles: 4
     value: mean

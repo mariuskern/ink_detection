@@ -1,9 +1,9 @@
 defaults:
-  - data/dataset@dataset: resnet3d
+  - data/dataset@dataset: resnet3d # default resnet3d
   - data/sampler@sampler: default
-  - data/dataloader@dataloader: resnet3d
+  - data/dataloader@dataloader: resnet3d # default resnet3d
   - model: vesuvius_resnet3d # timesformer unetrpp vesuvius_unet vesuvius_resnet3d
-  - loss: resnet3d
+  - loss: resnet3d # dice_bce resnet3d
   - path: alex
   - wandb: default
   - train: noisy_student_resnet3d # supervised noisy_student unimatch

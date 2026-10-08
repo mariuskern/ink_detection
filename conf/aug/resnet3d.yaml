@@ -29,9 +29,17 @@ transforms:
     p: 0.4
 
 
-  # Crop/Scale
-  - name: random_resized_crop
-    size: ${dataset.tile_size}
-    scale: [0.8, 1.0]
-    ratio: [0.9, 1.1]
+  # # Crop/Scale
+  # - name: random_resized_crop
+  #   size: ${dataset.tile_size}
+  #   scale: [0.8, 1.0]
+  #   ratio: [0.9, 1.1]
+  #   p: 0.5
+
+  - name: blank_rectangle
+    height: [0.01, 0.20]
+    width: [0.01, 0.20]
+    min_rectangles: 1
+    max_rectangles: 2
     p: 0.5
+    value: 0.0

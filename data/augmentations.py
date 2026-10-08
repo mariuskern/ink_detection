@@ -283,11 +283,23 @@ class RandomBlankRectangle(torch.nn.Module):
         if max_rectangles < min_rectangles:
             raise ValueError("max_rectangles must be greater than or equal to min_rectangles")
 
+        # if len(height) != 2 or height[0] > height[1]:
+        #     raise ValueError("height must be [min, max]")
+
+        # if len(width) != 2 or width[0] > width[1]:
+        #     raise ValueError("width must be [min, max]")
+
         if len(height) != 2 or height[0] > height[1]:
             raise ValueError("height must be [min, max]")
 
         if len(width) != 2 or width[0] > width[1]:
             raise ValueError("width must be [min, max]")
+
+        if not all(0.0 <= x <= 1.0 for x in height):
+            raise ValueError("height fractions must be between 0 and 1")
+
+        if not all(0.0 <= x <= 1.0 for x in width):
+            raise ValueError("width fractions must be between 0 and 1")
 
         self.height = height
         self.width = width
@@ -300,6 +312,12 @@ class RandomBlankRectangle(torch.nn.Module):
         H = image.shape[-2]
         W = image.shape[-1]
 
+        min_height = max(1, int(H * self.height[0]))
+        max_height = max(min_height, int(H * self.height[1]))
+
+        min_width = max(1, int(W * self.width[0]))
+        max_width = max(min_width, int(W * self.width[1]))
+
         apply = torch.rand((), device=image.device).item() < self.p
 
         rectangles = []
@@ -308,8 +326,11 @@ class RandomBlankRectangle(torch.nn.Module):
             num_rectangles = torch.randint(self.min_rectangles, self.max_rectangles + 1, (), device=image.device).item()
 
             for _ in range(num_rectangles):
-                height = torch.randint(self.height[0], self.height[1] + 1, (), device=image.device,).item()
-                width = torch.randint(self.width[0], self.width[1] + 1, (), device=image.device,).item()
+                # height = torch.randint(self.height[0], self.height[1] + 1, (), device=image.device,).item()
+                # width = torch.randint(self.width[0], self.width[1] + 1, (), device=image.device,).item()
+
+                height = torch.randint(min_height, max_height + 1, (), device=image.device).item()
+                width = torch.randint(min_width, max_width + 1, (), device=image.device).item()
 
                 height = min(height, H)
                 width = min(width, W)
@@ -673,9 +694,10 @@ def build_augmentation(aug):
             # =========================================================
 
             case "oneof":
-                alternatives = [build_augmentation(alternative)for alternative in t.transforms]
+                alternatives = [build_augmentation(alternative) for alternative in t.transforms]
                 # transforms.append(v2.RandomChoice(alternatives))
-                transforms.append(RandomChoice(alternatives))
+                # transforms.append(RandomChoice(alternatives))
+                add_with_probability(RandomChoice(alternatives), t)
 
             # =========================================================
             # Unsupported / unknown transforms

@@ -58,8 +58,8 @@ transforms:
   # =========================================================
 
   - name: blank_rectangle
-    height: [8, 32]
-    width: [8, 32]
+    height: [0.042, 0.167] # [8, 32]
+    width: [0.042, 0.167] # [8, 32]
     min_rectangles: 1
     max_rectangles: 2
     p: 0.15
