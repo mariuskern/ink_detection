@@ -6,6 +6,7 @@ from PIL import Image
 import matplotlib.pyplot as plt
 import numpy as np
 import zarr
+from scipy.stats import gaussian_kde
 
 from .segment_paths import get_segment_paths
 
@@ -20,6 +21,8 @@ def save_predictions_as_images(
     save_mask=False,
     save_label_not_refined=False,
     save_mask_not_refined=False,
+    save_confidence_kde=False,
+    save_uncertainty_kde=False,
     name_suffix=None,
     create_subfolders=True,
 ):
@@ -41,7 +44,18 @@ def save_predictions_as_images(
                 prediction.segment,
                 prediction.confidence,
                 name_suffix,
-                create_subfolders=True,
+                create_subfolders,
+            )
+
+        if save_confidence_kde and prediction.confidence is not None:
+            _save_kde_plot(
+                output_dir,
+                "confidence_kde",
+                prediction.segment,
+                prediction.confidence,
+                name_suffix,
+                create_subfolders,
+                xlabel="Confidence",
             )
 
         if save_uncertainty and prediction.uncertainty is not None:
@@ -51,7 +65,18 @@ def save_predictions_as_images(
                 prediction.segment,
                 prediction.uncertainty,
                 name_suffix,
-                create_subfolders=True,
+                create_subfolders,
+            )
+
+        if save_uncertainty_kde and prediction.uncertainty is not None:
+            _save_kde_plot(
+                output_dir,
+                "uncertainty_kde",
+                prediction.segment,
+                prediction.uncertainty,
+                name_suffix,
+                create_subfolders,
+                xlabel="Uncertainty",
             )
 
         if save_label and prediction.pseudo_label is not None:
@@ -61,7 +86,7 @@ def save_predictions_as_images(
                 prediction.segment,
                 prediction.pseudo_label,
                 name_suffix,
-                create_subfolders=True,
+                create_subfolders,
             )
 
         if save_mask and prediction.pseudo_mask is not None:
@@ -71,7 +96,7 @@ def save_predictions_as_images(
                 prediction.segment,
                 prediction.pseudo_mask,
                 name_suffix,
-                create_subfolders=True,
+                create_subfolders,
             )
 
         if save_label_not_refined and prediction.pseudo_label_not_refined is not None:
@@ -81,7 +106,7 @@ def save_predictions_as_images(
                 prediction.segment,
                 prediction.pseudo_label_not_refined,
                 name_suffix,
-                create_subfolders=True,
+                create_subfolders,
             )
 
         if save_mask_not_refined and prediction.pseudo_mask_not_refined is not None:
@@ -91,7 +116,7 @@ def save_predictions_as_images(
                 prediction.segment,
                 prediction.pseudo_mask_not_refined,
                 name_suffix,
-                create_subfolders=True,
+                create_subfolders,
             )
 
 
@@ -165,6 +190,54 @@ def _save_image(output_dir, name, segment, image, name_suffix, create_subfolders
     image_pil.thumbnail((3000, 3000), Image.Resampling.LANCZOS)
 
     image_pil.save(filepath)
+
+
+def _save_kde_plot(output_dir, name, segment, image, name_suffix, create_subfolders, xlabel):
+    directory = output_dir / name if create_subfolders else output_dir
+    directory.mkdir(parents=True, exist_ok=True)
+
+    filename = f"{segment}_{name}{'_' + name_suffix if name_suffix is not None else ''}.png"
+    filepath = directory / filename
+
+    image = np.asarray(image)
+
+    if hasattr(image, "detach"):
+        image = image.detach().cpu().numpy()
+
+    image = np.squeeze(image).astype(np.float32)
+
+    # Nur gültige Werte verwenden
+    values = image[np.isfinite(image)]
+
+    if values.size < 2:
+        return
+
+    # KDE berechnen
+    kde = gaussian_kde(values)
+
+    # Fester Wertebereich für Confidence/Uncertainty
+    x = np.linspace(0, 1, 500)
+    y = kde(x)
+
+    # Plot
+    fig, ax = plt.subplots(figsize=(8, 5))
+
+    # Histogramm
+    ax.hist(values, bins=50, density=True, alpha=0.3)
+
+    # KDE
+    ax.plot(x, y, linewidth=2, color="blue")
+    ax.fill_between(x, y, color="blue", alpha=0.15)
+
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel("Density")
+    ax.set_xlim(0, 1)
+
+    ax.set_title(f"{xlabel} distribution")
+
+    fig.savefig(filepath, bbox_inches="tight", dpi=300)
+
+    plt.close(fig)
 
 
 def save_predictions_as_zarr(data_dir, predictions, iteration, save_probability=False, save_confidence=False, save_uncertainty=False, save_label=False, save_mask=False, save_label_not_refined=False, save_mask_not_refined=False):

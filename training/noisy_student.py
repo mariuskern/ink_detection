@@ -68,6 +68,8 @@ def generate_pseudo_labels(cfg, checkpoint_paths, iteration, output_dir, tmp_dir
                 save_mask=True,
                 save_label_not_refined=True,
                 save_mask_not_refined=True,
+                save_confidence_kde=True,
+                save_uncertainty_kde=True,
             )
 
             save_predictions_as_zarr(
