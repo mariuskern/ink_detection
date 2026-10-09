@@ -128,7 +128,7 @@ def fit(cfg, logger, output_dir, *, pseudo_label_version=None, iteration=None, a
     # val_dataset = build_dataset(cfg, cfg.train.val, min_mask_fraction=0.0, split="val" if cfg.train.use_validation_mask else None)
     val_dataset = build_dataset(cfg, cfg.train.val, split="val" if cfg.train.use_validation_mask else None)
 
-    train_sampler = build_sampler(cfg, train_dataset)
+    train_sampler = build_sampler(cfg, train_dataset, use_unlabeled_data=use_unlabeled_data)
     
     train_loader = build_dataloader(cfg, train_dataset, train_sampler)
     val_loader = build_dataloader(cfg, val_dataset, None)

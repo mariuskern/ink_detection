@@ -116,14 +116,14 @@ def build_train_dataset(cfg, use_unlabeled_data=False, pseudo_label_version=None
 #     return build_dataset(cfg, segments, min_mask_fraction=0.0)
 
 
-def build_sampler(cfg, dataset):
+def build_sampler(cfg, dataset, use_unlabeled_data=False):
     return create_sampler(
         dataset,
         mode=cfg.sampler.mode,
         num_samples=cfg.sampler.num_samples,
         alpha=cfg.sampler.alpha,
         pos_threshold=cfg.sampler.pos_threshold,
-        # real_fraction=cfg.sampler.real_fraction,
+        real_fraction=cfg.sampler.real_fraction if use_unlabeled_data else None,
     )
 
 
