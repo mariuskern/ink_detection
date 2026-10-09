@@ -11,7 +11,7 @@ def create_sampler(
     alpha=5.0,
     pos_threshold=0.05,
     real_fraction=None,
-    limit_pseudo_tiles=True,
+    limit_pseudo_tiles=False,
 ):
     """
     Creates a weighted sampler that samples approximately

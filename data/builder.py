@@ -124,6 +124,7 @@ def build_sampler(cfg, dataset, use_unlabeled_data=False):
         alpha=cfg.sampler.alpha,
         pos_threshold=cfg.sampler.pos_threshold,
         real_fraction=cfg.sampler.real_fraction if use_unlabeled_data else None,
+        limit_pseudo_tiles=cfg.sampler.limit_pseudo_tiles if use_unlabeled_data else False,
     )
 
 
