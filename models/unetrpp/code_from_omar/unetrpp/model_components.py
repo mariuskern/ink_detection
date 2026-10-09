@@ -1,3 +1,4 @@
+import torch
 from torch import nn
 from timm.layers import trunc_normal_
 from typing import Sequence, Tuple, Union
@@ -28,36 +29,63 @@ def _safe_num_groups(desired, channels):
 
 class UnetrPPEncoder(nn.Module):
     def __init__(self, input_size=[32 * 32 * 32, 16 * 16 * 16, 8 * 8 * 8, 4 * 4 * 4],dims=[32, 64, 128, 256],
-                 proj_size =[64,64,64,32], depths=[3, 3, 3, 3],  num_heads=4, spatial_dims=3, in_channels=1, dropout=0.0, transformer_dropout_rate=0.15,
+                 proj_size =[64,64,64,32], depths=[3, 3, 3, 3],  num_heads=4, spatial_dims=3, in_channels=1,
+                # dropout=0.0, transformer_dropout_rate=0.15,
+                 encoder_dropout_rate=0.0,
+                 attention_dropout_rate=0.15,
+                 conv_dropout_rate=0.0,
+                 conv_projection_dropout_rate=0.1,
+                 drop_path_rate=0.0,
                  pe_mode="3d", stage_depths=None, patch_size=(2, 4, 4), depth_attn=False, da_gamma_init=0.1, surface_relative=False, per_pixel=False, warp_stabilize=False, **kwargs):
         super().__init__()
 
         self.downsample_layers = nn.ModuleList()  # stem and 3 intermediate downsampling conv layers
         patch_size = tuple(patch_size)
         stem_layer = nn.Sequential(
-            get_conv_layer(spatial_dims, in_channels, dims[0], kernel_size=patch_size, stride=patch_size,
-                           dropout=dropout, conv_only=True, ),
+            # get_conv_layer(spatial_dims, in_channels, dims[0], kernel_size=patch_size, stride=patch_size,
+            #                dropout=dropout, conv_only=True, ),
+            get_conv_layer(spatial_dims, in_channels, dims[0], kernel_size=patch_size, stride=patch_size, dropout=encoder_dropout_rate, conv_only=True),
             get_norm_layer(name=("group", {"num_groups": _safe_num_groups(in_channels, dims[0])}), channels=dims[0]),
         )
         self.downsample_layers.append(stem_layer)
         for i in range(3):
             downsample_layer = nn.Sequential(
-                get_conv_layer(spatial_dims, dims[i], dims[i + 1], kernel_size=(2, 2, 2), stride=(2, 2, 2),
-                               dropout=dropout, conv_only=True, ),
+                # get_conv_layer(spatial_dims, dims[i], dims[i + 1], kernel_size=(2, 2, 2), stride=(2, 2, 2),
+                #                dropout=dropout, conv_only=True, ),
+                get_conv_layer(spatial_dims, dims[i], dims[i + 1], kernel_size=(2, 2, 2), stride=(2, 2, 2), dropout=encoder_dropout_rate, conv_only=True),
                 get_norm_layer(name=("group", {"num_groups": dims[i]}), channels=dims[i + 1]),
             )
             self.downsample_layers.append(downsample_layer)
 
         self.stages = nn.ModuleList()  # 4 feature resolution stages, each consisting of multiple Transformer blocks
+
+        # total_blocks = sum(depths)
+        # if not 0.0 <= drop_path_rate < 1.0:
+        #     raise ValueError("drop_path_rate must be in [0, 1).")
+
+        # drop_path_rates = torch.linspace(0.0, drop_path_rate, total_blocks).tolist()
+
+        # block_idx = 0
+
         for i in range(4):
             stage_blocks = []
             pe_depth_i = int(stage_depths[i]) if stage_depths is not None else 1
             for j in range(depths[i]):
+                # stage_blocks.append(TransformerBlock(input_size=input_size[i], hidden_size=dims[i],  proj_size=proj_size[i], num_heads=num_heads,
+                #                      dropout_rate=transformer_dropout_rate, pos_embed=True,
+                #                      pe_mode=pe_mode, pe_depth=pe_depth_i,
+                #                      depth_attn=depth_attn, da_gamma_init=da_gamma_init, surface_relative=surface_relative,
+                #                      per_pixel=per_pixel, warp_stabilize=warp_stabilize))
                 stage_blocks.append(TransformerBlock(input_size=input_size[i], hidden_size=dims[i],  proj_size=proj_size[i], num_heads=num_heads,
-                                     dropout_rate=transformer_dropout_rate, pos_embed=True,
+                                    attention_dropout_rate=attention_dropout_rate,
+                                    conv_dropout_rate=conv_dropout_rate,
+                                    conv_projection_dropout_rate=conv_projection_dropout_rate,
+                                    drop_path_rate=drop_path_rate,
+                                    pos_embed=True,
                                      pe_mode=pe_mode, pe_depth=pe_depth_i,
                                      depth_attn=depth_attn, da_gamma_init=da_gamma_init, surface_relative=surface_relative,
                                      per_pixel=per_pixel, warp_stabilize=warp_stabilize))
+                # block_idx += 1
             self.stages.append(nn.Sequential(*stage_blocks))
         self.hidden_states = []
         self.apply(self._init_weights)
@@ -113,6 +141,10 @@ class UnetrUpBlock(nn.Module):
             surface_relative: bool = False,
             per_pixel: bool = False,
             warp_stabilize: bool = False,
+            attention_dropout_rate: float = 0.15,
+            conv_dropout_rate: float = 0.0,
+            conv_projection_dropout_rate: float = 0.1,
+            drop_path_rate: float = 0.0,
     ) -> None:
         """
         Args:
@@ -145,14 +177,26 @@ class UnetrUpBlock(nn.Module):
 
         # If this is the last decoder, use ConvBlock(UnetResBlock) instead of EPA_Block (see suppl. material in the paper)
         if conv_decoder == True:
+            # self.decoder_block.append(
+            #     UnetResBlock(spatial_dims, out_channels, out_channels, kernel_size=kernel_size, stride=1,
+            #                  norm_name=norm_name, ))
             self.decoder_block.append(
                 UnetResBlock(spatial_dims, out_channels, out_channels, kernel_size=kernel_size, stride=1,
-                             norm_name=norm_name, ))
+                             norm_name=norm_name, dropout=conv_dropout_rate))
         else:
             stage_blocks = []
             for j in range(depth):
+                # stage_blocks.append(TransformerBlock(input_size=out_size, hidden_size= out_channels, proj_size=proj_size, num_heads=num_heads,
+                #                                      dropout_rate=0.15, pos_embed=True,
+                #                                      pe_mode=pe_mode, pe_depth=pe_depth,
+                #                                      depth_attn=depth_attn, da_gamma_init=da_gamma_init, surface_relative=surface_relative,
+                #                                      per_pixel=per_pixel, warp_stabilize=warp_stabilize))
                 stage_blocks.append(TransformerBlock(input_size=out_size, hidden_size= out_channels, proj_size=proj_size, num_heads=num_heads,
-                                                     dropout_rate=0.15, pos_embed=True,
+                                                    attention_dropout_rate=attention_dropout_rate,
+                                                    conv_dropout_rate=conv_dropout_rate,
+                                                    conv_projection_dropout_rate=conv_projection_dropout_rate,
+                                                    drop_path_rate=drop_path_rate,
+                                                    pos_embed=True,
                                                      pe_mode=pe_mode, pe_depth=pe_depth,
                                                      depth_attn=depth_attn, da_gamma_init=da_gamma_init, surface_relative=surface_relative,
                                                      per_pixel=per_pixel, warp_stabilize=warp_stabilize))

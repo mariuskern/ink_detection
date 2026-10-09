@@ -45,7 +45,12 @@ class UNETR_PP_Ink(nn.Module):
         img_size: Sequence[int] = (32, 64, 64),
         patch_size: Sequence[int] = (2, 4, 4),
         proj_size: Sequence[int] = (64, 64, 64, 32),
-        transformer_dropout_rate: float = 0.15,
+        # transformer_dropout_rate: float = 0.15,
+        encoder_dropout_rate=0.0,
+        attention_dropout_rate=0.15,
+        conv_dropout_rate=0.0,
+        conv_projection_dropout_rate=0.1,
+        drop_path_rate=0.0,
         pe_mode: str = "3d",
         depth_attn: bool = False,
         da_gamma_init: float = 0.1,
@@ -91,7 +96,12 @@ class UNETR_PP_Ink(nn.Module):
             depths=list(depths),
             num_heads=num_heads,
             in_channels=in_channels,
-            transformer_dropout_rate=transformer_dropout_rate,
+            # transformer_dropout_rate=transformer_dropout_rate,
+            encoder_dropout_rate=encoder_dropout_rate,
+            attention_dropout_rate=attention_dropout_rate,
+            conv_dropout_rate=conv_dropout_rate,
+            conv_projection_dropout_rate=conv_projection_dropout_rate,
+            drop_path_rate=drop_path_rate,
             pe_mode=pe_mode,
             stage_depths=stage_depths,
             patch_size=self.patch_size,
@@ -103,12 +113,45 @@ class UNETR_PP_Ink(nn.Module):
         )
 
         # full-resolution conv skip (fused in the last decoder)
+        # self.encoder1 = UnetResBlock(
+        #     spatial_dims=3, in_channels=in_channels, out_channels=feature_size,
+        #     kernel_size=3, stride=1, norm_name=norm_name,
+        # )
         self.encoder1 = UnetResBlock(
             spatial_dims=3, in_channels=in_channels, out_channels=feature_size,
-            kernel_size=3, stride=1, norm_name=norm_name,
+            kernel_size=3, stride=1, norm_name=norm_name, dropout=encoder_dropout_rate
         )
 
         # --- decoders (out_size computed from res, NOT hardcoded) -------------
+        # self.decoder5 = UnetrUpBlock(
+        #     spatial_dims=3, in_channels=feature_size * 16, out_channels=feature_size * 8,
+        #     kernel_size=3, upsample_kernel_size=2, norm_name=norm_name,
+        #     proj_size=proj_size[2], num_heads=num_heads, out_size=_prod(res[2]),
+        #     pe_mode=pe_mode, pe_depth=res[2][0],
+        #     depth_attn=depth_attn, da_gamma_init=da_gamma_init, surface_relative=surface_relative,
+        #     per_pixel=per_pixel, warp_stabilize=warp_stabilize,
+        # )
+        # self.decoder4 = UnetrUpBlock(
+        #     spatial_dims=3, in_channels=feature_size * 8, out_channels=feature_size * 4,
+        #     kernel_size=3, upsample_kernel_size=2, norm_name=norm_name,
+        #     proj_size=proj_size[1], num_heads=num_heads, out_size=_prod(res[1]),
+        #     pe_mode=pe_mode, pe_depth=res[1][0],
+        #     depth_attn=depth_attn, da_gamma_init=da_gamma_init, surface_relative=surface_relative,
+        #     per_pixel=per_pixel, warp_stabilize=warp_stabilize,
+        # )
+        # self.decoder3 = UnetrUpBlock(
+        #     spatial_dims=3, in_channels=feature_size * 4, out_channels=feature_size * 2,
+        #     kernel_size=3, upsample_kernel_size=2, norm_name=norm_name,
+        #     proj_size=proj_size[0], num_heads=num_heads, out_size=_prod(res[0]),
+        #     pe_mode=pe_mode, pe_depth=res[0][0],
+        #     depth_attn=depth_attn, da_gamma_init=da_gamma_init, surface_relative=surface_relative,
+        #     per_pixel=per_pixel, warp_stabilize=warp_stabilize,
+        # )
+        # self.decoder2 = UnetrUpBlock(
+        #     spatial_dims=3, in_channels=feature_size * 2, out_channels=feature_size,
+        #     kernel_size=3, upsample_kernel_size=tuple(patch_size), norm_name=norm_name,
+        #     out_size=_prod(img_size), conv_decoder=True,
+        # )
         self.decoder5 = UnetrUpBlock(
             spatial_dims=3, in_channels=feature_size * 16, out_channels=feature_size * 8,
             kernel_size=3, upsample_kernel_size=2, norm_name=norm_name,
@@ -116,6 +159,10 @@ class UNETR_PP_Ink(nn.Module):
             pe_mode=pe_mode, pe_depth=res[2][0],
             depth_attn=depth_attn, da_gamma_init=da_gamma_init, surface_relative=surface_relative,
             per_pixel=per_pixel, warp_stabilize=warp_stabilize,
+            attention_dropout_rate=attention_dropout_rate,
+            conv_dropout_rate=conv_dropout_rate,
+            conv_projection_dropout_rate=conv_projection_dropout_rate,
+            drop_path_rate=drop_path_rate,
         )
         self.decoder4 = UnetrUpBlock(
             spatial_dims=3, in_channels=feature_size * 8, out_channels=feature_size * 4,
@@ -124,6 +171,10 @@ class UNETR_PP_Ink(nn.Module):
             pe_mode=pe_mode, pe_depth=res[1][0],
             depth_attn=depth_attn, da_gamma_init=da_gamma_init, surface_relative=surface_relative,
             per_pixel=per_pixel, warp_stabilize=warp_stabilize,
+            attention_dropout_rate=attention_dropout_rate,
+            conv_dropout_rate=conv_dropout_rate,
+            conv_projection_dropout_rate=conv_projection_dropout_rate,
+            drop_path_rate=drop_path_rate,
         )
         self.decoder3 = UnetrUpBlock(
             spatial_dims=3, in_channels=feature_size * 4, out_channels=feature_size * 2,
@@ -132,11 +183,16 @@ class UNETR_PP_Ink(nn.Module):
             pe_mode=pe_mode, pe_depth=res[0][0],
             depth_attn=depth_attn, da_gamma_init=da_gamma_init, surface_relative=surface_relative,
             per_pixel=per_pixel, warp_stabilize=warp_stabilize,
+            attention_dropout_rate=attention_dropout_rate,
+            conv_dropout_rate=conv_dropout_rate,
+            conv_projection_dropout_rate=conv_projection_dropout_rate,
+            drop_path_rate=drop_path_rate,
         )
         self.decoder2 = UnetrUpBlock(
             spatial_dims=3, in_channels=feature_size * 2, out_channels=feature_size,
             kernel_size=3, upsample_kernel_size=tuple(patch_size), norm_name=norm_name,
             out_size=_prod(img_size), conv_decoder=True,
+            conv_dropout_rate=conv_dropout_rate,
         )
 
     @property
@@ -185,17 +241,65 @@ class UNETR_PP_Ink(nn.Module):
         return self.decode(*features)
 
 
-def build_unetrpp_ink(in_ch: int = 1, img_size=(32, 64, 64), feature_size: int = 16,
-                      depths=(3, 3, 3, 3), dims=(32, 64, 128, 256), num_heads: int = 4,
-                      patch_size=(2, 4, 4), pe_mode: str = "3d",
-                      depth_attn: bool = False, da_gamma_init: float = 0.1,
-                      surface_relative: bool = False, per_pixel: bool = False,
-                      warp_stabilize: bool = False) -> UNETR_PP_Ink:
+# def build_unetrpp_ink(in_ch: int = 1, img_size=(32, 64, 64), feature_size: int = 16,
+#                       depths=(3, 3, 3, 3), dims=(32, 64, 128, 256), num_heads: int = 4,
+#                       patch_size=(2, 4, 4), pe_mode: str = "3d",
+#                       depth_attn: bool = False, da_gamma_init: float = 0.1,
+#                       surface_relative: bool = False, per_pixel: bool = False,
+#                       warp_stabilize: bool = False) -> UNETR_PP_Ink:
+#     return UNETR_PP_Ink(
+#         in_channels=in_ch, img_size=img_size, feature_size=feature_size,
+#         depths=depths, dims=dims, hidden_size=dims[-1], num_heads=num_heads,
+#         patch_size=patch_size, pe_mode=pe_mode,
+#         depth_attn=depth_attn, da_gamma_init=da_gamma_init,
+#         surface_relative=surface_relative, per_pixel=per_pixel,
+#         warp_stabilize=warp_stabilize,
+#     )
+
+
+def build_unetrpp_ink(
+    in_channels: int = 1,
+    feature_size: int = 16,
+    hidden_size: int = 256,
+    num_heads: int = 4,
+    norm_name: Union[Tuple, str] = "instance",
+    depths: Sequence[int] = (3, 3, 3, 3),
+    dims: Sequence[int] = (32, 64, 128, 256),
+    img_size: Sequence[int] = (32, 64, 64),
+    patch_size: Sequence[int] = (2, 4, 4),
+    proj_size: Sequence[int] = (64, 64, 64, 32),
+    encoder_dropout_rate=0.0,
+    attention_dropout_rate=0.15,
+    conv_dropout_rate=0.0,
+    conv_projection_dropout_rate=0.1,
+    drop_path_rate=0.0,
+    pe_mode: str = "3d",
+    depth_attn: bool = False,
+    da_gamma_init: float = 0.1,
+    surface_relative: bool = False,
+    per_pixel: bool = False,
+    warp_stabilize: bool = False,
+) -> UNETR_PP_Ink:
     return UNETR_PP_Ink(
-        in_channels=in_ch, img_size=img_size, feature_size=feature_size,
-        depths=depths, dims=dims, hidden_size=dims[-1], num_heads=num_heads,
-        patch_size=patch_size, pe_mode=pe_mode,
-        depth_attn=depth_attn, da_gamma_init=da_gamma_init,
-        surface_relative=surface_relative, per_pixel=per_pixel,
+        in_channels=in_channels,
+        feature_size=feature_size,
+        hidden_size=hidden_size,
+        num_heads=num_heads,
+        norm_name=norm_name,
+        depths=depths,
+        dims=dims,
+        img_size=img_size,
+        patch_size=patch_size,
+        proj_size=proj_size,
+        encoder_dropout_rate=encoder_dropout_rate,
+        attention_dropout_rate=attention_dropout_rate,
+        conv_dropout_rate=conv_dropout_rate,
+        conv_projection_dropout_rate=conv_projection_dropout_rate,
+        drop_path_rate=drop_path_rate,
+        pe_mode=pe_mode,
+        depth_attn=depth_attn,
+        da_gamma_init=da_gamma_init,
+        surface_relative=surface_relative,
+        per_pixel=per_pixel,
         warp_stabilize=warp_stabilize,
     )

@@ -1,3 +1,5 @@
+from typing import Sequence, Tuple, Union
+
 import torch.nn as nn
 
 from .code_from_omar.shared import TextureStem, DepthCollapse, Head
@@ -7,19 +9,27 @@ from .code_from_omar.unetrpp import build_unetrpp_ink
 class UNetRpp(nn.Module):
     def __init__(
             self,
-            depth,
-            tile_size,
-            feature_size=16,
-            dims=[32, 64, 128, 256],
-            depths=[3, 3, 3, 3],
-            num_heads=4,
-            patch_size=[2, 4, 4],
-            pe_mode="2d",
-            depth_attn=False,
-            da_gamma_init=0.1,
-            surface_relative=False,
-            per_pixel=False,
-            warp_stabilize=False,
+            depth: int,
+            tile_size: int,
+            feature_size: int = 16,
+            hidden_size: int = 256,
+            num_heads: int = 4,
+            norm_name: Union[Tuple, str] = "instance",
+            depths: Sequence[int] = (3, 3, 3, 3),
+            dims: Sequence[int] = (32, 64, 128, 256),
+            patch_size: Sequence[int] = (2, 4, 4),
+            proj_size: Sequence[int] = (64, 64, 64, 32),
+            encoder_dropout_rate=0.0,
+            attention_dropout_rate=0.15,
+            conv_dropout_rate=0.0,
+            conv_projection_dropout_rate=0.1,
+            drop_path_rate=0.0,
+            pe_mode: str = "2d",
+            depth_attn: bool = False,
+            da_gamma_init: float = 0.1,
+            surface_relative: bool = False,
+            per_pixel: bool = False,
+            warp_stabilize: bool = False,
             # Stem
             texture_stem=False,
             stem_out_extra=8,
@@ -40,13 +50,21 @@ class UNetRpp(nn.Module):
         D, H, W = depth, tile_size, tile_size
         
         self.backbone = build_unetrpp_ink(
-            in_ch=in_ch,
-            img_size=(D, H, W),
+            in_channels=in_ch,
             feature_size=feature_size,
+            hidden_size=hidden_size,
+            num_heads=num_heads,
+            norm_name=norm_name,
             depths=depths,
             dims=dims,
-            num_heads=num_heads,
+            img_size=(D, H, W),
             patch_size=patch_size,
+            proj_size=proj_size,
+            encoder_dropout_rate=encoder_dropout_rate,
+            attention_dropout_rate=attention_dropout_rate,
+            conv_dropout_rate=conv_dropout_rate,
+            conv_projection_dropout_rate=conv_projection_dropout_rate,
+            drop_path_rate=drop_path_rate,
             pe_mode=pe_mode,
             depth_attn=depth_attn,
             da_gamma_init=da_gamma_init,

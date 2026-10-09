@@ -3,6 +3,28 @@ import torch
 from .dynunet_block import UnetResBlock
 
 
+
+class DropPath(nn.Module):
+    """Stochastic depth applied independently to each sample's residual branch."""
+
+    def __init__(self, drop_prob: float = 0.0):
+        super().__init__()
+
+        if not 0.0 <= drop_prob < 1.0:
+            raise ValueError("drop_prob must be in [0, 1).")
+        
+        self.drop_prob = float(drop_prob)
+
+    def forward(self, x):
+        if self.drop_prob == 0.0 or not self.training:
+            return x
+
+        keep_prob = 1.0 - self.drop_prob
+        shape = (x.shape[0],) + (1,) * (x.ndim - 1)
+        random_tensor = x.new_empty(shape).bernoulli_(keep_prob)
+        return x * random_tensor / keep_prob
+
+
 class TransformerBlock(nn.Module):
     """
     A transformer block, based on: "Shaker et al.,
@@ -15,7 +37,11 @@ class TransformerBlock(nn.Module):
             hidden_size: int,
             proj_size: int,
             num_heads: int,
-            dropout_rate: float = 0.0,
+            # dropout_rate: float = 0.0,
+            attention_dropout_rate: float = 0.0,
+            conv_dropout_rate: float = 0.0,
+            conv_projection_dropout_rate: float = 0.1,
+            drop_path_rate: float = 0.0,
             pos_embed=False,
             pe_mode: str = "3d",
             pe_depth: int = 1,
@@ -45,8 +71,23 @@ class TransformerBlock(nn.Module):
 
         super().__init__()
 
-        if not (0 <= dropout_rate <= 1):
-            raise ValueError("dropout_rate should be between 0 and 1.")
+        # if not (0 <= dropout_rate <= 1):
+        #     raise ValueError("dropout_rate should be between 0 and 1.")
+
+        if not (0 <= attention_dropout_rate <= 1):
+            raise ValueError("attention_dropout_rate should be between 0 and 1.")
+
+        if not 0 <= conv_dropout_rate <= 1:
+            raise ValueError("conv_dropout_rate should be between 0 and 1.")
+        
+        if not 0 <= conv_projection_dropout_rate <= 1:
+            raise ValueError("conv_projection_dropout_rate should be between 0 and 1.")
+
+        if not 0 <= drop_path_rate <= 1:
+            raise ValueError("drop_path_rate should be between 0 and 1.")
+
+        self.drop_path_attn = DropPath(drop_path_rate)
+        self.drop_path_conv = DropPath(drop_path_rate)
 
         if hidden_size % num_heads != 0:
             print("Hidden size is ", hidden_size)
@@ -58,11 +99,16 @@ class TransformerBlock(nn.Module):
         self.pe_mode = pe_mode
         self.pe_depth = pe_depth
         self.depth_attn = depth_attn
-        self.epa_block = EPA(input_size=input_size, hidden_size=hidden_size, proj_size=proj_size, num_heads=num_heads, channel_attn_drop=dropout_rate,spatial_attn_drop=dropout_rate,
+        # self.epa_block = EPA(input_size=input_size, hidden_size=hidden_size, proj_size=proj_size, num_heads=num_heads, channel_attn_drop=dropout_rate,spatial_attn_drop=dropout_rate,
+        #                      depth_attn=depth_attn, depth_size=pe_depth, da_gamma_init=da_gamma_init, surface_relative=surface_relative,
+        #                      per_pixel=per_pixel, warp_stabilize=warp_stabilize)
+        # self.conv51 = UnetResBlock(3, hidden_size, hidden_size, kernel_size=3, stride=1, norm_name="batch")
+        # self.conv8 = nn.Sequential(nn.Dropout3d(0.1, False), nn.Conv3d(hidden_size, hidden_size, 1))
+        self.epa_block = EPA(input_size=input_size, hidden_size=hidden_size, proj_size=proj_size, num_heads=num_heads, channel_attn_drop=attention_dropout_rate, spatial_attn_drop=attention_dropout_rate,
                              depth_attn=depth_attn, depth_size=pe_depth, da_gamma_init=da_gamma_init, surface_relative=surface_relative,
                              per_pixel=per_pixel, warp_stabilize=warp_stabilize)
-        self.conv51 = UnetResBlock(3, hidden_size, hidden_size, kernel_size=3, stride=1, norm_name="batch")
-        self.conv8 = nn.Sequential(nn.Dropout3d(0.1, False), nn.Conv3d(hidden_size, hidden_size, 1))
+        self.conv51 = UnetResBlock(3, hidden_size, hidden_size, kernel_size=3, stride=1, norm_name="batch", dropout=conv_dropout_rate)
+        self.conv8 = nn.Sequential(nn.Dropout3d(conv_projection_dropout_rate, False), nn.Conv3d(hidden_size, hidden_size, 1))
 
         self.pos_embed = None
         if pos_embed:
@@ -96,8 +142,11 @@ class TransformerBlock(nn.Module):
         attn = x + self.gamma * self.epa_block(self.norm(x), dims)
 
         attn_skip = attn.reshape(B, H, W, D, C).permute(0, 4, 1, 2, 3)  # (B, C, H, W, D)
-        attn = self.conv51(attn_skip)
-        x = attn_skip + self.conv8(attn)
+        # attn = self.conv51(attn_skip)
+        # x = attn_skip + self.conv8(attn)
+        conv_out = self.conv51(attn_skip)
+        conv_out = self.conv8(conv_out)
+        x = attn_skip + self.drop_path_conv(conv_out)
 
         return x
 
