@@ -1,6 +1,8 @@
 .vscode
 /output
 /outputs
+/outputs_work
+/outputs_ws
 /tmp
 /wandb
 /logs
