@@ -1,5 +1,5 @@
 defaults:
   - dice_bce
 
-bce_label_smoothing: 0
-dice_label_smoothing: 0
+bce_label_smoothing: 0.25
+dice_label_smoothing: 0.25
