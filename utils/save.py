@@ -212,31 +212,48 @@ def _save_kde_plot(output_dir, name, segment, image, name_suffix, create_subfold
     if values.size < 2:
         return
 
-    # KDE berechnen
-    kde = gaussian_kde(values)
+    # # KDE berechnen
+    # kde = gaussian_kde(values)
 
-    # Fester Wertebereich für Confidence/Uncertainty
-    x = np.linspace(0, 1, 500)
-    y = kde(x)
+    # # Fester Wertebereich für Confidence/Uncertainty
+    # x = np.linspace(0, 1, 500)
+    # y = kde(x)
 
-    # Plot
+    # # Plot
+    # fig, ax = plt.subplots(figsize=(8, 5))
+
+    # # Histogramm
+    # ax.hist(values, bins=50, density=True, alpha=0.3)
+
+    # # KDE
+    # ax.plot(x, y, linewidth=2, color="blue")
+    # ax.fill_between(x, y, color="blue", alpha=0.15)
+
+    # ax.set_xlabel(xlabel)
+    # ax.set_ylabel("Density")
+    # ax.set_xlim(0, 1)
+
+    # ax.set_title(f"{xlabel} distribution")
+
+    # fig.savefig(filepath, bbox_inches="tight", dpi=300)
+
+    # plt.close(fig)
+
+    hist, bin_edges = np.histogram(values, bins=100, range=(0, 1), density=True)
+
+    x = (bin_edges[:-1] + bin_edges[1:]) / 2
+    bin_width = bin_edges[1] - bin_edges[0]
+
     fig, ax = plt.subplots(figsize=(8, 5))
 
-    # Histogramm
-    ax.hist(values, bins=50, density=True, alpha=0.3)
-
-    # KDE
-    ax.plot(x, y, linewidth=2, color="blue")
-    ax.fill_between(x, y, color="blue", alpha=0.15)
+    ax.bar(x, hist, width=bin_width, alpha=0.3, align="center")
 
     ax.set_xlabel(xlabel)
     ax.set_ylabel("Density")
     ax.set_xlim(0, 1)
-
     ax.set_title(f"{xlabel} distribution")
 
-    fig.savefig(filepath, bbox_inches="tight", dpi=300)
-
+    fig.savefig(filepath, bbox_inches="tight", dpi=150)
     plt.close(fig)
 
 
