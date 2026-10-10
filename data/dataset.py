@@ -7,7 +7,8 @@ import zarr
 from torch.utils.data import Dataset, ConcatDataset
 from torchvision import tv_tensors
 
-from utils import get_tiles, save_tiles, get_segment_paths
+from utils.tiles import get_tiles, save_tiles
+from utils.segment_paths import get_segment_paths
 
 
 class CombinedInkDataset(ConcatDataset):

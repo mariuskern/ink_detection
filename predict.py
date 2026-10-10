@@ -18,7 +18,8 @@ import hydra
 from hydra import compose, initialize
 from omegaconf import OmegaConf, DictConfig
 
-from utils import predict, save_predictions_as_images
+from utils.predict import predict
+from utils.save import save_predictions_as_images
 from utils.device import get_device
 from models import build_model
 from data.augmentations import build_augmentation

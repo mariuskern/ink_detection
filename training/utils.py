@@ -48,7 +48,9 @@ from tqdm import tqdm
 from data.builder import build_train_dataset, build_dataset, build_sampler, build_dataloader
 from models import build_model
 from losses import build_loss
-from utils import PredictionMerger, save_predictions_as_images, calculate_dice, calculate_iou
+from utils.prediction_merger import PredictionMerger
+from utils.save import save_predictions_as_images
+from utils.evaluation import calculate_dice, calculate_iou
 from utils.device import get_device
 from .precision import parse_precision, autocast_context
 from .checkpoint import CheckpointManager

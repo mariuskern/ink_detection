@@ -136,7 +136,11 @@ def save_predictions_as_images(
 #     plt.close(fig)
 
 
-def _save_image(output_dir, name, segment, image, name_suffix, create_subfolders):
+def _save_image(output_dir, name, segment, image, name_suffix, create_subfolders, cmap="gray"):
+    """
+    cmap: gray magma
+    """
+
     # print(
     #     f"{name}: shape={image.shape}, "
     #     f"dtype={image.dtype}, "
@@ -149,37 +153,27 @@ def _save_image(output_dir, name, segment, image, name_suffix, create_subfolders
     filename = f"{segment}_{name}{'_' + name_suffix if name_suffix is not None else ''}.png"
     filepath = directory / filename
 
-    image = np.asarray(image)
-
     if hasattr(image, "detach"):
         image = image.detach().cpu().numpy()
 
-    image = np.squeeze(image)
+    image = np.squeeze(np.asarray(image))
 
-    image_min = np.float32(image.min())
-    image_max = np.float32(image.max())
+    # image_min = np.float32(image.min())
+    # image_max = np.float32(image.max())
 
-    if image_max > image_min:
-        image = (image - image_min) / (image_max - image_min)
-        image = image.astype(np.float32, copy=False)
-    else:
-        image = np.zeros_like(image)
-
-    # Matplotlib-Colormap direkt auf das Array anwenden
-    # rgba = plt.get_cmap("magma")(image)
-
-    # [0, 1] -> [0, 255]
-    # rgba = (rgba * 255).astype(np.uint8)
-
-    # Alpha-Kanal entfernen -> RGB PNG
-    # rgb = rgba[..., :3]
+    # if image_max > image_min:
+    #     image = (image - image_min) / (image_max - image_min)
+    #     image = image.astype(np.float32, copy=False)
+    # else:
+    #     image = np.zeros_like(image)
 
     # 256-color lookup table
-    cmap = plt.get_cmap("magma", 256)
+    cmap = plt.get_cmap(cmap, 256)
     lut = (cmap(np.arange(256))[:, :3] * 255).astype(np.uint8)
 
     # [0, 1] -> [0, 255]
-    indices = (image * 255).astype(np.uint8)
+    # indices = (image * 255).astype(np.uint8)
+    indices = (np.clip(image, 0, 1) * 255).astype(np.uint8)
 
     # Apply colormap
     rgb = lut[indices]

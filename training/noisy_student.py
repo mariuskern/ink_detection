@@ -4,7 +4,9 @@ import torch
 from torch.optim.swa_utils import AveragedModel
 
 from training.utils import fit
-from utils import predict, postprocess_prediction, save_predictions_as_images, save_predictions_as_zarr
+from utils.predict import predict
+from utils.postprocess import postprocess_prediction
+from utils.save import save_predictions_as_images, save_predictions_as_zarr
 from utils.device import get_device
 from data import build_dataset, build_dataloader, build_augmentation
 from training.precision import parse_precision
