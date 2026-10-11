@@ -2,3 +2,5 @@ defaults:
   - base
 
 num_samples: 100
+real_fraction: 0.5
+limit_pseudo_tiles: true

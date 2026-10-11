@@ -83,7 +83,7 @@ class TransformerBlock(nn.Module):
         if not 0 <= conv_projection_dropout_rate <= 1:
             raise ValueError("conv_projection_dropout_rate should be between 0 and 1.")
 
-        if not 0 <= drop_path_rate <= 1:
+        if not 0 <= drop_path_rate < 1:
             raise ValueError("drop_path_rate should be between 0 and 1.")
 
         self.drop_path_attn = DropPath(drop_path_rate)
@@ -139,7 +139,7 @@ class TransformerBlock(nn.Module):
             else:
                 x = x + self.pos_embed
         dims = (H, W, D) if self.depth_attn else None
-        attn = x + self.gamma * self.epa_block(self.norm(x), dims)
+        attn = x + self.drop_path_attn(self.gamma * self.epa_block(self.norm(x), dims))
 
         attn_skip = attn.reshape(B, H, W, D, C).permute(0, 4, 1, 2, 3)  # (B, C, H, W, D)
         # attn = self.conv51(attn_skip)

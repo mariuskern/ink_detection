@@ -142,7 +142,19 @@ def create_sampler(
                 weights[mask] *= target_mass / weights[mask].sum().clamp_min(1e-12)
             elif target_mass > 0:
                 raise ValueError("Cannot satisfy real_fraction and 50/50 positive/negative sampling because one of the required groups is empty.")
-
+        
+        print(
+            f"[Sampler Debug] "
+            f"real_fraction={real_fraction:.4f} | "
+            f"real_pos: n={(is_real & positive).sum().item()}, "
+            f"w={weights[is_real & positive].sum().item():.4f} | "
+            f"real_neg: n={(is_real & ~positive).sum().item()}, "
+            f"w={weights[is_real & ~positive].sum().item():.4f} | "
+            f"pseudo_pos: n={(is_pseudo & positive).sum().item()}, "
+            f"w={weights[is_pseudo & positive].sum().item():.4f} | "
+            f"pseudo_neg: n={(is_pseudo & ~positive).sum().item()}, "
+            f"w={weights[is_pseudo & ~positive].sum().item():.4f}"
+        )
     else:
         # No real/pseudo balancing requested:
         # normalize positive and negative classes to 50/50.
@@ -154,6 +166,16 @@ def create_sampler(
 
             weights[positive] *= 0.5 / pos_sum
             weights[~positive] *= 0.5 / neg_sum
+
+    print(
+        f"[Sampler Debug] "
+        f"num_samples={num_samples if num_samples is not None else len(dataset)}, "
+        f"real_fraction={real_fraction}, "
+        f"limit_pseudo_tiles={limit_pseudo_tiles}, "
+        f"total_weight={weights.sum().item():.4f}, "
+        f"positive_weight={weights[positive].sum().item():.4f}, "
+        f"negative_weight={weights[~positive].sum().item():.4f}"
+    )
 
     sampler = WeightedRandomSampler(
         weights=weights,
