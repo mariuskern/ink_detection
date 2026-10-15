@@ -3,8 +3,8 @@ from pathlib import Path
 from tqdm import tqdm
 import torch
 
-from .prediction_merger import PredictionMerger
-from .interpolate import interpolate_reverse
+from utils.prediction_merger import PredictionMerger
+from utils.interpolate import interpolate_reverse
 from training.precision import parse_precision, autocast_context
 from utils.load_model import load_model_from_checkpoint
 

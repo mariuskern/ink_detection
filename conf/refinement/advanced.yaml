@@ -11,6 +11,6 @@ steps:
     threshold: 0.15 # 0.15 0.05 0.05
   
   - name: remove_small_objects
-    min_size: 20000 # 1000
+    min_size: 200000 # 1000              # 1667: 200000; 0172: 20000
     connectivity: 4
     update_mask: true

@@ -15,7 +15,7 @@ load_dotenv()
 
 sys.path.append(os.getenv("CODE_DIR"))
 
-from utils import Prediction
+from utils.prediction_merger import Prediction
 from utils.refinement import build_label_refinement
 
 
