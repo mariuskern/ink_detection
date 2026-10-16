@@ -1,3 +1,6 @@
+# NOTE: Additional information about the model can be found in `resnet3d_reference.py`.
+
+
 """HuggingFace-style wrapper around the ResNet3D-50 + 2-D U-Net ink-detection model.
 
 This file is **self-contained** — vendored ResNet3D-50 (Hara et al., 2018)
@@ -135,7 +138,7 @@ class _Decoder(nn.Module):
         return self.up(self.logit(feature_maps[0]))
 
 
-class InkDetectionModel(nn.Module):
+class VesuviusResNet3D_HF(nn.Module):
     """Vesuvius Challenge ink-detection model.
 
     Pipeline:

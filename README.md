@@ -13,6 +13,7 @@ conda env create -f environment.yml
 DATA_DIR=<data_dir>
 CODE_DIR=<code_dir>
 OUTPUT_DIR=<output_dir>
+TMP_DIR=<tmp_dir>
 ```
 
 ## Prepare data

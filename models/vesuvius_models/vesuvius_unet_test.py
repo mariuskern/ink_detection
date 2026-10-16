@@ -10,43 +10,8 @@ load_dotenv()
 
 sys.path.append(os.getenv("CODE_DIR"))
 
-from models.vesuvius_models import VesuviusUNet
-from models.vesuvius_models.challenge_code_5479453.config import TrainingConfig, resolve_training_mapping
-from models.vesuvius_models.challenge_code_5479453.model import make_model
-
-
-config = {
-    "out_dir": "runs/ink_tutorial",
-    "seed": 42,
-    "mode": "flat",
-    "model_type": "vesuvius_unet", # vesuvius_unet vesuvius_unet_2p5d
-    "in_channels": 1,
-    "model_config": {"autoconfigure": True, "z_projection_mode": "max"},
-    "targets": {
-        "ink": {"out_channels": 1, "activation": "none", "z_projection_mode": "max"}
-    },
-    "patch_size": [64, 256, 256],
-    "patch_overlap": 0.5,
-    "patch_min_labeled_coverage": 0.05,
-    "batch_size": 2,
-    "num_iterations": 20000,
-    "learning_rate": 0.01,
-    "mixed_precision": "fp16",
-    "dataloader_workers": 4,
-    "val_every": 500,
-    "save_every": 1000,
-    "verify_finite_gradients_steps": 200,
-    "max_amp_overflow_events": 4,
-    "datasets": [
-        {
-            "segments_path": "/path/to/ink-dataset/phercparis4",
-            "segments": ["w00_20231016151002"],
-            "volume_scale": "0",
-        }
-    ],
-}
-
-config = TrainingConfig.from_mapping(resolve_training_mapping(config))
+from models.vesuvius_models.vesuvius_unet import VesuviusUNet
+from models.vesuvius_models.vesuvius_unet_reference import VesuviusUnet_GitHub
 
 
 def _get_arguments():
@@ -55,7 +20,7 @@ def _get_arguments():
     )
 
     parser.add_argument(
-        "--checkpoint_path",
+        "--checkpoint-path",
         type=Path,
         default=None,
         help="Path to the checkpoint file.",
@@ -65,17 +30,17 @@ def _get_arguments():
 
 
 def main(args):
-    original_model = make_model(config.ink).cuda()
+    original_model = VesuviusUnet_GitHub().cuda()
     model = VesuviusUNet(in_channels=1, out_channels=1, z_projection="max").cuda()
 
     if args.checkpoint_path is not None and args.checkpoint_path.exists():
         ckpt = torch.load(args.checkpoint_path, weights_only=False)
-        original_model.load_state_dict(ckpt["model"])
+        original_model.load_vesuvius_checkpoint(ckpt)
         print("Original model checkpoint loaded")
         model.load_vesuvius_checkpoint(ckpt)
         print("Reimplemented model checkpoint loaded")
     else:
-        model.load_vesuvius_checkpoint(original_model.state_dict())
+        model.load_vesuvius_checkpoint(original_model.get_state_dict())
 
     model.eval()
     original_model.eval()

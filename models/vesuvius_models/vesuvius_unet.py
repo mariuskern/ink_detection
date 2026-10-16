@@ -6,228 +6,1786 @@
 # absolute difference: 0).
 
 
-import os
-from typing import Union, Tuple
-
 import torch
+import torch.nn
+from typing import Type
+import numpy as np
 import torch.nn as nn
+from torch.nn.modules.batchnorm import _BatchNorm
+from torch.nn.modules.conv import _ConvNd
+from torch.nn.modules.conv import _ConvTransposeNd
+from torch.nn.modules.dropout import _DropoutNd
+from torch.nn.modules.instancenorm import _InstanceNorm
+import torch.nn.functional as F
+from typing import Tuple
+from typing import List
+from typing import Union
+from torch import nn
+from collections.abc import Mapping
+from pathlib import Path
 
 
-class ConvNormAct(nn.Module):
-    """3D Conv + InstanceNorm3d (affine=True) + optional LeakyReLU."""
+def convert_conv_op_to_dim(conv_op: Type[_ConvNd]) -> int:
+    """
+    :param conv_op: conv class
+    :return: dimension: 1, 2 or 3
+    """
+    if conv_op == nn.Conv1d:
+        return 1
+    elif conv_op == nn.Conv2d:
+        return 2
+    elif conv_op == nn.Conv3d:
+        return 3
+    else:
+        raise ValueError("Unknown dimension. Only 1d 2d and 3d conv are supported. got %s" % str(conv_op))
+
+
+def get_matching_pool_op(conv_op: Type[_ConvNd] = None,
+                         dimension: int = None,
+                         adaptive=False,
+                         pool_type: str = 'avg') -> Type[torch.nn.Module]:
+    """
+    You MUST set EITHER conv_op OR dimension. Do not set both!
+    :param conv_op:
+    :param dimension:
+    :param adaptive:
+    :param pool_type: either 'avg' or 'max'
+    :return:
+    """
+    assert not ((conv_op is not None) and (dimension is not None)), \
+        "You MUST set EITHER conv_op OR dimension. Do not set both!"
+    assert pool_type in ['avg', 'max'], 'pool_type must be either avg or max'
+    if conv_op is not None:
+        dimension = convert_conv_op_to_dim(conv_op)
+    assert dimension in [1, 2, 3], 'Dimension must be 1, 2 or 3'
+
+    if conv_op is not None:
+        dimension = convert_conv_op_to_dim(conv_op)
+
+    if dimension == 1:
+        if pool_type == 'avg':
+            if adaptive:
+                return nn.AdaptiveAvgPool1d
+            else:
+                return nn.AvgPool1d
+        elif pool_type == 'max':
+            if adaptive:
+                return nn.AdaptiveMaxPool1d
+            else:
+                return nn.MaxPool1d
+    elif dimension == 2:
+        if pool_type == 'avg':
+            if adaptive:
+                return nn.AdaptiveAvgPool2d
+            else:
+                return nn.AvgPool2d
+        elif pool_type == 'max':
+            if adaptive:
+                return nn.AdaptiveMaxPool2d
+            else:
+                return nn.MaxPool2d
+    elif dimension == 3:
+        if pool_type == 'avg':
+            if adaptive:
+                return nn.AdaptiveAvgPool3d
+            else:
+                return nn.AvgPool3d
+        elif pool_type == 'max':
+            if adaptive:
+                return nn.AdaptiveMaxPool3d
+            else:
+                return nn.MaxPool3d
+
+
+def get_matching_convtransp(conv_op: Type[_ConvNd] = None, dimension: int = None) -> Type[_ConvTransposeNd]:
+    """
+    You MUST set EITHER conv_op OR dimension. Do not set both!
+
+    :param conv_op:
+    :param dimension:
+    :return:
+    """
+    assert not ((conv_op is not None) and (dimension is not None)), \
+        "You MUST set EITHER conv_op OR dimension. Do not set both!"
+    if conv_op is not None:
+        dimension = convert_conv_op_to_dim(conv_op)
+    assert dimension in [1, 2, 3], 'Dimension must be 1, 2 or 3'
+    if dimension == 1:
+        return nn.ConvTranspose1d
+    elif dimension == 2:
+        return nn.ConvTranspose2d
+    elif dimension == 3:
+        return nn.ConvTranspose3d
+
+
+def maybe_convert_scalar_to_list(conv_op, scalar):
+    """
+    useful for converting, for example, kernel_size=3 to [3, 3, 3] in case of nn.Conv3d
+    :param conv_op:
+    :param scalar:
+    :return:
+    """
+    if not isinstance(scalar, (tuple, list, np.ndarray)):
+        if conv_op == nn.Conv2d:
+            return [scalar] * 2
+        elif conv_op == nn.Conv3d:
+            return [scalar] * 3
+        elif conv_op == nn.Conv1d:
+            return [scalar] * 1
+        else:
+            raise RuntimeError("Invalid conv op: %s" % str(conv_op))
+    else:
+        return scalar
+
+
+class DropPath(nn.Module):
+    """Drop paths (Stochastic Depth) per sample."""
+    def __init__(self, drop_prob=None):
+        super(DropPath, self).__init__()
+        self.drop_prob = drop_prob
+
+    def forward(self, x):
+        if self.drop_prob == 0. or not self.training:
+            return x
+        keep_prob = 1 - self.drop_prob
+        shape = (x.shape[0],) + (1,) * (x.ndim - 1)
+        random_tensor = keep_prob + torch.rand(shape, dtype=x.dtype, device=x.device)
+        random_tensor.floor_()
+        output = x.div(keep_prob) * random_tensor
+        return output
+
+
+def _make_divisible(v, divisor=8, min_value=None, round_limit=0.9):
+    min_value = min_value or divisor
+    new_v = max(min_value, int(v + divisor / 2) // divisor * divisor)
+    if new_v < round_limit * v:
+        new_v += divisor
+    return new_v
+
+
+class SqueezeExcite(nn.Module):
+    """Squeeze-and-Excitation module for channel attention.
+
+    See https://github.com/MIC-DKFZ/dynamic-network-architectures/blob/main/dynamic_network_architectures/building_blocks/regularization.py
+    """
     def __init__(
-        self,
-        in_ch: int,
-        out_ch: int,
-        kernel_size: Union[int, Tuple[int, int, int]] = 3,
-        stride: Union[int, Tuple[int, int, int]] = 1,
-        bias: bool = True,
-        act: bool = True,
-    ):
-        super().__init__()
-        if isinstance(kernel_size, int):
-            kernel_size = (kernel_size, kernel_size, kernel_size)
-        if isinstance(stride, int):
-            stride = (stride, stride, stride)
-        padding = tuple((k - 1) // 2 for k in kernel_size)
+            self,
+            channels,
+            conv_op,
+            rd_ratio=1./16,
+            rd_channels=None,
+            rd_divisor=8,
+            add_maxpool=False,
+            act_layer=nn.ReLU,
+            norm_layer=None,
+            gate_layer=nn.Sigmoid):
+        super(SqueezeExcite, self).__init__()
+        self.add_maxpool = add_maxpool
+        if not rd_channels:
+            rd_channels = _make_divisible(channels * rd_ratio, rd_divisor, round_limit=0.)
+        self.fc1 = conv_op(channels, rd_channels, kernel_size=1, bias=True)
+        self.bn = norm_layer(rd_channels) if norm_layer else nn.Identity()
+        self.act = act_layer(inplace=True)
+        self.fc2 = conv_op(rd_channels, channels, kernel_size=1, bias=True)
+        self.gate = gate_layer()
 
-        self.conv = nn.Conv3d(
-            in_ch, out_ch, kernel_size=kernel_size, stride=stride, padding=padding, bias=bias
+        if conv_op == nn.Conv3d:
+            self._spatial_dims = (2, 3, 4)
+        elif conv_op == nn.Conv2d:
+            self._spatial_dims = (2, 3)
+        elif conv_op == nn.Conv1d:
+            self._spatial_dims = (2,)
+        else:
+            raise RuntimeError(f"Invalid conv op: {conv_op}")
+
+    def forward(self, x):
+        x_se = x.mean(self._spatial_dims, keepdim=True)
+        if self.add_maxpool:
+            x_se = 0.5 * x_se + 0.5 * x.amax(self._spatial_dims, keepdim=True)
+        x_se = self.fc1(x_se)
+        x_se = self.act(self.bn(x_se))
+        x_se = self.fc2(x_se)
+        return x * self.gate(x_se)
+
+
+class SpatialSE(nn.Module):
+    """Spatial Squeeze-and-Excitation layer.
+
+    Re-implementation of spatial SE from:
+        Roy et al., Concurrent Spatial and Channel Squeeze & Excitation
+        in Fully Convolutional Networks, MICCAI 2018
+
+    Learns which channels are important at each spatial location via
+    a 1x1 conv projection across all channels.
+    """
+    def __init__(
+            self,
+            channels,
+            conv_op,
+            gate_layer=nn.Sigmoid):
+        super(SpatialSE, self).__init__()
+        # 1x1 conv: project all channels to 1 channel (spatial attention map)
+        self.conv = conv_op(channels, 1, kernel_size=1, bias=True)
+        self.gate = gate_layer()
+
+    def forward(self, x):
+        # Spatial squeeze: (B, C, D, H, W) -> (B, 1, D, H, W)
+        squeeze = self.conv(x)
+        # Spatial excitation
+        return x * self.gate(squeeze)
+
+
+class ChannelSpatialSE(nn.Module):
+    """Concurrent Spatial and Channel SE (scSE) attention.
+
+    Re-implementation of concurrent spatial and channel squeeze & excitation:
+        Roy et al., Concurrent Spatial and Channel Squeeze & Excitation
+        in Fully Convolutional Networks, MICCAI 2018
+
+    Applies both channel SE and spatial SE in parallel and combines via addition.
+    """
+    def __init__(
+            self,
+            channels,
+            conv_op,
+            rd_ratio=1./16,
+            rd_channels=None,
+            rd_divisor=8,
+            add_maxpool=False,
+            act_layer=nn.ReLU,
+            norm_layer=None,
+            gate_layer=nn.Sigmoid):
+        super(ChannelSpatialSE, self).__init__()
+
+        # Channel SE (cSE)
+        self.cSE = SqueezeExcite(
+            channels, conv_op, rd_ratio, rd_channels, rd_divisor,
+            add_maxpool, act_layer, norm_layer, gate_layer
         )
-        self.norm = nn.InstanceNorm3d(out_ch, affine=True, eps=1e-5)
-        self.act = nn.LeakyReLU(negative_slope=0.01, inplace=True) if act else None
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.conv(x)
-        x = self.norm(x)
-        if self.act is not None:
-            x = self.act(x)
+        # Spatial SE (sSE)
+        self.sSE = SpatialSE(channels, conv_op, gate_layer)
+
+    def forward(self, x):
+        # Combine via addition (as per Roy et al.)
+        return self.cSE(x) + self.sSE(x)
+
+
+def create_attention_module(
+        attention_type: str,
+        channels: int,
+        conv_op,
+        rd_ratio: float = 1./16,
+        rd_channels: int = None,
+        rd_divisor: int = 8,
+        add_maxpool: bool = False,
+        act_layer=nn.ReLU,
+        norm_layer=None,
+        gate_layer=nn.Sigmoid):
+    """Factory function to create attention modules.
+
+    Based on Roy et al., Concurrent Spatial and Channel Squeeze & Excitation
+    in Fully Convolutional Networks, MICCAI 2018.
+
+    Parameters
+    ----------
+    attention_type : str
+        One of: "channel" (cSE), "spatial" (sSE), "scse" (both combined)
+    channels : int
+        Number of input channels
+    conv_op : nn.Module
+        Convolution operation (nn.Conv1d, nn.Conv2d, nn.Conv3d)
+    rd_ratio : float
+        Reduction ratio for channel attention (default 1/16)
+    rd_channels : int, optional
+        Override reduction channels directly
+    rd_divisor : int
+        Divisor for making channels divisible (default 8)
+    add_maxpool : bool
+        Use max pooling in addition to avg pooling for channel SE (default False)
+
+    Returns
+    -------
+    nn.Module
+        The attention module
+    """
+    attention_type = attention_type.lower()
+
+    if attention_type == "channel":
+        return SqueezeExcite(
+            channels, conv_op, rd_ratio, rd_channels, rd_divisor,
+            add_maxpool, act_layer, norm_layer, gate_layer
+        )
+    elif attention_type == "spatial":
+        return SpatialSE(channels, conv_op, gate_layer)
+    elif attention_type == "scse":
+        return ChannelSpatialSE(
+            channels, conv_op, rd_ratio, rd_channels, rd_divisor,
+            add_maxpool, act_layer, norm_layer, gate_layer
+        )
+    else:
+        raise ValueError(f"Unknown attention type: {attention_type}. "
+                        f"Must be one of: channel, spatial, scse")
+
+
+class SwiGLU(nn.Module):
+    """
+    SwiGLU activation function: SwiGLU(x) = Swish(x1) * x2
+    where x1, x2 are the first and second half of the input channels
+    
+    Reference: https://arxiv.org/abs/2002.05202
+    """
+    def __init__(self, dim=1):
+        super().__init__()
+        self.dim = dim
+    
+    def forward(self, x):
+        # Split input in half along the channel dimension
+        x1, x2 = x.chunk(2, dim=self.dim)
+        # Match timm SwiGLU gate behavior (plain SiLU without clamping)
+        gate = F.silu(x1)
+        return gate * x2
+
+
+class SwiGLUBlock(nn.Module):
+    """
+    Linear(d → 2xhidden) → SwiGLU → Linear(hidden → d)
+    """
+    def __init__(self, channels, conv_op, bias=True, expansion_factor=16/3):
+        super().__init__()
+        hidden_channels = int(channels * expansion_factor)
+        # Ensure hidden_channels is even for the split in SwiGLU
+        hidden_channels = 2 * (hidden_channels // 2)
+        
+        # Expand to 2xhidden channels (for gate and value pathways)
+        # bias=True helps with stability
+        self.w_gate = conv_op(channels, hidden_channels, kernel_size=1, bias=bias)
+        # SwiGLU activation splits channels in half
+        self.swiglu = SwiGLU(dim=1)
+        # Project back from hidden/2 to original channels
+        self.w_out = conv_op(hidden_channels // 2, channels, kernel_size=1, bias=bias)
+        
+        # Initialize weights specifically for SwiGLU
+        self._initialize_swiglu_weights()
+        
+    def _initialize_swiglu_weights(self):
+        """Custom initialization for SwiGLU to prevent NaN issues"""
+        with torch.no_grad():
+            # Conservative initialization for gate pathway
+            # Use smaller gain to prevent explosion
+            nn.init.xavier_uniform_(self.w_gate.weight, gain=0.5)
+            if hasattr(self.w_gate, 'bias') and self.w_gate.bias is not None:
+                nn.init.zeros_(self.w_gate.bias)
+            
+            # Output projection initialized with small values
+            nn.init.xavier_uniform_(self.w_out.weight, gain=0.5)
+            if hasattr(self.w_out, 'bias') and self.w_out.bias is not None:
+                nn.init.zeros_(self.w_out.bias)
+        
+    def forward(self, x):
+        # Expand → SwiGLU → Project
+        x = self.w_gate(x)
+        x = self.swiglu(x)  # Output has hidden_channels // 2
+        x = self.w_out(x)
         return x
 
 
-class ResBlockD(nn.Module):
+class GLU(nn.Module):
     """
-    ResNet-D Residual-Block mit AvgPool3d im Skip-Pfad bei Strides.
+    Gated Linear Unit: GLU(x) = x1 * sigmoid(x2)
+    where x1, x2 are the first and second half of the input channels
+    
+    Reference: https://arxiv.org/abs/1612.08083
     """
-    def __init__(self, in_ch: int, out_ch: int, stride: Union[int, Tuple[int, int, int]] = 1):
+    def __init__(self, dim=1):
         super().__init__()
-        if isinstance(stride, int):
-            stride = (stride, stride, stride)
+        self.dim = dim
+    
+    def forward(self, x):
+        # Split input in half along the channel dimension
+        x1, x2 = x.chunk(2, dim=self.dim)
+        # Apply sigmoid to second half, multiply by first half
+        return x1 * torch.sigmoid(x2)
+
+
+class GLUBlock(nn.Module):
+    """
+    Linear(d → 2xhidden) → GLU → Linear(hidden → d)
+    Similar to SwiGLUBlock but with GLU activation.
+    """
+    def __init__(self, channels, conv_op, bias=False, expansion_factor=8/3):
+        super().__init__()
+        # expansion factor similar to SwiGLU
+        hidden_channels = int(channels * expansion_factor)
+        # Ensure hidden_channels is even for the split in GLU
+        hidden_channels = 2 * (hidden_channels // 2)
+        
+        # Expand to 2xhidden channels (for gate and value pathways)
+        self.w_gate = conv_op(channels, hidden_channels, kernel_size=1, bias=bias)
+        # GLU activation splits channels in half
+        self.glu = GLU(dim=1)
+        # Project back from hidden/2 to original channels
+        self.w_out = conv_op(hidden_channels // 2, channels, kernel_size=1, bias=bias)
+        
+    def forward(self, x):
+        # Expand → GLU → Project
+        x = self.w_gate(x)
+        x = self.glu(x)  # Output has hidden_channels // 2
+        x = self.w_out(x)
+        return x
+
+
+class ConvDropoutNormReLU(nn.Module):
+    def __init__(self,
+                 conv_op: Type[_ConvNd],
+                 input_channels: int,
+                 output_channels: int,
+                 kernel_size: Union[int, List[int], Tuple[int, ...]],
+                 stride: Union[int, List[int], Tuple[int, ...]],
+                 conv_bias: bool = False,
+                 norm_op: Union[None, Type[nn.Module]] = None,
+                 norm_op_kwargs: dict = None,
+                 dropout_op: Union[None, Type[_DropoutNd]] = None,
+                 dropout_op_kwargs: dict = None,
+                 nonlin: Union[None, Type[torch.nn.Module]] = None,
+                 nonlin_kwargs: dict = None,
+                 nonlin_first: bool = False
+                 ):
+        super(ConvDropoutNormReLU, self).__init__()
+        self.input_channels = input_channels
+        self.output_channels = output_channels
+        stride = maybe_convert_scalar_to_list(conv_op, stride)
         self.stride = stride
 
-        # Hauptpfad
-        self.conv1 = ConvNormAct(in_ch, out_ch, kernel_size=3, stride=stride, bias=True, act=True)
-        self.conv2 = ConvNormAct(out_ch, out_ch, kernel_size=3, stride=1, bias=True, act=False)
-        self.act2 = nn.LeakyReLU(negative_slope=0.01, inplace=True)
+        kernel_size = maybe_convert_scalar_to_list(conv_op, kernel_size)
+        if norm_op_kwargs is None:
+            norm_op_kwargs = {}
+        if nonlin_kwargs is None:
+            nonlin_kwargs = {}
 
-        # Skip-Pfad (ResNet-D Style)
-        has_stride = any(s != 1 for s in stride)
-        requires_proj = in_ch != out_ch
+        ops = []
 
-        if has_stride or requires_proj:
+        self.conv = conv_op(
+            input_channels,
+            output_channels,
+            kernel_size,
+            stride,
+            padding=[(i - 1) // 2 for i in kernel_size],
+            dilation=1,
+            bias=conv_bias,
+        )
+        ops.append(self.conv)
+
+        if dropout_op is not None:
+            self.dropout = dropout_op(**dropout_op_kwargs)
+            ops.append(self.dropout)
+
+        if norm_op is not None:
+            self.norm = norm_op(output_channels, **norm_op_kwargs)
+            ops.append(self.norm)
+
+        if nonlin is not None:
+            # Special handling for gated activations that need additional parameters
+            if nonlin in [SwiGLUBlock, GLUBlock]:
+                self.nonlin = nonlin(output_channels, conv_op, conv_bias)
+            else:
+                self.nonlin = nonlin(**nonlin_kwargs)
+            ops.append(self.nonlin)
+
+        if nonlin_first and (norm_op is not None and nonlin is not None):
+            ops[-1], ops[-2] = ops[-2], ops[-1]
+
+        self.all_modules = nn.Sequential(*ops)
+
+    def forward(self, x):
+        return self.all_modules(x)
+
+    def compute_conv_feature_map_size(self, input_size):
+        assert len(input_size) == len(self.stride), "just give the image size without color/feature channels or " \
+                                                    "batch channel. Do not give input_size=(b, c, x, y(, z)). " \
+                                                    "Give input_size=(x, y(, z))!"
+        output_size = [i // j for i, j in zip(input_size, self.stride)]  # we always do same padding
+        return np.prod([self.output_channels, *output_size], dtype=np.int64)
+
+
+class StackedConvBlocks(nn.Module):
+    def __init__(self,
+                 num_convs: int,
+                 conv_op: Type[_ConvNd],
+                 input_channels: int,
+                 output_channels: Union[int, List[int], Tuple[int, ...]],
+                 kernel_size: Union[int, List[int], Tuple[int, ...]],
+                 initial_stride: Union[int, List[int], Tuple[int, ...]],
+                 conv_bias: bool = False,
+                 norm_op: Union[None, Type[nn.Module]] = None,
+                 norm_op_kwargs: dict = None,
+                 dropout_op: Union[None, Type[_DropoutNd]] = None,
+                 dropout_op_kwargs: dict = None,
+                 nonlin: Union[None, Type[torch.nn.Module]] = None,
+                 nonlin_kwargs: dict = None,
+                 nonlin_first: bool = False
+                 ):
+        """
+
+        :param conv_op:
+        :param num_convs:
+        :param input_channels:
+        :param output_channels: can be int or a list/tuple of int. If list/tuple are provided, each entry is for
+        one conv. The length of the list/tuple must then naturally be num_convs
+        :param kernel_size:
+        :param initial_stride:
+        :param conv_bias:
+        :param norm_op:
+        :param norm_op_kwargs:
+        :param dropout_op:
+        :param dropout_op_kwargs:
+        :param nonlin:
+        :param nonlin_kwargs:
+        """
+        super().__init__()
+        if not isinstance(output_channels, (tuple, list)):
+            output_channels = [output_channels] * num_convs
+
+        self.convs = nn.Sequential(
+            ConvDropoutNormReLU(
+                conv_op, input_channels, output_channels[0], kernel_size, initial_stride, conv_bias, norm_op,
+                norm_op_kwargs, dropout_op, dropout_op_kwargs, nonlin, nonlin_kwargs, nonlin_first
+            ),
+            *[
+                ConvDropoutNormReLU(
+                    conv_op, output_channels[i - 1], output_channels[i], kernel_size, 1, conv_bias, norm_op,
+                    norm_op_kwargs, dropout_op, dropout_op_kwargs, nonlin, nonlin_kwargs, nonlin_first
+                )
+                for i in range(1, num_convs)
+            ]
+        )
+
+        self.output_channels = output_channels[-1]
+        self.initial_stride = maybe_convert_scalar_to_list(conv_op, initial_stride)
+
+    def forward(self, x):
+        return self.convs(x)
+
+    def compute_conv_feature_map_size(self, input_size):
+        assert len(input_size) == len(self.initial_stride), "just give the image size without color/feature channels or " \
+                                                            "batch channel. Do not give input_size=(b, c, x, y(, z)). " \
+                                                            "Give input_size=(x, y(, z))!"
+        output = self.convs[0].compute_conv_feature_map_size(input_size)
+        size_after_stride = [i // j for i, j in zip(input_size, self.initial_stride)]
+        for b in self.convs[1:]:
+            output += b.compute_conv_feature_map_size(size_after_stride)
+        return output
+
+
+class BasicBlockD(nn.Module):
+    def __init__(self,
+                 conv_op: Type[_ConvNd],
+                 input_channels: int,
+                 output_channels: int,
+                 kernel_size: Union[int, List[int], Tuple[int, ...]],
+                 stride: Union[int, List[int], Tuple[int, ...]],
+                 conv_bias: bool = False,
+                 norm_op: Union[None, Type[nn.Module]] = None,
+                 norm_op_kwargs: dict = None,
+                 dropout_op: Union[None, Type[_DropoutNd]] = None,
+                 dropout_op_kwargs: dict = None,
+                 nonlin: Union[None, Type[torch.nn.Module]] = None,
+                 nonlin_kwargs: dict = None,
+                 stochastic_depth_p: float = 0.0,
+                 squeeze_excitation: bool = False,
+                 squeeze_excitation_reduction_ratio: float = 1. / 16,
+                 squeeze_excitation_type: str = "channel",
+                 squeeze_excitation_add_maxpool: bool = False,
+                 # todo wideresnet?
+                 ):
+        """
+        This implementation follows ResNet-D:
+
+        He, Tong, et al. "Bag of tricks for image classification with convolutional neural networks."
+        Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. 2019.
+
+        The skip has an avgpool (if needed) followed by 1x1 conv instead of just a strided 1x1 conv
+
+        :param conv_op:
+        :param input_channels:
+        :param output_channels:
+        :param kernel_size: refers only to convs in feature extraction path, not to 1x1x1 conv in skip
+        :param stride: only applies to first conv (and skip). Second conv always has stride 1
+        :param conv_bias:
+        :param norm_op:
+        :param norm_op_kwargs:
+        :param dropout_op: only the first conv can have dropout. The second never has
+        :param dropout_op_kwargs:
+        :param nonlin:
+        :param nonlin_kwargs:
+        :param stochastic_depth_p:
+        :param squeeze_excitation:
+        :param squeeze_excitation_reduction_ratio:
+        """
+        super().__init__()
+        self.input_channels = input_channels
+        self.output_channels = output_channels
+        stride = maybe_convert_scalar_to_list(conv_op, stride)
+        self.stride = stride
+
+        kernel_size = maybe_convert_scalar_to_list(conv_op, kernel_size)
+
+        if norm_op_kwargs is None:
+            norm_op_kwargs = {}
+        if nonlin_kwargs is None:
+            nonlin_kwargs = {}
+
+        self.conv1 = ConvDropoutNormReLU(conv_op, input_channels, output_channels, kernel_size, stride, conv_bias,
+                                         norm_op, norm_op_kwargs, dropout_op, dropout_op_kwargs, nonlin, nonlin_kwargs)
+        self.conv2 = ConvDropoutNormReLU(conv_op, output_channels, output_channels, kernel_size, 1, conv_bias, norm_op,
+                                         norm_op_kwargs, None, None, None, None)
+
+        # Special handling for gated activations that need additional parameters
+        if nonlin is not None:
+            if nonlin in [SwiGLUBlock, GLUBlock]:
+                self.nonlin2 = nonlin(output_channels, conv_op, conv_bias)
+            else:
+                self.nonlin2 = nonlin(**nonlin_kwargs)
+        else:
+            self.nonlin2 = lambda x: x
+
+        # Stochastic Depth
+        self.apply_stochastic_depth = False if stochastic_depth_p == 0.0 else True
+        if self.apply_stochastic_depth:
+            self.drop_path = DropPath(drop_prob=stochastic_depth_p)
+
+        # Squeeze Excitation / Attention
+        self.apply_se = squeeze_excitation
+        if self.apply_se:
+            self.squeeze_excitation = create_attention_module(
+                attention_type=squeeze_excitation_type,
+                channels=self.output_channels,
+                conv_op=conv_op,
+                rd_ratio=squeeze_excitation_reduction_ratio,
+                rd_divisor=8,
+                add_maxpool=squeeze_excitation_add_maxpool
+            )
+
+        has_stride = (isinstance(stride, int) and stride != 1) or any([i != 1 for i in stride])
+        requires_projection = (input_channels != output_channels)
+
+        if has_stride or requires_projection:
             ops = []
             if has_stride:
-                ops.append(nn.AvgPool3d(kernel_size=stride, stride=stride))
-            if requires_proj:
-                # 1x1x1 Projektion ohne Bias
-                ops.append(ConvNormAct(in_ch, out_ch, kernel_size=1, stride=1, bias=False, act=False))
+                ops.append(get_matching_pool_op(conv_op=conv_op, adaptive=False, pool_type='avg')(stride, stride))
+            if requires_projection:
+                ops.append(
+                    ConvDropoutNormReLU(conv_op, input_channels, output_channels, 1, 1, False, norm_op,
+                                        norm_op_kwargs, None, None, None, None
+                                        )
+                )
             self.skip = nn.Sequential(*ops)
         else:
-            self.skip = nn.Identity()
+            self.skip = lambda x: x
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x):
         residual = self.skip(x)
         out = self.conv2(self.conv1(x))
-        out = out + residual
-        return self.act2(out)
+        if self.apply_stochastic_depth:
+            out = self.drop_path(out)
+        if self.apply_se:
+            out = self.squeeze_excitation(out)
+        out += residual
+        return self.nonlin2(out)
+
+    def compute_conv_feature_map_size(self, input_size):
+        assert len(input_size) == len(self.stride), "just give the image size without color/feature channels or " \
+                                                    "batch channel. Do not give input_size=(b, c, x, y(, z)). " \
+                                                    "Give input_size=(x, y(, z))!"
+        size_after_stride = [i // j for i, j in zip(input_size, self.stride)]
+        # conv1
+        output_size_conv1 = np.prod([self.output_channels, *size_after_stride], dtype=np.int64)
+        # conv2
+        output_size_conv2 = np.prod([self.output_channels, *size_after_stride], dtype=np.int64)
+        # skip conv (if applicable)
+        if (self.input_channels != self.output_channels) or any([i != j for i, j in zip(input_size, size_after_stride)]):
+            assert isinstance(self.skip, nn.Sequential)
+            output_size_skip = np.prod([self.output_channels, *size_after_stride], dtype=np.int64)
+        else:
+            assert not isinstance(self.skip, nn.Sequential)
+            output_size_skip = 0
+        return output_size_conv1 + output_size_conv2 + output_size_skip
 
 
-class ResStage(nn.Module):
-    """Eine Stufe bestehend aus n ResBlockD-Blöcken."""
-    def __init__(self, n_blocks: int, in_ch: int, out_ch: int, stride: Tuple[int, int, int]):
+class BottleneckD(nn.Module):
+    def __init__(self,
+                 conv_op: Type[_ConvNd],
+                 input_channels: int,
+                 bottleneck_channels: int,
+                 output_channels: int,
+                 kernel_size: Union[int, List[int], Tuple[int, ...]],
+                 stride: Union[int, List[int], Tuple[int, ...]],
+                 conv_bias: bool = False,
+                 norm_op: Union[None, Type[nn.Module]] = None,
+                 norm_op_kwargs: dict = None,
+                 dropout_op: Union[None, Type[_DropoutNd]] = None,
+                 dropout_op_kwargs: dict = None,
+                 nonlin: Union[None, Type[torch.nn.Module]] = None,
+                 nonlin_kwargs: dict = None,
+                 stochastic_depth_p: float = 0.0,
+                 squeeze_excitation: bool = False,
+                 squeeze_excitation_reduction_ratio: float = 1. / 16,
+                 squeeze_excitation_type: str = "channel",
+                 squeeze_excitation_add_maxpool: bool = False,
+                 ):
+        """
+        This implementation follows ResNet-D:
+
+        He, Tong, et al. "Bag of tricks for image classification with convolutional neural networks."
+        Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. 2019.
+
+        The stride sits in the 3x3 conv instead of the 1x1 conv!
+        The skip has an avgpool (if needed) followed by 1x1 conv instead of just a strided 1x1 conv
+
+        :param conv_op:
+        :param input_channels:
+        :param output_channels:
+        :param kernel_size: only affects the conv in the middle (typically 3x3). The other convs remain 1x1
+        :param stride: only applies to the conv in the middle (and skip). Note that this deviates from the canonical
+        ResNet implementation where the stride is applied to the first 1x1 conv. (This implementation follows ResNet-D)
+        :param conv_bias:
+        :param norm_op:
+        :param norm_op_kwargs:
+        :param dropout_op: only the second (kernel_size) conv can have dropout. The first and last conv (1x1(x1)) never have it
+        :param dropout_op_kwargs:
+        :param nonlin:
+        :param nonlin_kwargs:
+        :param stochastic_depth_p:
+        :param squeeze_excitation:
+        :param squeeze_excitation_reduction_ratio:
+        """
         super().__init__()
-        blocks = [ResBlockD(in_ch, out_ch, stride=stride)]
-        for _ in range(1, n_blocks):
-            blocks.append(ResBlockD(out_ch, out_ch, stride=(1, 1, 1)))
-        self.blocks = nn.Sequential(*blocks)
+        self.input_channels = input_channels
+        self.output_channels = output_channels
+        self.bottleneck_channels = bottleneck_channels
+        stride = maybe_convert_scalar_to_list(conv_op, stride)
+        self.stride = stride
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        kernel_size = maybe_convert_scalar_to_list(conv_op, kernel_size)
+        if norm_op_kwargs is None:
+            norm_op_kwargs = {}
+        if nonlin_kwargs is None:
+            nonlin_kwargs = {}
+
+        self.conv1 = ConvDropoutNormReLU(conv_op, input_channels, bottleneck_channels, 1, 1, conv_bias,
+                                         norm_op, norm_op_kwargs, None, None, nonlin, nonlin_kwargs)
+        self.conv2 = ConvDropoutNormReLU(conv_op, bottleneck_channels, bottleneck_channels, kernel_size, stride,
+                                         conv_bias,
+                                         norm_op, norm_op_kwargs, dropout_op, dropout_op_kwargs, nonlin, nonlin_kwargs)
+        self.conv3 = ConvDropoutNormReLU(conv_op, bottleneck_channels, output_channels, 1, 1, conv_bias, norm_op,
+                                         norm_op_kwargs, None, None, None, None)
+
+        # Special handling for gated activations that need additional parameters
+        if nonlin is not None:
+            if nonlin in [SwiGLUBlock, GLUBlock]:
+                self.nonlin3 = nonlin(output_channels, conv_op, conv_bias)
+            else:
+                self.nonlin3 = nonlin(**nonlin_kwargs)
+        else:
+            self.nonlin3 = lambda x: x
+
+        # Stochastic Depth
+        self.apply_stochastic_depth = False if stochastic_depth_p == 0.0 else True
+        if self.apply_stochastic_depth:
+            self.drop_path = DropPath(drop_prob=stochastic_depth_p)
+
+        # Squeeze Excitation / Attention
+        self.apply_se = squeeze_excitation
+        if self.apply_se:
+            self.squeeze_excitation = create_attention_module(
+                attention_type=squeeze_excitation_type,
+                channels=self.output_channels,
+                conv_op=conv_op,
+                rd_ratio=squeeze_excitation_reduction_ratio,
+                rd_divisor=8,
+                add_maxpool=squeeze_excitation_add_maxpool
+            )
+
+        has_stride = (isinstance(stride, int) and stride != 1) or any([i != 1 for i in stride])
+        requires_projection = (input_channels != output_channels)
+
+        if has_stride or requires_projection:
+            ops = []
+            if has_stride:
+                ops.append(get_matching_pool_op(conv_op=conv_op, adaptive=False, pool_type='avg')(stride, stride))
+            if requires_projection:
+                ops.append(
+                    ConvDropoutNormReLU(conv_op, input_channels, output_channels, 1, 1, False,
+                                        norm_op, norm_op_kwargs, None, None, None, None
+                                        )
+                )
+            self.skip = nn.Sequential(*ops)
+        else:
+            self.skip = lambda x: x
+
+    def forward(self, x):
+        residual = self.skip(x)
+        out = self.conv3(self.conv2(self.conv1(x)))
+        if self.apply_stochastic_depth:
+            out = self.drop_path(out)
+        if self.apply_se:
+            out = self.squeeze_excitation(out)
+        out += residual
+        return self.nonlin3(out)
+
+    def compute_conv_feature_map_size(self, input_size):
+        assert len(input_size) == len(self.stride), "just give the image size without color/feature channels or " \
+                                                    "batch channel. Do not give input_size=(b, c, x, y(, z)). " \
+                                                    "Give input_size=(x, y(, z))!"
+        size_after_stride = [i // j for i, j in zip(input_size, self.stride)]
+        # conv1
+        output_size_conv1 = np.prod([self.bottleneck_channels, *input_size], dtype=np.int64)
+        # conv2
+        output_size_conv2 = np.prod([self.bottleneck_channels, *size_after_stride], dtype=np.int64)
+        # conv3
+        output_size_conv3 = np.prod([self.output_channels, *size_after_stride], dtype=np.int64)
+        # skip conv (if applicable)
+        if (self.input_channels != self.output_channels) or any([i != j for i, j in zip(input_size, size_after_stride)]):
+            assert isinstance(self.skip, nn.Sequential)
+            output_size_skip = np.prod([self.output_channels, *size_after_stride], dtype=np.int64)
+        else:
+            assert not isinstance(self.skip, nn.Sequential)
+            output_size_skip = 0
+        return output_size_conv1 + output_size_conv2 + output_size_conv3 + output_size_skip
+
+
+class StackedResidualBlocks(nn.Module):
+    def __init__(self,
+                 n_blocks: int,
+                 conv_op: Type[_ConvNd],
+                 input_channels: int,
+                 output_channels: Union[int, List[int], Tuple[int, ...]],
+                 kernel_size: Union[int, List[int], Tuple[int, ...]],
+                 initial_stride: Union[int, List[int], Tuple[int, ...]],
+                 conv_bias: bool = False,
+                 norm_op: Union[None, Type[nn.Module]] = None,
+                 norm_op_kwargs: dict = None,
+                 dropout_op: Union[None, Type[_DropoutNd]] = None,
+                 dropout_op_kwargs: dict = None,
+                 nonlin: Union[None, Type[torch.nn.Module]] = None,
+                 nonlin_kwargs: dict = None,
+                 block: Union[Type[BasicBlockD], Type[BottleneckD]] = BasicBlockD,
+                 bottleneck_channels: Union[int, List[int], Tuple[int, ...]] = None,
+                 stochastic_depth_p: float = 0.0,
+                 squeeze_excitation: bool = False,
+                 squeeze_excitation_reduction_ratio: float = 1. / 16,
+                 squeeze_excitation_type: str = "channel",
+                 squeeze_excitation_add_maxpool: bool = False,
+                 ):
+        """
+        Stack multiple instances of block.
+
+        :param n_blocks: number of residual blocks
+        :param conv_op: nn.ConvNd class
+        :param input_channels: only relevant for forst block in the sequence. This is the input number of features.
+        After the first block, the number of features in the main path to which the residuals are added is output_channels
+        :param output_channels: number of features in the main path to which the residuals are added (and also the
+        number of features of the output)
+        :param kernel_size: kernel size for all nxn (n!=1) convolutions. Default: 3x3
+        :param initial_stride: only affects the first block. All subsequent blocks have stride 1
+        :param conv_bias: usually False
+        :param norm_op: nn.BatchNormNd, InstanceNormNd etc
+        :param norm_op_kwargs: dictionary of kwargs. Leave empty ({}) for defaults
+        :param dropout_op: nn.DropoutNd, can be None for no dropout
+        :param dropout_op_kwargs:
+        :param nonlin:
+        :param nonlin_kwargs:
+        :param block: BasicBlockD or BottleneckD
+        :param bottleneck_channels: if block is BottleneckD then we need to know the number of bottleneck features.
+        Bottleneck will use first 1x1 conv to reduce input to bottleneck features, then run the nxn (see kernel_size)
+        conv on that (bottleneck -> bottleneck). Finally the output will be projected back to output_channels
+        (bottleneck -> output_channels) with the final 1x1 conv
+        :param stochastic_depth_p: probability of applying stochastic depth in residual blocks
+        :param squeeze_excitation: whether to apply squeeze and excitation or not
+        :param squeeze_excitation_reduction_ratio: ratio by how much squeeze and excitation should reduce channels
+        respective to number of out channels of respective block
+        """
+        super().__init__()
+        assert n_blocks > 0, 'n_blocks must be > 0'
+        assert block in [BasicBlockD, BottleneckD], 'block must be BasicBlockD or BottleneckD'
+        if not isinstance(output_channels, (tuple, list)):
+            output_channels = [output_channels] * n_blocks
+        if not isinstance(bottleneck_channels, (tuple, list)):
+            bottleneck_channels = [bottleneck_channels] * n_blocks
+
+        if block == BasicBlockD:
+            blocks = nn.Sequential(
+                block(conv_op, input_channels, output_channels[0], kernel_size, initial_stride, conv_bias,
+                      norm_op, norm_op_kwargs, dropout_op, dropout_op_kwargs, nonlin, nonlin_kwargs, stochastic_depth_p,
+                      squeeze_excitation, squeeze_excitation_reduction_ratio, squeeze_excitation_type,
+                      squeeze_excitation_add_maxpool),
+                *[block(conv_op, output_channels[n - 1], output_channels[n], kernel_size, 1, conv_bias, norm_op,
+                        norm_op_kwargs, dropout_op, dropout_op_kwargs, nonlin, nonlin_kwargs, stochastic_depth_p,
+                        squeeze_excitation, squeeze_excitation_reduction_ratio, squeeze_excitation_type,
+                        squeeze_excitation_add_maxpool) for n in range(1, n_blocks)]
+            )
+        else:
+            blocks = nn.Sequential(
+                block(conv_op, input_channels, bottleneck_channels[0], output_channels[0], kernel_size,
+                      initial_stride, conv_bias, norm_op, norm_op_kwargs, dropout_op, dropout_op_kwargs,
+                      nonlin, nonlin_kwargs, stochastic_depth_p, squeeze_excitation, squeeze_excitation_reduction_ratio,
+                      squeeze_excitation_type, squeeze_excitation_add_maxpool),
+                *[block(conv_op, output_channels[n - 1], bottleneck_channels[n], output_channels[n], kernel_size,
+                        1, conv_bias, norm_op, norm_op_kwargs, dropout_op, dropout_op_kwargs,
+                        nonlin, nonlin_kwargs, stochastic_depth_p, squeeze_excitation,
+                        squeeze_excitation_reduction_ratio, squeeze_excitation_type,
+                        squeeze_excitation_add_maxpool) for n in range(1, n_blocks)]
+            )
+        self.blocks = blocks
+        self.initial_stride = maybe_convert_scalar_to_list(conv_op, initial_stride)
+        self.output_channels = output_channels[-1]
+
+    def forward(self, x):
         return self.blocks(x)
 
+    def compute_conv_feature_map_size(self, input_size):
+        assert len(input_size) == len(self.initial_stride), "just give the image size without color/feature channels or " \
+                                                    "batch channel. Do not give input_size=(b, c, x, y(, z)). " \
+                                                    "Give input_size=(x, y(, z))!"
+        output = self.blocks[0].compute_conv_feature_map_size(input_size)
+        size_after_stride = [i // j for i, j in zip(input_size, self.initial_stride)]
+        for b in self.blocks[1:]:
+            output += b.compute_conv_feature_map_size(size_after_stride)
+        return output
 
-class DecoderStage(nn.Module):
-    """Transposed Conv (Upsampling) + Skip Concat + ConvNormAct."""
-    def __init__(self, in_ch: int, skip_ch: int, out_ch: int, stride: Tuple[int, int, int]):
+
+class Encoder(nn.Module,):
+    def __init__(self,
+                 input_channels: int,
+                 basic_block: str,
+                 n_stages: int,
+                 features_per_stage: Union[int, List[int]],
+                 n_blocks_per_stage: Union[int, List[int]],
+                 conv_op: Type[_ConvNd],
+                 strides: Union[int, List[int]],
+                 kernel_sizes: Union[int, List[int]],
+                 conv_bias: bool,
+                 norm_op: Union[None, Type[_BatchNorm], Type[_InstanceNorm]],
+                 norm_op_kwargs: dict,
+                 dropout_op: Union[None, Type[_DropoutNd]],
+                 dropout_op_kwargs: dict,
+                 nonlin: Union[None, Type[torch.nn.Module]],
+                 nonlin_kwargs: dict,
+                 do_stem: bool = True,
+                 stem_channels: int = None,
+                 squeeze_excitation: bool = False,
+                 squeeze_excitation_reduction_ratio: float = 1. / 16,
+                 squeeze_excitation_type: str = "channel",
+                 squeeze_excitation_add_maxpool: bool = False,
+                 stochastic_depth_p: float = 0.0,
+                 return_skips: bool = False,
+                 bottleneck_block = BasicBlockD,
+                 pool_type: str = 'conv',
+                 bottleneck_channels: Union[int, List[int]] = None,
+                 n_conv_per_stage: Union[int, List[int]] = None,
+
+                 ):
+
         super().__init__()
-        self.transpconv = nn.ConvTranspose3d(
-            in_ch, out_ch, kernel_size=stride, stride=stride, bias=True
-        )
-        self.conv = ConvNormAct(out_ch + skip_ch, out_ch, kernel_size=3, stride=1, bias=True, act=True)
 
-    def forward(self, x: torch.Tensor, skip: torch.Tensor) -> torch.Tensor:
-        x = self.transpconv(x)
-        x = torch.cat([x, skip], dim=1)
+        if isinstance(kernel_sizes, int):
+            kernel_sizes = [kernel_sizes] * n_stages
+        if isinstance(features_per_stage, int):
+            features_per_stage = [features_per_stage] * n_stages
+        if isinstance(n_blocks_per_stage, int):
+            n_blocks_per_stage = [n_blocks_per_stage] * n_stages
+        if isinstance(strides, int):
+            strides = [strides] * n_stages
+        if bottleneck_channels is None or isinstance(bottleneck_channels, int):
+            bottleneck_channels = [bottleneck_channels] * n_stages
+
+        pool_op = get_matching_pool_op(conv_op, pool_type=pool_type) if pool_type != 'conv' else None
+
+        if basic_block == 'BottleneckBlockD':
+            block = BottleneckD
+            is_residual = True
+        elif basic_block == 'BasicBlockD':
+            block = BasicBlockD
+            is_residual = True
+        elif basic_block == 'ConvBlock':
+            block = None
+            is_residual = False
+        else:
+            raise ValueError(f"Unknown block type: {basic_block}")
+
+        if do_stem:
+            if stem_channels is None:
+                stem_channels = features_per_stage[0]
+            self.stem = StackedConvBlocks(1, conv_op, input_channels, stem_channels, kernel_sizes[0], 1, conv_bias,
+                                          norm_op, norm_op_kwargs, dropout_op, dropout_op_kwargs, nonlin, nonlin_kwargs)
+            input_channels = stem_channels
+        else:
+            self.stem = None
+
+        stages = []
+        for s in range(n_stages):
+
+            stride_for_conv = strides[s] if pool_op is None else 1
+            if is_residual:
+                stage = StackedResidualBlocks(
+                    n_blocks_per_stage[s],
+                    conv_op,
+                    input_channels,
+                    features_per_stage[s],
+                    kernel_sizes[s],
+                    stride_for_conv,
+                    conv_bias,
+                    norm_op,
+                    norm_op_kwargs,
+                    dropout_op,
+                    dropout_op_kwargs,
+                    nonlin,
+                    nonlin_kwargs,
+                    block=block,
+                    bottleneck_channels=bottleneck_channels[s],
+                    stochastic_depth_p=stochastic_depth_p,
+                    squeeze_excitation=squeeze_excitation,
+                    squeeze_excitation_reduction_ratio=squeeze_excitation_reduction_ratio,
+                    squeeze_excitation_type=squeeze_excitation_type,
+                    squeeze_excitation_add_maxpool=squeeze_excitation_add_maxpool
+                )
+
+                if pool_op is not None:
+                    stage = nn.Sequential(pool_op(strides[s]), stage)
+
+                stages.append(stage)
+                input_channels = features_per_stage[s]
+
+            else:
+                stage_modules = []
+                conv_stride = strides[s] if pool_op is None else 1
+                # Without the pool the stage never downsamples: the stride above
+                # was handed to a pool that then never ran.
+                if pool_op is not None:
+                    stage_modules.append(pool_op(strides[s]))
+                stage_modules.append(StackedConvBlocks(
+                    n_blocks_per_stage[s], conv_op, input_channels, features_per_stage[s], kernel_sizes[s], conv_stride,
+                    conv_bias, norm_op, norm_op_kwargs, dropout_op, dropout_op_kwargs, nonlin, nonlin_kwargs
+                ))
+                stages.append(nn.Sequential(*stage_modules))
+                input_channels = features_per_stage[s]
+
+
+        # we store some things that a potential decoder needs
+        self.stages = nn.Sequential(*stages)
+        self.output_channels = features_per_stage
+        self.strides = [maybe_convert_scalar_to_list(conv_op, i) for i in strides]
+        self.return_skips = return_skips
+        self.conv_op = conv_op
+        self.norm_op = norm_op
+        self.norm_op_kwargs = norm_op_kwargs
+        self.nonlin = nonlin
+        self.nonlin_kwargs = nonlin_kwargs
+        self.dropout_op = dropout_op
+        self.dropout_op_kwargs = dropout_op_kwargs
+        self.conv_bias = conv_bias
+        self.kernel_sizes = kernel_sizes
+
+    def forward(self, x, feature_gates=None, feature_gate_alpha: float = 1.0):
+        if self.stem is not None:
+            x = self.stem(x)
+        ret = []
+        alpha = float(feature_gate_alpha)
+        for stage_idx, s in enumerate(self.stages):
+            x = s(x)
+            skip_x = x
+            if feature_gates is not None:
+                stage_key = f"enc_{stage_idx}"
+                gate = feature_gates.get(stage_key)
+                if gate is not None:
+                    skip_x = x * ((1.0 - alpha) + alpha * gate)
+            ret.append(skip_x)
+        if self.return_skips:
+            return ret
+        else:
+            return ret[-1]
+
+    def compute_conv_feature_map_size(self, input_size):
+        if self.stem is not None:
+            output = self.stem.compute_conv_feature_map_size(input_size)
+        else:
+            output = np.int64(0)
+
+        for s in range(len(self.stages)):
+            output += self.stages[s].compute_conv_feature_map_size(input_size)
+            input_size = [i // j for i, j in zip(input_size, self.strides[s])]
+
+        return output
+
+
+class TrilinearUpsample3d(nn.Module):
+    """Trilinear interpolation + 1x1 conv to adjust channels."""
+
+    def __init__(self, in_channels, out_channels, stride, bias=True):
+        super().__init__()
+        self.scale_factor = [int(s) for s in stride]
+        self.conv = nn.Conv3d(in_channels, out_channels, kernel_size=1, bias=bias)
+
+    def forward(self, x):
+        x = F.interpolate(x, scale_factor=self.scale_factor, mode='trilinear', align_corners=False)
+        return self.conv(x)
+
+
+class PixelShuffle3d(nn.Module):
+    """1x1 conv expanding channels by r^3, then spatial rearrange."""
+
+    def __init__(self, in_channels, out_channels, stride, bias=True):
+        super().__init__()
+        if not all(int(s) == int(stride[0]) for s in stride):
+            raise ValueError(
+                f"PixelShuffle3d requires isotropic stride, got {list(stride)}")
+        r = int(stride[0])
+        self.r = r
+        self.conv = nn.Conv3d(in_channels, out_channels * r * r * r, kernel_size=1, bias=bias)
+
+    def forward(self, x):
         x = self.conv(x)
-        return x
+        B, C_total, D, H, W = x.shape
+        r = self.r
+        C = C_total // (r * r * r)
+        x = x.view(B, C, r, r, r, D, H, W)
+        x = x.permute(0, 1, 5, 2, 6, 3, 7, 4).contiguous()
+        return x.view(B, C, D * r, H * r, W * r)
+
+
+class Decoder(nn.Module):
+    def __init__(self,
+                 encoder,
+                 basic_block: str,
+                 num_classes: Union[int, None],
+                 n_conv_per_stage: Union[int, Tuple[int, ...], List[int]],
+                 deep_supervision,
+                 skip_channels: Union[None, Tuple[int, ...], List[int]] = None,
+                 nonlin_first: bool = False,
+                 norm_op: Union[None, Type[nn.Module]] = None,
+                 norm_op_kwargs: dict = None,
+                 dropout_op: Union[None, Type[_DropoutNd]] = None,
+                 dropout_op_kwargs: dict = None,
+                 nonlin: Union[None, Type[torch.nn.Module]] = None,
+                 nonlin_kwargs: dict = None,
+                 conv_bias: bool = None,
+                 upsample_mode: str = "transpconv",
+                 ):
+        """
+        This class needs the skips of the encoder as input in its forward.
+
+        the encoder goes all the way to the bottleneck, so that's where the decoder picks up. stages in the decoder
+        are sorted by order of computation, so the first stage has the lowest resolution and takes the bottleneck
+        features and the lowest skip as inputs
+        the decoder has two (three) parts in each stage:
+        1) conv transpose to upsample the feature maps of the stage below it (or the bottleneck in case of the first stage)
+        2) n_conv_per_stage conv blocks to let the two inputs get to know each other and merge
+        3) (optional if deep_supervision=True) a segmentation output Todo: enable upsample logits?
+        :param encoder:
+        :param num_classes:
+        :param n_conv_per_stage:
+        :param deep_supervision:
+        """
+        super().__init__()
+        self.deep_supervision = deep_supervision
+        # If num_classes is None, operate in features-only mode (no seg heads)
+        self.return_features_only = num_classes is None
+        # Store encoder reference without registering as submodule to avoid
+        # duplicate state_dict keys when decoder is used with separate_decoders=True
+        object.__setattr__(self, '_encoder_ref', encoder)
+        self.num_classes = num_classes if num_classes is not None else 0
+        n_stages_encoder = len(encoder.output_channels)
+        if skip_channels is None:
+            skip_channels = list(encoder.output_channels)
+        elif isinstance(skip_channels, tuple):
+            skip_channels = list(skip_channels)
+        else:
+            skip_channels = list(skip_channels)
+        assert len(skip_channels) == n_stages_encoder, (
+            "skip_channels must have as many entries as encoder.output_channels, "
+            f"got {len(skip_channels)} and {n_stages_encoder}"
+        )
+        self.skip_channels = [int(v) for v in skip_channels]
+        self.native_encoder_channels = [int(v) for v in encoder.output_channels]
+        self.bottleneck_input_channels = int(self.skip_channels[-1])
+        self.decoder_stage_input_channels = []
+        self.decoder_stage_output_channels = []
+        if isinstance(n_conv_per_stage, int):
+            n_conv_per_stage = [n_conv_per_stage] * (n_stages_encoder - 1)
+        assert len(n_conv_per_stage) == n_stages_encoder - 1, "n_conv_per_stage must have as many entries as we have " \
+                                                              "resolution stages - 1 (n_stages in encoder - 1), " \
+                                                              "here: %d" % n_stages_encoder
+
+        transpconv_op = get_matching_convtransp(conv_op=encoder.conv_op)
+        conv_bias = encoder.conv_bias if conv_bias is None else conv_bias
+        norm_op = encoder.norm_op if norm_op is None else norm_op
+        norm_op_kwargs = encoder.norm_op_kwargs if norm_op_kwargs is None else norm_op_kwargs
+        dropout_op = encoder.dropout_op if dropout_op is None else dropout_op
+        dropout_op_kwargs = encoder.dropout_op_kwargs if dropout_op_kwargs is None else dropout_op_kwargs
+        nonlin = encoder.nonlin if nonlin is None else nonlin
+        nonlin_kwargs = encoder.nonlin_kwargs if nonlin_kwargs is None else nonlin_kwargs
+
+        # we start with the bottleneck and work out way up
+        if basic_block == 'BasicBlockD' or basic_block == 'BottleneckBlockD':
+            stages = []
+            transpconvs = []
+            seg_layers = []
+            for s in range(1, n_stages_encoder):
+                input_features_below = self.skip_channels[-1] if s == 1 else encoder.output_channels[-s]
+                input_features_skip_native = encoder.output_channels[-(s + 1)]
+                input_features_skip = self.skip_channels[-(s + 1)]
+                stride_for_transpconv = encoder.strides[-s]
+                if upsample_mode == "trilinear":
+                    transpconvs.append(TrilinearUpsample3d(
+                        input_features_below, input_features_skip_native, stride_for_transpconv, bias=encoder.conv_bias))
+                elif upsample_mode == "pixelshuffle":
+                    transpconvs.append(PixelShuffle3d(
+                        input_features_below, input_features_skip_native, stride_for_transpconv, bias=encoder.conv_bias))
+                else:
+                    transpconvs.append(transpconv_op(
+                        input_features_below, input_features_skip_native, stride_for_transpconv, stride_for_transpconv,
+                        bias=encoder.conv_bias
+                    ))
+                conv_input_channels = input_features_skip_native + input_features_skip
+                stages.append(StackedResidualBlocks(
+                    n_blocks=n_conv_per_stage[s - 1],
+                    conv_op=encoder.conv_op,
+                    input_channels=conv_input_channels,
+                    output_channels=input_features_skip_native,
+                    kernel_size=encoder.kernel_sizes[-(s + 1)],
+                    initial_stride=1,
+                    conv_bias=conv_bias,
+                    norm_op=norm_op,
+                    norm_op_kwargs=norm_op_kwargs,
+                    dropout_op=dropout_op,
+                    dropout_op_kwargs=dropout_op_kwargs,
+                    nonlin=nonlin,
+                    nonlin_kwargs=nonlin_kwargs,
+                ))
+                self.decoder_stage_input_channels.append(int(conv_input_channels))
+                self.decoder_stage_output_channels.append(int(input_features_skip_native))
+
+                # Only build segmentation layers if we are not in features-only mode
+                if not self.return_features_only:
+                    # we always build the deep supervision outputs so that we can always load parameters. If we don't do this
+                    # then a model trained with deep_supervision=True could not easily be loaded at inference time where
+                    # deep supervision is not needed. It's just a convenience thing
+                    seg_layers.append(encoder.conv_op(input_features_skip_native, self.num_classes, 1, 1, 0, bias=True))
+
+        if basic_block == 'ConvBlock':
+            stages = []
+            transpconvs = []
+            seg_layers = []
+            for s in range(1, n_stages_encoder):
+                input_features_below = self.skip_channels[-1] if s == 1 else encoder.output_channels[-s]
+                input_features_skip_native = encoder.output_channels[-(s + 1)]
+                input_features_skip = self.skip_channels[-(s + 1)]
+                stride_for_transpconv = encoder.strides[-s]
+                if upsample_mode == "trilinear":
+                    transpconvs.append(TrilinearUpsample3d(
+                        input_features_below, input_features_skip_native, stride_for_transpconv, bias=conv_bias))
+                elif upsample_mode == "pixelshuffle":
+                    transpconvs.append(PixelShuffle3d(
+                        input_features_below, input_features_skip_native, stride_for_transpconv, bias=conv_bias))
+                else:
+                    transpconvs.append(transpconv_op(
+                        input_features_below, input_features_skip_native, stride_for_transpconv, stride_for_transpconv,
+                        bias=conv_bias
+                    ))
+                conv_input_channels = input_features_skip_native + input_features_skip
+                stages.append(StackedConvBlocks(
+                    n_conv_per_stage[s - 1], encoder.conv_op, conv_input_channels, input_features_skip_native,
+                    encoder.kernel_sizes[-(s + 1)], 1,
+                    conv_bias,
+                    norm_op,
+                    norm_op_kwargs,
+                    dropout_op,
+                    dropout_op_kwargs,
+                    nonlin,
+                    nonlin_kwargs,
+                    nonlin_first
+                ))
+                self.decoder_stage_input_channels.append(int(conv_input_channels))
+                self.decoder_stage_output_channels.append(int(input_features_skip_native))
+
+                # Only build segmentation layers if we are not in features-only mode
+                if not self.return_features_only:
+                    # we always build the deep supervision outputs so that we can always load parameters. If we don't do this
+                    # then a model trained with deep_supervision=True could not easily be loaded at inference time where
+                    # deep supervision is not needed. It's just a convenience thing
+                    seg_layers.append(encoder.conv_op(input_features_skip_native, self.num_classes, 1, 1, 0, bias=True))
+
+        self.stages = nn.ModuleList(stages)
+        self.transpconvs = nn.ModuleList(transpconvs)
+        # In features-only mode there are no segmentation layers
+        self.seg_layers = nn.ModuleList(seg_layers) if not self.return_features_only else nn.ModuleList()
+
+    @property
+    def encoder(self):
+        """Access the encoder reference (not a submodule to avoid duplicate state_dict keys)."""
+        return self._encoder_ref
+
+    def forward(self, skips):
+        """
+        we expect to get the skips in the order they were computed, so the bottleneck should be the last entry
+        :param skips:
+        :return:
+        """
+        lres_input = skips[-1]
+        seg_outputs = []
+        for s in range(len(self.stages)):
+            x = self.transpconvs[s](lres_input)
+            x = torch.cat((x, skips[-(s + 2)]), 1)
+            x = self.stages[s](x)
+            if self.return_features_only:
+                # No segmentation heads; just propagate features
+                pass
+            elif self.deep_supervision:
+                seg_outputs.append(self.seg_layers[s](x))
+            elif s == (len(self.stages) - 1):
+                seg_outputs.append(self.seg_layers[-1](x))
+            lres_input = x
+
+        if self.return_features_only:
+            # Return final high-resolution decoder features
+            return lres_input
+        else:
+            # invert seg outputs so that the largest segmentation prediction is returned first
+            seg_outputs = seg_outputs[::-1]
+
+            if not self.deep_supervision:
+                r = seg_outputs[0]
+            else:
+                r = seg_outputs
+            return r
+
+
+
+    def compute_conv_feature_map_size(self, input_size):
+        """
+        IMPORTANT: input_size is the input_size of the encoder!
+        :param input_size:
+        :return:
+        """
+        # first we need to compute the skip sizes. Skip bottleneck because all output feature maps of our ops will at
+        # least have the size of the skip above that (therefore -1)
+        skip_sizes = []
+        for s in range(len(self.encoder.strides) - 1):
+            skip_sizes.append([i // j for i, j in zip(input_size, self.encoder.strides[s])])
+            input_size = skip_sizes[-1]
+        # print(skip_sizes)
+
+        assert len(skip_sizes) == len(self.stages)
+
+        # our ops are the other way around, so let's match things up
+        output = np.int64(0)
+        for s in range(len(self.stages)):
+            # print(skip_sizes[-(s+1)], self.encoder.output_channels[-(s+2)])
+            # conv blocks
+            output += self.stages[s].compute_conv_feature_map_size(skip_sizes[-(s + 1)])
+            # trans conv
+            output += np.prod([self.encoder.output_channels[-(s + 2)], *skip_sizes[-(s + 1)]], dtype=np.int64)
+            # segmentation
+            if self.deep_supervision or (s == (len(self.stages) - 1)):
+                output += np.prod([self.num_classes, *skip_sizes[-(s + 1)]], dtype=np.int64)
+        return output
 
 
 class VesuviusUNet(nn.Module):
+    """Configurable 3D model using the original implementation and key names.
+
+    Stage sequences are in encoder order; decoder block counts are in execution
+    order (coarse to fine). Reset torch.manual_seed before EACH construction to
+    compare initialization. No seed or global backend settings are changed here.
+    """
+
     def __init__(
         self,
-        in_channels: int = 1,
-        out_channels: int = 1,
-        z_projection: str = "max",  # "max", "mean" oder "none"
+        in_channels=1,
+        out_channels=1,
+        z_projection="max",
+        *,
+        features_per_stage=(32, 64, 128, 256, 320, 320, 320),
+        n_blocks_per_stage=(1, 3, 4, 6, 6, 6, 6),
+        strides=((1, 1, 1), (2, 2, 2), (2, 2, 2), (2, 2, 2),
+                 (2, 2, 2), (1, 2, 2), (1, 2, 2)),
+        kernel_sizes=3,
+        n_conv_per_stage_decoder=1,
+        conv_bias=True,
+        norm_op=nn.InstanceNorm3d,
+        norm_op_kwargs=None,
+        dropout_op=None,
+        dropout_op_kwargs=None,
+        nonlin=nn.LeakyReLU,
+        nonlin_kwargs=None,
+        basic_encoder_block="BasicBlockD",
+        bottleneck_block="BasicBlockD",
+        basic_decoder_block="ConvBlock",
+        do_stem=True,
+        stem_channels=None,
+        bottleneck_channels=None,
+        stochastic_depth_p=0.0,
+        squeeze_excitation=False,
+        squeeze_excitation_reduction_ratio=1.0 / 16,
+        squeeze_excitation_type="channel",
+        squeeze_excitation_add_maxpool=False,
+        upsample_mode="transpconv",
+        target_name="ink",
+        head_bias=True,
     ):
         super().__init__()
+        if z_projection not in {"max", "mean", "none"}:
+            raise ValueError("z_projection must be 'max', 'mean', or 'none'")
+        if not target_name or "." in target_name:
+            raise ValueError("target_name must be nonempty and contain no dots")
+        features = list(features_per_stage)
+        n = len(features)
+        if n < 2 or any(c <= 0 for c in features):
+            raise ValueError("features_per_stage needs at least two positive entries")
+        if in_channels <= 0 or out_channels <= 0:
+            raise ValueError("in_channels and out_channels must be positive")
+
+        def counts(value, length, name):
+            result = [value] * length if isinstance(value, int) else list(value)
+            if len(result) != length or any(v < 1 for v in result):
+                raise ValueError(f"{name} needs {length} positive entries")
+            return result
+
+        def spatial(value, name, odd=False):
+            result = [value] * n if isinstance(value, int) else list(value)
+            if len(result) != n:
+                raise ValueError(f"{name} needs {n} stage entries")
+            result = [((v,) * 3 if isinstance(v, int) else tuple(v)) for v in result]
+            if any(len(v) != 3 or any(not isinstance(k, int) or k < 1 or
+                                     (odd and k % 2 == 0) for k in v) for v in result):
+                raise ValueError(f"{name} requires positive 3D integers" +
+                                 (" with odd kernel sizes" if odd else ""))
+            return result
+
+        blocks = counts(n_blocks_per_stage, n, "n_blocks_per_stage")
+        decoder_blocks = counts(n_conv_per_stage_decoder, n - 1,
+                                "n_conv_per_stage_decoder")
+        strides = spatial(strides, "strides")
+        kernels = spatial(kernel_sizes, "kernel_sizes", odd=True)
+        if upsample_mode not in {"transpconv", "trilinear", "pixelshuffle"}:
+            raise ValueError("Unknown upsample_mode")
+        self.in_channels = in_channels
         self.z_projection = z_projection
+        self.target_name = target_name
+        self.strides = tuple(strides)
+        self.shared_encoder = Encoder(
+            input_channels=in_channels, basic_block=basic_encoder_block,
+            n_stages=n, features_per_stage=features, n_blocks_per_stage=blocks,
+            conv_op=nn.Conv3d, strides=strides, kernel_sizes=kernels,
+            conv_bias=conv_bias, norm_op=norm_op,
+            norm_op_kwargs=({"affine": True, "eps": 1e-5}
+                            if norm_op_kwargs is None else dict(norm_op_kwargs)),
+            dropout_op=dropout_op,
+            dropout_op_kwargs=({"p": 0.0} if dropout_op_kwargs is None
+                               else dict(dropout_op_kwargs)),
+            nonlin=nonlin,
+            nonlin_kwargs=({"negative_slope": 0.01, "inplace": True}
+                           if nonlin_kwargs is None and nonlin is nn.LeakyReLU
+                           else dict(nonlin_kwargs or {})),
+            do_stem=do_stem, stem_channels=stem_channels,
+            bottleneck_block=bottleneck_block, bottleneck_channels=bottleneck_channels,
+            stochastic_depth_p=stochastic_depth_p,
+            squeeze_excitation=squeeze_excitation,
+            squeeze_excitation_reduction_ratio=squeeze_excitation_reduction_ratio,
+            squeeze_excitation_type=squeeze_excitation_type,
+            squeeze_excitation_add_maxpool=squeeze_excitation_add_maxpool,
+            return_skips=True,
+        )
+        self.shared_decoder = Decoder(
+            encoder=self.shared_encoder, basic_block=basic_decoder_block,
+            num_classes=None, n_conv_per_stage=decoder_blocks,
+            deep_supervision=False, upsample_mode=upsample_mode,
+        )
+        self.task_heads = nn.ModuleDict({
+            target_name: nn.Conv3d(features[0], out_channels, 1, bias=head_bias)
+        })
 
-        # 1. Stem
-        self.stem = ConvNormAct(in_channels, 32, kernel_size=3, stride=1, bias=True, act=True)
-
-        # 2. Encoder Stages
-        self.enc_stages = nn.ModuleList([
-            ResStage(n_blocks=1, in_ch=32,  out_ch=32,  stride=(1, 1, 1)),
-            ResStage(n_blocks=3, in_ch=32,  out_ch=64,  stride=(2, 2, 2)),
-            ResStage(n_blocks=4, in_ch=64,  out_ch=128, stride=(2, 2, 2)),
-            ResStage(n_blocks=6, in_ch=128, out_ch=256, stride=(2, 2, 2)),
-            ResStage(n_blocks=6, in_ch=256, out_ch=320, stride=(2, 2, 2)),
-            ResStage(n_blocks=6, in_ch=320, out_ch=320, stride=(1, 2, 2)),
-            ResStage(n_blocks=6, in_ch=320, out_ch=320, stride=(1, 2, 2)),
-        ])
-
-        # 3. Decoder Stages (von Flaschenhals zurück zu voller Auflösung)
-        self.dec_stages = nn.ModuleList([
-            DecoderStage(in_ch=320, skip_ch=320, out_ch=320, stride=(1, 2, 2)), # Stufe 6 -> 5
-            DecoderStage(in_ch=320, skip_ch=320, out_ch=320, stride=(1, 2, 2)), # Stufe 5 -> 4
-            DecoderStage(in_ch=320, skip_ch=256, out_ch=256, stride=(2, 2, 2)), # Stufe 4 -> 3
-            DecoderStage(in_ch=256, skip_ch=128, out_ch=128, stride=(2, 2, 2)), # Stufe 3 -> 2
-            DecoderStage(in_ch=128, skip_ch=64,  out_ch=64,  stride=(2, 2, 2)), # Stufe 2 -> 1
-            DecoderStage(in_ch=64,  skip_ch=32,  out_ch=32,  stride=(2, 2, 2)), # Stufe 1 -> 0
-        ])
-
-        # 4. Task Head (1x1x1 Conv3d)
-        self.head = nn.Conv3d(32, out_channels, kernel_size=1, stride=1, padding=0, bias=True)
-
-    def forward(self, x: torch.Tensor, project_z: bool = True) -> torch.Tensor:
-        """
-        Input:  [Batch, InChannels, Depth, Height, Width]
-        Output: [Batch, OutChannels, Height, Width] (wenn project_z=True) oder [Batch, OutChannels, Depth, Height, Width] (wenn project_z=False)
-        """
-        # Encoder
-        x = self.stem(x)
-        skips = []
-        for stage in self.enc_stages:
-            x = stage(x)
-            skips.append(x)
-
-        # Decoder mit Skip-Connections
-        d = skips[-1]
-        for i, stage in enumerate(self.dec_stages):
-            skip = skips[-(i + 2)]
-            d = stage(d, skip)
-
-        # Head
-        logits = self.head(d)
-
-        # Z-Projection
+    def forward(self, x, project_z=True):
+        if x.ndim != 5 or x.shape[1] != self.in_channels:
+            raise ValueError(f"Expected [B, {self.in_channels}, D, H, W]")
+        # Avg-pool skips and strided convolutions disagree on odd sizes.
+        # Reject instead of silently padding/cropping and changing predictions.
+        size = tuple(x.shape[2:])
+        for stride in self.strides:
+            if any(d % s for d, s in zip(size, stride)):
+                raise ValueError(f"Spatial size {size} is not divisible by stride {stride}")
+            size = tuple(d // s for d, s in zip(size, stride))
+        features = self.shared_decoder(self.shared_encoder(x))
+        logits = self.task_heads[self.target_name](features)
         if project_z and self.z_projection == "max":
             return torch.amax(logits, dim=2)
-        elif project_z and self.z_projection == "mean":
+        if project_z and self.z_projection == "mean":
             return torch.mean(logits, dim=2)
-
         return logits
 
-    def load_vesuvius_checkpoint(self, checkpoint_path_or_dict, map_location="cpu"):
-        if isinstance(checkpoint_path_or_dict, (str, os.PathLike)):
-            ckpt = torch.load(checkpoint_path_or_dict, map_location=map_location, weights_only=False)
+    def load_vesuvius_checkpoint(self, checkpoint_path_or_dict, map_location="cpu",
+                                 *, state_key=None):
+        """Strict loading; no guessed key remapping or discarded task weights.
+
+        Accepts a raw state dict or a 'model'/'state_dict'/'network_weights'
+        envelope. Use state_key to select an envelope explicitly. The checkpoint
+        must use the shared decoder architecture and matching target name.
+        """
+        checkpoint = checkpoint_path_or_dict
+        if isinstance(checkpoint, (str, Path)):
+            checkpoint = torch.load(checkpoint, map_location=map_location, weights_only=True)
+        if not isinstance(checkpoint, Mapping):
+            raise TypeError("Checkpoint must be a mapping")
+        if state_key is not None:
+            state = checkpoint[state_key]
         else:
-            ckpt = checkpoint_path_or_dict
+            envelopes = [k for k in ("model", "state_dict", "network_weights")
+                         if isinstance(checkpoint.get(k), Mapping)]
+            if len(envelopes) > 1:
+                raise ValueError("Ambiguous checkpoint; specify state_key")
+            state = checkpoint[envelopes[0]] if envelopes else checkpoint
+        if not isinstance(state, Mapping):
+            raise TypeError("Selected state must be a mapping")
+        # Only remove a uniform DDP prefix; mixed keys indicate a malformed state.
+        if state and all(k.startswith("module.") for k in state):
+            state = {k[7:]: v for k, v in state.items()}
+        return self.load_state_dict(state, strict=True)
 
-        state = ckpt.get("model", ckpt)
-        # Entferne eventuelle 'module.'-Präfixe von DistributedDataParallel (DDP)
-        state = {k[7:] if k.startswith("module.") else k: v for k, v in state.items()}
 
-        new_state = {}
-        # Stem
-        new_state["stem.conv.weight"] = state["shared_encoder.stem.convs.0.conv.weight"]
-        new_state["stem.conv.bias"]   = state["shared_encoder.stem.convs.0.conv.bias"]
-        new_state["stem.norm.weight"] = state["shared_encoder.stem.convs.0.norm.weight"]
-        new_state["stem.norm.bias"]   = state["shared_encoder.stem.convs.0.norm.bias"]
 
-        # Encoder-Stufen
-        n_blocks = [1, 3, 4, 6, 6, 6, 6]
-        for s, nb in enumerate(n_blocks):
-            for b in range(nb):
-                p_old = f"shared_encoder.stages.{s}.blocks.{b}"
-                p_new = f"enc_stages.{s}.blocks.{b}"
 
-                new_state[f"{p_new}.conv1.conv.weight"] = state[f"{p_old}.conv1.conv.weight"]
-                new_state[f"{p_new}.conv1.conv.bias"]   = state[f"{p_old}.conv1.conv.bias"]
-                new_state[f"{p_new}.conv1.norm.weight"] = state[f"{p_old}.conv1.norm.weight"]
-                new_state[f"{p_new}.conv1.norm.bias"]   = state[f"{p_old}.conv1.norm.bias"]
 
-                new_state[f"{p_new}.conv2.conv.weight"] = state[f"{p_old}.conv2.conv.weight"]
-                new_state[f"{p_new}.conv2.conv.bias"]   = state[f"{p_old}.conv2.conv.bias"]
-                new_state[f"{p_new}.conv2.norm.weight"] = state[f"{p_old}.conv2.norm.weight"]
-                new_state[f"{p_new}.conv2.norm.bias"]   = state[f"{p_old}.conv2.norm.bias"]
 
-                if f"{p_old}.skip.1.conv.weight" in state:
-                    new_state[f"{p_new}.skip.1.conv.weight"] = state[f"{p_old}.skip.1.conv.weight"]
-                    new_state[f"{p_new}.skip.1.norm.weight"] = state[f"{p_old}.skip.1.norm.weight"]
-                    new_state[f"{p_new}.skip.1.norm.bias"]   = state[f"{p_old}.skip.1.norm.bias"]
+# # NOTE: The model was reimplemented by an AI based on the original Vesuvius Challenge
+# # implementation (https://github.com/ScrollPrize/villa/commit/5479453a76f0db39a8d657434d3d4c4c517f7245),
+# # aiming to reproduce the original model architecture. A checkpoint generated by the original Challenge
+# # model was successfully loaded into the reimplemented model. For identical inputs, the reimplemented model
+# # produced exactly the same outputs as the original model (maximum and mean
+# # absolute difference: 0).
 
-        # Decoder-Stufen
-        for s in range(6):
-            new_state[f"dec_stages.{s}.transpconv.weight"] = state[f"shared_decoder.transpconvs.{s}.weight"]
-            new_state[f"dec_stages.{s}.transpconv.bias"]   = state[f"shared_decoder.transpconvs.{s}.bias"]
-            new_state[f"dec_stages.{s}.conv.conv.weight"]  = state[f"shared_decoder.stages.{s}.convs.0.conv.weight"]
-            new_state[f"dec_stages.{s}.conv.conv.bias"]    = state[f"shared_decoder.stages.{s}.convs.0.conv.bias"]
-            new_state[f"dec_stages.{s}.conv.norm.weight"]  = state[f"shared_decoder.stages.{s}.convs.0.norm.weight"]
-            new_state[f"dec_stages.{s}.conv.norm.bias"]    = state[f"shared_decoder.stages.{s}.convs.0.norm.bias"]
 
-        # Head
-        new_state["head.weight"] = state["task_heads.ink.weight"]
-        new_state["head.bias"]   = state["task_heads.ink.bias"]
+# import os
+# from typing import Union, Tuple
 
-        self.load_state_dict(new_state, strict=True)
-        print("Checkpoint erfolgreich und verlustfrei geladen.")
+# import torch
+# import torch.nn as nn
+
+
+# class ConvNormAct(nn.Module):
+#     """3D Conv + InstanceNorm3d (affine=True) + optional LeakyReLU."""
+#     def __init__(
+#         self,
+#         in_ch: int,
+#         out_ch: int,
+#         kernel_size: Union[int, Tuple[int, int, int]] = 3,
+#         stride: Union[int, Tuple[int, int, int]] = 1,
+#         bias: bool = True,
+#         act: bool = True,
+#     ):
+#         super().__init__()
+#         if isinstance(kernel_size, int):
+#             kernel_size = (kernel_size, kernel_size, kernel_size)
+#         if isinstance(stride, int):
+#             stride = (stride, stride, stride)
+#         padding = tuple((k - 1) // 2 for k in kernel_size)
+
+#         self.conv = nn.Conv3d(
+#             in_ch, out_ch, kernel_size=kernel_size, stride=stride, padding=padding, bias=bias
+#         )
+#         self.norm = nn.InstanceNorm3d(out_ch, affine=True, eps=1e-5)
+#         self.act = nn.LeakyReLU(negative_slope=0.01, inplace=True) if act else None
+
+#     def forward(self, x: torch.Tensor) -> torch.Tensor:
+#         x = self.conv(x)
+#         x = self.norm(x)
+#         if self.act is not None:
+#             x = self.act(x)
+#         return x
+
+
+# class ResBlockD(nn.Module):
+#     """
+#     ResNet-D Residual-Block mit AvgPool3d im Skip-Pfad bei Strides.
+#     """
+#     def __init__(self, in_ch: int, out_ch: int, stride: Union[int, Tuple[int, int, int]] = 1):
+#         super().__init__()
+#         if isinstance(stride, int):
+#             stride = (stride, stride, stride)
+#         self.stride = stride
+
+#         # Hauptpfad
+#         self.conv1 = ConvNormAct(in_ch, out_ch, kernel_size=3, stride=stride, bias=True, act=True)
+#         self.conv2 = ConvNormAct(out_ch, out_ch, kernel_size=3, stride=1, bias=True, act=False)
+#         self.act2 = nn.LeakyReLU(negative_slope=0.01, inplace=True)
+
+#         # Skip-Pfad (ResNet-D Style)
+#         has_stride = any(s != 1 for s in stride)
+#         requires_proj = in_ch != out_ch
+
+#         if has_stride or requires_proj:
+#             ops = []
+#             if has_stride:
+#                 ops.append(nn.AvgPool3d(kernel_size=stride, stride=stride))
+#             if requires_proj:
+#                 # 1x1x1 Projektion ohne Bias
+#                 ops.append(ConvNormAct(in_ch, out_ch, kernel_size=1, stride=1, bias=False, act=False))
+#             self.skip = nn.Sequential(*ops)
+#         else:
+#             self.skip = nn.Identity()
+
+#     def forward(self, x: torch.Tensor) -> torch.Tensor:
+#         residual = self.skip(x)
+#         out = self.conv2(self.conv1(x))
+#         out = out + residual
+#         return self.act2(out)
+
+
+# class ResStage(nn.Module):
+#     """Eine Stufe bestehend aus n ResBlockD-Blöcken."""
+#     def __init__(self, n_blocks: int, in_ch: int, out_ch: int, stride: Tuple[int, int, int]):
+#         super().__init__()
+#         blocks = [ResBlockD(in_ch, out_ch, stride=stride)]
+#         for _ in range(1, n_blocks):
+#             blocks.append(ResBlockD(out_ch, out_ch, stride=(1, 1, 1)))
+#         self.blocks = nn.Sequential(*blocks)
+
+#     def forward(self, x: torch.Tensor) -> torch.Tensor:
+#         return self.blocks(x)
+
+
+# class DecoderStage(nn.Module):
+#     """Transposed Conv (Upsampling) + Skip Concat + ConvNormAct."""
+#     def __init__(self, in_ch: int, skip_ch: int, out_ch: int, stride: Tuple[int, int, int]):
+#         super().__init__()
+#         self.transpconv = nn.ConvTranspose3d(
+#             in_ch, out_ch, kernel_size=stride, stride=stride, bias=True
+#         )
+#         self.conv = ConvNormAct(out_ch + skip_ch, out_ch, kernel_size=3, stride=1, bias=True, act=True)
+
+#     def forward(self, x: torch.Tensor, skip: torch.Tensor) -> torch.Tensor:
+#         x = self.transpconv(x)
+#         x = torch.cat([x, skip], dim=1)
+#         x = self.conv(x)
+#         return x
+
+
+# class VesuviusUNet(nn.Module):
+#     def __init__(
+#         self,
+#         in_channels: int = 1,
+#         out_channels: int = 1,
+#         z_projection: str = "max",  # "max", "mean" oder "none"
+#     ):
+#         super().__init__()
+#         self.z_projection = z_projection
+
+#         # 1. Stem
+#         self.stem = ConvNormAct(in_channels, 32, kernel_size=3, stride=1, bias=True, act=True)
+
+#         # 2. Encoder Stages
+#         self.enc_stages = nn.ModuleList([
+#             ResStage(n_blocks=1, in_ch=32,  out_ch=32,  stride=(1, 1, 1)),
+#             ResStage(n_blocks=3, in_ch=32,  out_ch=64,  stride=(2, 2, 2)),
+#             ResStage(n_blocks=4, in_ch=64,  out_ch=128, stride=(2, 2, 2)),
+#             ResStage(n_blocks=6, in_ch=128, out_ch=256, stride=(2, 2, 2)),
+#             ResStage(n_blocks=6, in_ch=256, out_ch=320, stride=(2, 2, 2)),
+#             ResStage(n_blocks=6, in_ch=320, out_ch=320, stride=(1, 2, 2)),
+#             ResStage(n_blocks=6, in_ch=320, out_ch=320, stride=(1, 2, 2)),
+#         ])
+
+#         # 3. Decoder Stages (von Flaschenhals zurück zu voller Auflösung)
+#         self.dec_stages = nn.ModuleList([
+#             DecoderStage(in_ch=320, skip_ch=320, out_ch=320, stride=(1, 2, 2)), # Stufe 6 -> 5
+#             DecoderStage(in_ch=320, skip_ch=320, out_ch=320, stride=(1, 2, 2)), # Stufe 5 -> 4
+#             DecoderStage(in_ch=320, skip_ch=256, out_ch=256, stride=(2, 2, 2)), # Stufe 4 -> 3
+#             DecoderStage(in_ch=256, skip_ch=128, out_ch=128, stride=(2, 2, 2)), # Stufe 3 -> 2
+#             DecoderStage(in_ch=128, skip_ch=64,  out_ch=64,  stride=(2, 2, 2)), # Stufe 2 -> 1
+#             DecoderStage(in_ch=64,  skip_ch=32,  out_ch=32,  stride=(2, 2, 2)), # Stufe 1 -> 0
+#         ])
+
+#         # 4. Task Head (1x1x1 Conv3d)
+#         self.head = nn.Conv3d(32, out_channels, kernel_size=1, stride=1, padding=0, bias=True)
+
+#     def forward(self, x: torch.Tensor, project_z: bool = True) -> torch.Tensor:
+#         """
+#         Input:  [Batch, InChannels, Depth, Height, Width]
+#         Output: [Batch, OutChannels, Height, Width] (wenn project_z=True) oder [Batch, OutChannels, Depth, Height, Width] (wenn project_z=False)
+#         """
+#         # Encoder
+#         x = self.stem(x)
+#         skips = []
+#         for stage in self.enc_stages:
+#             x = stage(x)
+#             skips.append(x)
+
+#         # Decoder mit Skip-Connections
+#         d = skips[-1]
+#         for i, stage in enumerate(self.dec_stages):
+#             skip = skips[-(i + 2)]
+#             d = stage(d, skip)
+
+#         # Head
+#         logits = self.head(d)
+
+#         # Z-Projection
+#         if project_z and self.z_projection == "max":
+#             return torch.amax(logits, dim=2)
+#         elif project_z and self.z_projection == "mean":
+#             return torch.mean(logits, dim=2)
+
+#         return logits
+
+#     def load_vesuvius_checkpoint(self, checkpoint_path_or_dict, map_location="cpu"):
+#         if isinstance(checkpoint_path_or_dict, (str, os.PathLike)):
+#             ckpt = torch.load(checkpoint_path_or_dict, map_location=map_location, weights_only=False)
+#         else:
+#             ckpt = checkpoint_path_or_dict
+
+#         state = ckpt.get("model", ckpt)
+#         # Entferne eventuelle 'module.'-Präfixe von DistributedDataParallel (DDP)
+#         state = {k[7:] if k.startswith("module.") else k: v for k, v in state.items()}
+
+#         new_state = {}
+#         # Stem
+#         new_state["stem.conv.weight"] = state["shared_encoder.stem.convs.0.conv.weight"]
+#         new_state["stem.conv.bias"]   = state["shared_encoder.stem.convs.0.conv.bias"]
+#         new_state["stem.norm.weight"] = state["shared_encoder.stem.convs.0.norm.weight"]
+#         new_state["stem.norm.bias"]   = state["shared_encoder.stem.convs.0.norm.bias"]
+
+#         # Encoder-Stufen
+#         n_blocks = [1, 3, 4, 6, 6, 6, 6]
+#         for s, nb in enumerate(n_blocks):
+#             for b in range(nb):
+#                 p_old = f"shared_encoder.stages.{s}.blocks.{b}"
+#                 p_new = f"enc_stages.{s}.blocks.{b}"
+
+#                 new_state[f"{p_new}.conv1.conv.weight"] = state[f"{p_old}.conv1.conv.weight"]
+#                 new_state[f"{p_new}.conv1.conv.bias"]   = state[f"{p_old}.conv1.conv.bias"]
+#                 new_state[f"{p_new}.conv1.norm.weight"] = state[f"{p_old}.conv1.norm.weight"]
+#                 new_state[f"{p_new}.conv1.norm.bias"]   = state[f"{p_old}.conv1.norm.bias"]
+
+#                 new_state[f"{p_new}.conv2.conv.weight"] = state[f"{p_old}.conv2.conv.weight"]
+#                 new_state[f"{p_new}.conv2.conv.bias"]   = state[f"{p_old}.conv2.conv.bias"]
+#                 new_state[f"{p_new}.conv2.norm.weight"] = state[f"{p_old}.conv2.norm.weight"]
+#                 new_state[f"{p_new}.conv2.norm.bias"]   = state[f"{p_old}.conv2.norm.bias"]
+
+#                 if f"{p_old}.skip.1.conv.weight" in state:
+#                     new_state[f"{p_new}.skip.1.conv.weight"] = state[f"{p_old}.skip.1.conv.weight"]
+#                     new_state[f"{p_new}.skip.1.norm.weight"] = state[f"{p_old}.skip.1.norm.weight"]
+#                     new_state[f"{p_new}.skip.1.norm.bias"]   = state[f"{p_old}.skip.1.norm.bias"]
+
+#         # Decoder-Stufen
+#         for s in range(6):
+#             new_state[f"dec_stages.{s}.transpconv.weight"] = state[f"shared_decoder.transpconvs.{s}.weight"]
+#             new_state[f"dec_stages.{s}.transpconv.bias"]   = state[f"shared_decoder.transpconvs.{s}.bias"]
+#             new_state[f"dec_stages.{s}.conv.conv.weight"]  = state[f"shared_decoder.stages.{s}.convs.0.conv.weight"]
+#             new_state[f"dec_stages.{s}.conv.conv.bias"]    = state[f"shared_decoder.stages.{s}.convs.0.conv.bias"]
+#             new_state[f"dec_stages.{s}.conv.norm.weight"]  = state[f"shared_decoder.stages.{s}.convs.0.norm.weight"]
+#             new_state[f"dec_stages.{s}.conv.norm.bias"]    = state[f"shared_decoder.stages.{s}.convs.0.norm.bias"]
+
+#         # Head
+#         new_state["head.weight"] = state["task_heads.ink.weight"]
+#         new_state["head.bias"]   = state["task_heads.ink.bias"]
+
+#         self.load_state_dict(new_state, strict=True)
+#         print("Checkpoint erfolgreich und verlustfrei geladen.")
