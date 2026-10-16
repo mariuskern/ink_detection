@@ -14,5 +14,6 @@ experiment:
   jobid: ${oc.env:SLURM_JOB_ID,none}
 
 hydra:
+  output_subdir: null # train.py archives and saves .hydra before training.
   run:
     dir: ${path.output_dir}

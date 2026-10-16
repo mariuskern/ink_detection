@@ -22,3 +22,177 @@ Call the following command in data/utils
 ```
 ./prepare_data.sh $TMPDIR/data/
 ```
+
+## Noisy Student training
+
+Set these options in `conf/train/noisy_student.yaml` or an inherited variant.
+For CLI overrides, prefix them with `train.`, e.g. `train.start_iteration=2`.
+Run `python train.py --config-name=<config_name>` with your training profile.
+
+| Goal | Set explicitly | Leave on `auto` |
+| --- | --- | --- |
+| Start from scratch | `start_iteration: 0` (default) | `teacher_checkpoint`, `resume_output_dir`, `resume_run` |
+| Resume an existing experiment | `resume_output_dir` and `start_iteration` | `teacher_checkpoint`, `resume_run` |
+| Start a new experiment from teachers | `teacher_checkpoint` and `start_iteration` | `resume_output_dir`, `resume_run` |
+
+### Options
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `start_iteration` | `0` | First iteration to train from the beginning. For `N > 0`, supply a teacher from `N - 1`. |
+| `iterations` | `5` | Exclusive upper bound: start `2`, end `5` trains `2`, `3`, `4`. |
+| `teacher_checkpoint` | `auto` | Read teachers from an explicit `resume_output_dir`; alternatively supply a file, list, or teacher folder. |
+| `resume_output_dir` | `auto` | Select the output folder; see below. |
+| `resume_run` | `auto` | Select the W&B run; see below. |
+
+| Option | Value | Effect |
+| --- | --- | --- |
+| `teacher_checkpoint` | `auto` | At iteration `0`: no teacher. At `N > 0`: select teachers from iteration `N - 1` in an explicitly supplied `resume_output_dir`. |
+| | `null` | No explicit teacher; at `N > 0`, also falls back to an explicit `resume_output_dir`. |
+| | `"path/model.pt"` | Use this checkpoint to generate pseudo-labels. |
+| | `["path/a.pt", "path/b.pt"]` | Use these checkpoints as the teacher ensemble. |
+| | `"outputs/source_run"` | Select teachers from iteration `N - 1`; an iteration/checkpoint folder can also be supplied directly. |
+| `resume_output_dir` | `auto` | Create a new folder based on `experiment.name`, including when checkpoints are supplied. |
+| | `null` | Same as `auto`; accepted for compatibility. Prefer `auto` in new configs. |
+| | `checkpoint` | Infer the run folder from the teacher; requires `<run>/iteration/<number>/checkpoints/<file>`. |
+| | `"outputs/old_run"` | Resume in this folder; automatic teachers come from its iteration `N - 1`, and automatic W&B selection uses its saved run. |
+| `resume_run` | `auto` | Resume the saved W&B run for an explicit output folder (or `checkpoint`); `auto`/`null` output creates a new run. |
+| | `null` | New experiments only; rejected for continuations. |
+| | `"entity/project/run_id"` | Continuations only: specify the same saved run, or supply the identity for a legacy run. |
+
+**How `auto` works:**
+
+1. `resume_output_dir: auto` chooses the regular folder using `experiment.name`;
+   it does not infer an old folder from supplied checkpoints. `null` has exactly
+   the same behavior and is retained as a compatibility alias.
+2. `teacher_checkpoint: auto` uses no teacher at iteration `0`. For `N > 0`,
+   provide an existing run as `resume_output_dir`, or supply explicit teachers.
+   If neither is available, startup fails.
+3. `resume_run: auto` creates a new W&B run when `resume_output_dir` is `auto` or
+   `null`. For an existing run folder, it reads the saved W&B identity there.
+   Missing identities require an explicit run ID; they are not guessed.
+
+An explicit teacher overrides automatic selection. A continuation must reuse
+both the old output folder and its W&B run; logging always appends. New output
+folders always start new W&B runs. Contradictory combinations raise an error. Hydra and training share the output
+folder; `path.tmp_dir` is independent. Use a unique `experiment.name` or its timestamp default for a
+new experiment.
+
+### Examples
+
+Each example lists **all five options** above. Other training/model settings
+are inherited from the selected profile.
+
+#### 1. Start a normal run from iteration 0
+
+Train iterations `0` through `4` in a new output folder and W&B run. Iteration
+`0` trains without pseudo-labels, then generates them for iteration `1`.
+
+```yaml
+start_iteration: 0
+iterations: 5
+teacher_checkpoint: auto
+resume_output_dir: auto
+resume_run: auto
+```
+
+These are the defaults. Remove conflicting overrides in inherited/debug configs.
+No teacher or previous logging state is loaded; metric counters start at zero.
+
+#### 2. Resume an existing run at iteration N
+
+Here `N = 2`: read the teachers from iteration `1`, regenerate their pseudo-labels,
+and train iterations `2` through `4`. Reuse the output folder and saved W&B run.
+
+```yaml
+start_iteration: 2
+iterations: 5
+teacher_checkpoint: auto
+resume_output_dir: "outputs/old_run"
+resume_run: auto
+```
+
+Teacher selection comes from `iteration/1/checkpoints/teacher_checkpoints.json`.
+The W&B identity is stored as `wandb.run_path` in `.hydra/config.yaml`.
+Explicit checkpoints can override the automatic teacher selection. For older
+runs without `wandb.run_path`, automatic resume raises an error; set
+`resume_run: "entity/project/run_id"` once. There is no fallback to the old
+config's `train.resume_run`. A missing config also prevents automatic W&B resume.
+W&B login and access are required.
+
+#### 3. Start Noisy Student training from a supervised checkpoint
+
+Generate pseudo-label version `0` from the supervised teacher, then train five
+student iterations (`1` through `5`) in a new folder and W&B run.
+
+```yaml
+start_iteration: 1
+iterations: 6
+teacher_checkpoint: "outputs/supervised/baseline/checkpoints/best.pt"
+resume_output_dir: auto
+resume_run: auto
+```
+
+`resume_output_dir: auto` or `null` selects a new experiment. Replace `best.pt`
+with your actual checkpoint and use a unique experiment name per ablation.
+**The checkpoint only generates pseudo-labels;
+it does not initialize student weights.** Students use the configured
+`build_model(cfg)` initialization. Model/data settings must match the teacher.
+
+#### 4. Start a new experiment with several teacher checkpoints
+
+Use the supplied ensemble to generate pseudo-label version `1`, then train
+iterations `2` through `4`. Setting `resume_output_dir: auto` creates a new
+folder and, with `resume_run: auto`, a new W&B run.
+
+```yaml
+start_iteration: 2
+iterations: 5
+teacher_checkpoint:
+  - "outputs/source/iteration/1/checkpoints/top_k_average.pt"
+  - "outputs/source/iteration/1/checkpoints/swa_average.pt"
+resume_output_dir: auto
+resume_run: auto
+```
+
+Explicit lists are used as given. A folder supplied as `teacher_checkpoint`
+also starts a new experiment when `resume_output_dir` is `auto` or `null`.
+To resume instead, set `resume_output_dir` to the old run folder and leave
+`teacher_checkpoint: auto`, as in example 2. Alternatively, `resume_output_dir:
+checkpoint` infers the common source run from explicit checkpoints. Files from
+different runs can be combined when starting a new experiment.
+
+> NOTE
+> - **Teacher selection:** New iterations save the exact ensemble in
+>   `teacher_checkpoints.json`. Folder input without this manifest raises an
+>   error, including when average files exist. For legacy runs, supply the
+>   checkpoint file or list explicitly. An iteration/checkpoint folder selects that
+>   iteration directly.
+> - **Logging:** Continuations always append; old points and duplicate X values
+>   remain. There is no rewind or continuation into a different W&B run.
+>   Counters are reconstructed exclusively from the same W&B run at the requested
+>   iteration boundary. New experiments start at zero. History must already be
+>   synced and accessible through the W&B API; no local counter fallback exists.
+> - **Backups:** Existing output/temp iteration folders are renamed to
+>   `<iteration>_backup_<timestamp>` before reuse, including `N - 1` before
+>   pseudo-label generation. Teacher paths are adjusted; later folders are backed
+>   up when reached. Backups are not deleted automatically.
+> - **Config checks:** Only continuations compare configs, and only the old
+>   config in the same output folder is read. Its `.hydra` is copied to
+>   `.hydra_backup_<timestamp>` before replacement. Changed common settings abort;
+>   added/removed keys warn. Resume fields, experiment metadata, and output/temp
+>   paths may change. Legacy configs without resolved snapshots are compared
+>   as expressions, so historical environment values cannot be verified.
+> - **New experiments:** Save only their current config; teacher-run configs
+>   are not read or copied. Occupied output folders are rejected to prevent
+>   accidental overwrites. Use a unique experiment name.
+> - **Config records:** A continuation requires `.hydra/config.yaml`. Automatic
+>   W&B lookup also requires `wandb.run_path`; legacy runs can supply the actual
+>   ID explicitly. A conflicting saved ID is rejected. Successful starts save
+>   Hydra metadata and `config.resolved.yaml`; rejected config changes leave the
+>   old config active and save the attempted config in the backup.
+> - **Resume boundary:** Only whole iterations can be restarted; optimizer and
+>   scheduler state are not restored.
+> - **Shared data:** Pseudo-label versions under `path.data_dir` are rewritten and
+>   are not included in folder backups. Isolate data storage for concurrent
+>   experiments that write the same versions.

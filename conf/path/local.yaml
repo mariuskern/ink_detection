@@ -1,4 +1,4 @@
 stage_dir: null
 data_dir: ${oc.env:DATA_DIR}/data_zarr
-output_dir: ${oc.env:OUTPUT_DIR}/${train.name}/${model.name}/${experiment.name}
+output_dir: ${training_output_dir:${oc.select:train.resume_output_dir,null},${oc.env:OUTPUT_DIR}/${train.name}/${model.name}/${experiment.name},${oc.select:train.teacher_checkpoint,null},${oc.select:train.start_iteration,0}}
 tmp_dir: ${oc.env:TMP_DIR}/${train.name}/${model.name}/${experiment.name}

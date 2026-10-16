@@ -1,4 +1,5 @@
 from pathlib import Path
+from datetime import datetime
 
 import torch
 from torch.optim.swa_utils import AveragedModel
@@ -11,17 +12,51 @@ from utils.device import get_device
 from data import build_dataset, build_dataloader, build_augmentation
 from training.precision import parse_precision
 from utils.load_model import load_model_from_checkpoint
+from utils.teacher_checkpoints import resolve_teacher_checkpoints, save_teacher_selection
 
 
 def train_noisy_student(cfg, logger):
     output_dir = Path(cfg.path.output_dir)
     tmp_dir = Path(cfg.path.tmp_dir)
 
-    for iteration in range(cfg.train.iterations):
+    start_iteration = cfg.train.get("start_iteration", 0)
+    teacher_checkpoint = cfg.train.get("teacher_checkpoint")
+
+    if not 0 <= start_iteration < cfg.train.iterations:
+        raise ValueError("train.start_iteration must be >= 0 and < train.iterations")
+    
+    if start_iteration > 0 and not teacher_checkpoint:
+        raise ValueError("train.teacher_checkpoint is required when train.start_iteration > 0")
+    
+    if teacher_checkpoint and start_iteration == 0:
+        raise ValueError("train.teacher_checkpoint requires train.start_iteration > 0")
+
+    teacher_paths = resolve_teacher_checkpoints(teacher_checkpoint, start_iteration) if teacher_checkpoint else []
+
+    if teacher_checkpoint:
+        previous_iteration = start_iteration - 1
+
+        teacher_paths = backup_iteration_directories(output_dir, tmp_dir, previous_iteration, teacher_paths)
+
+        print(f"Generating pseudo labels for iteration {previous_iteration} from {teacher_paths}")
+
+        generate_pseudo_labels(
+            cfg,
+            teacher_paths,
+            previous_iteration,
+            output_dir / "iteration" / str(previous_iteration),
+            tmp_dir / "iteration" / str(previous_iteration),
+            get_device(cfg),
+        )
+
+    for iteration in range(start_iteration, cfg.train.iterations):
         print(f"Starting Noisy Student iteration {iteration}")
 
         output_dir_iteration = output_dir / "iteration" / str(iteration)
         tmp_dir_iteration = tmp_dir / "iteration" / str(iteration)
+
+        if start_iteration > 0:
+            backup_iteration_directories(output_dir, tmp_dir, iteration)
 
         device = get_device(cfg)
 
@@ -42,6 +77,33 @@ def train_noisy_student(cfg, logger):
             save_predictions(cfg, checkpoint_paths, output_dir_iteration, tmp_dir_iteration, device)
 
         generate_pseudo_labels(cfg, checkpoint_paths, iteration, output_dir_iteration, tmp_dir_iteration, device)
+
+
+def backup_iteration_directories(output_dir, tmp_dir, iteration, checkpoint_path=None):
+    """Preserve iteration outputs and caches, relocating the teacher path if needed."""
+
+    multiple = isinstance(checkpoint_path, list)
+    paths = checkpoint_path if multiple else ([checkpoint_path] if checkpoint_path is not None else [])
+    paths = [path.resolve() for path in paths]
+
+    directories = {}
+
+    for root in (output_dir, tmp_dir):
+        directory = (root / "iteration" / str(iteration)).resolve()
+        directory.relative_to(root.resolve())
+        directories[directory] = None
+
+    for directory in directories:
+        if directory.exists():
+            backup = directory.with_name(f"{directory.name}_backup_{datetime.now():%Y%m%d_%H%M%S_%f}")
+
+            directory.rename(backup)
+
+            paths = [backup / path.relative_to(directory) if path.is_relative_to(directory) else path for path in paths]
+
+            print(f"Preserved previous iteration directory: {backup}")
+    
+    return paths if multiple else (paths[0] if paths else None)
 
 
 def generate_pseudo_labels(cfg, checkpoint_paths, iteration, output_dir, tmp_dir, device):
@@ -132,6 +194,7 @@ def get_checkpoint_paths(cfg, result, device):
             case _:
                 raise ValueError(f"Invalid swa_mode: {cfg.train.teacher.swa_mode}")
 
+    save_teacher_selection(checkpoint_paths)
     return checkpoint_paths
 
 

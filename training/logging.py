@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+import re
 from typing import Any
 
 import torch
@@ -26,15 +27,62 @@ import wandb
 
 
 class WandbLogger:
-    def __init__(self, project: str, name: str | None = None, config: dict | None = None):
-        self.run = wandb.init(
-            project=project,
-            name=name,
-            config=config,
-        )
+    def __init__(self, project: str, name: str | None = None, config: dict | None = None, *, resume_run: str | None = None, start_iteration: int = 0):
+        """Create a new run or append to the same run with restored counters.
+
+        A continuation never rewinds history: custom metric steps restart at
+        the requested iteration boundary while W&B's internal step advances.
+        Old points, including duplicate custom X values, remain in the history.
+        """
 
         self._steps: dict[str, int] = defaultdict(int)
         self._defined_metrics: set[str] = set()
+
+        resume_options = {}
+
+        if resume_run:
+            entity, project, run_id = resume_run.split("/")
+
+            previous_run = wandb.Api().run(resume_run)
+
+            self._steps.update(self._restore_history(previous_run.scan_history(), start_iteration))
+
+            resume_options = dict(entity=entity, id=run_id, resume="must")
+
+            print(f"Appending to W&B run {resume_run} at iteration {start_iteration}; old points are retained")
+        
+        self.run = wandb.init(project=project, name=name, config=config, **resume_options)
+
+    @classmethod
+    def _restore_history(cls, history, start_iteration):
+        """Return next counters before the first row of the restarted iteration.
+
+        No internal rewind step is needed for append. An immediate iteration
+        boundary yields empty counters, which start at zero in the new process.
+        """
+
+        steps = {}
+
+        for row in history:
+            restarted = any(
+                (match := re.match(r"^[^/]+/(\d+)_", key))
+                and int(match.group(1)) >= start_iteration
+                and value is not None
+                for key, value in row.items()
+            )
+
+            if restarted:
+                break
+            for key, value in row.items():
+                if value is None or key.startswith(("_", "steps/")) or key.endswith("_epoch"):
+                    continue
+
+                step = row.get(cls._step_name(key))
+
+                if step is not None:
+                    steps[key] = max(steps.get(key, 0), int(step) + 1)
+        
+        return steps
 
     def log(self, metrics: dict[str, Any], step: int | None = None) -> None:
         """

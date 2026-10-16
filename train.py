@@ -14,6 +14,9 @@ import hydra
 # import lightning as pl
 # from lightning.pytorch.loggers import WandbLogger
 from omegaconf import OmegaConf
+from hydra.core.hydra_config import HydraConfig
+from utils.config_snapshot import save_training_config, register_config_resolvers, resolve_resume_run, save_wandb_identity, prepare_teacher_source
+from utils.teacher_checkpoints import resolve_teacher_checkpoints
 
 from training import train_supervised, train_noisy_student
 from training.seed import seed_everything
@@ -27,10 +30,26 @@ for key in ["DATA_DIR", "CODE_DIR", "OUTPUT_DIR", "TMP_DIR"]:
 
 
 torch.set_float32_matmul_precision("high")
+register_config_resolvers()
 
 
 @hydra.main(version_base=None, config_path="conf/", config_name="-provide_as_argument-")
 def main(cfg):
+    prepare_teacher_source(cfg)
+
+    resume_run = resolve_resume_run(cfg)
+
+    start_iteration = cfg.train.get("start_iteration", 0)
+    is_noisy_student = cfg.train.name == "noisy_student"
+
+    if resume_run and (not is_noisy_student or not 0 < start_iteration < cfg.train.iterations):
+        raise ValueError("train.resume_run requires noisy_student with 0 < start_iteration < iterations")
+        
+    if is_noisy_student and start_iteration > 0:
+        resolve_teacher_checkpoints(cfg.train.get("teacher_checkpoint"), start_iteration)
+
+    save_training_config(cfg, HydraConfig.get())
+
     # pl.seed_everything(cfg.train.seed, workers=True)
 
     if cfg.train.seed is not None:
@@ -52,7 +71,11 @@ def main(cfg):
         project=cfg.wandb.project,
         name=cfg.experiment.name,
         config=OmegaConf.to_container(cfg, resolve=True),
+        resume_run=resume_run,
+        start_iteration=cfg.train.get("start_iteration", 0),
     )
+    
+    save_wandb_identity(cfg, HydraConfig.get(), logger.run)
     
     match cfg.train.name:
         case "supervised":
