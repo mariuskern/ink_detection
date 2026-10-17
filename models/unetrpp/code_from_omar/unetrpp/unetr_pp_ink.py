@@ -22,7 +22,7 @@ import torch
 from torch import nn
 
 from .dynunet_block import UnetResBlock
-from .model_components import UnetrPPEncoder, UnetrUpBlock
+from .model_components import UnetrPPEncoder, UnetrUpBlock, drop_path_schedule
 
 
 def _prod(xs) -> int:
@@ -57,8 +57,15 @@ class UNETR_PP_Ink(nn.Module):
         surface_relative: bool = False,
         per_pixel: bool = False,
         warp_stabilize: bool = False,
+        decoder_depths: Sequence[int] = (3, 3, 3),
     ) -> None:
         super().__init__()
+
+        decoder_depths = tuple(decoder_depths)
+
+        if len(decoder_depths) != 3 or any(isinstance(d, bool) or not isinstance(d, int) or d <= 0 for d in decoder_depths):
+            raise ValueError("decoder_depths must contain three positive integers (deep to shallow)")
+        
         assert len(img_size) == 3 and len(patch_size) == 3
         assert hidden_size == dims[-1], "hidden_size must equal dims[-1]"
 
@@ -152,6 +159,13 @@ class UNETR_PP_Ink(nn.Module):
         #     kernel_size=3, upsample_kernel_size=tuple(patch_size), norm_name=norm_name,
         #     out_size=_prod(img_size), conv_decoder=True,
         # )
+        # Three transformer decoder stages with configurable block counts. Rates fall
+        # from the bottleneck maximum to zero towards the output resolution.
+        decoder_rates = drop_path_schedule(drop_path_rate, sum(decoder_depths), descending=True)
+
+        first_end = decoder_depths[0]
+        second_end = first_end + decoder_depths[1]
+        
         self.decoder5 = UnetrUpBlock(
             spatial_dims=3, in_channels=feature_size * 16, out_channels=feature_size * 8,
             kernel_size=3, upsample_kernel_size=2, norm_name=norm_name,
@@ -163,6 +177,8 @@ class UNETR_PP_Ink(nn.Module):
             conv_dropout_rate=conv_dropout_rate,
             conv_projection_dropout_rate=conv_projection_dropout_rate,
             drop_path_rate=drop_path_rate,
+            depth=decoder_depths[0],
+            drop_path_rates=decoder_rates[:first_end],
         )
         self.decoder4 = UnetrUpBlock(
             spatial_dims=3, in_channels=feature_size * 8, out_channels=feature_size * 4,
@@ -175,6 +191,8 @@ class UNETR_PP_Ink(nn.Module):
             conv_dropout_rate=conv_dropout_rate,
             conv_projection_dropout_rate=conv_projection_dropout_rate,
             drop_path_rate=drop_path_rate,
+            depth=decoder_depths[1],
+            drop_path_rates=decoder_rates[first_end:second_end],
         )
         self.decoder3 = UnetrUpBlock(
             spatial_dims=3, in_channels=feature_size * 4, out_channels=feature_size * 2,
@@ -187,6 +205,8 @@ class UNETR_PP_Ink(nn.Module):
             conv_dropout_rate=conv_dropout_rate,
             conv_projection_dropout_rate=conv_projection_dropout_rate,
             drop_path_rate=drop_path_rate,
+            depth=decoder_depths[2],
+            drop_path_rates=decoder_rates[second_end:],
         )
         self.decoder2 = UnetrUpBlock(
             spatial_dims=3, in_channels=feature_size * 2, out_channels=feature_size,
@@ -279,6 +299,7 @@ def build_unetrpp_ink(
     surface_relative: bool = False,
     per_pixel: bool = False,
     warp_stabilize: bool = False,
+    decoder_depths: Sequence[int] = (3, 3, 3),
 ) -> UNETR_PP_Ink:
     return UNETR_PP_Ink(
         in_channels=in_channels,
@@ -287,6 +308,7 @@ def build_unetrpp_ink(
         num_heads=num_heads,
         norm_name=norm_name,
         depths=depths,
+        decoder_depths=decoder_depths,
         dims=dims,
         img_size=img_size,
         patch_size=patch_size,

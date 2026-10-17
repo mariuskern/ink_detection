@@ -1,0 +1,4 @@
+defaults:
+  - noisy_student_debug
+
+lr: 0.01

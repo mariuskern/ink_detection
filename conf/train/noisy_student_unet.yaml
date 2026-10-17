@@ -1,0 +1,5 @@
+defaults:
+  - noisy_student
+
+lr: 0.01
+# warmup_epochs: 5

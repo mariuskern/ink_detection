@@ -27,3 +27,6 @@ decoder_kernel_size: 3
 upscale: 1 # auto 1
 align_corners: false
 forward_features: false
+encoder_dropout_rate: 0.0   # Dropout3d in each encoder residual branch; [0, 1)
+decoder_dropout_rate: 0.0   # Dropout2d after each decoder fusion; [0, 1)
+drop_path_rate: 0.0         # Stochastic depth: linearly increases from 0 to this rate; [0, 1)

@@ -1,0 +1,19 @@
+defaults:
+  - data/dataset@dataset: debug
+  - data/sampler@sampler: debug
+  - data/dataloader@dataloader: debug
+  - model: vesuvius_unet
+  - loss: dice_bce
+  - path: local
+  - wandb: debug
+  - train: noisy_student_debug_unet
+  - _self_
+
+experiment:
+  name: ${now:%Y-%m-%d_%H-%M-%S} # ${model.name}_${now:%Y-%m-%d_%H-%M-%S}
+  jobid: ${oc.env:SLURM_JOB_ID,none}
+
+hydra:
+  output_subdir: null # train.py archives and saves .hydra before training.
+  run:
+    dir: ${path.output_dir}

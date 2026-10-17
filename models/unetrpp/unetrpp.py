@@ -37,6 +37,7 @@ class UNetRpp(nn.Module):
             collapse="mean",
             # Head
             head_classes=1,
+            decoder_depths: Sequence[int] = (3, 3, 3),
     ):
         super().__init__()
         
@@ -56,6 +57,7 @@ class UNetRpp(nn.Module):
             num_heads=num_heads,
             norm_name=norm_name,
             depths=depths,
+            decoder_depths=decoder_depths,
             dims=dims,
             img_size=(D, H, W),
             patch_size=patch_size,

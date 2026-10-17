@@ -2,11 +2,11 @@ defaults:
   - data/dataset@dataset: debug
   - data/sampler@sampler: debug
   - data/dataloader@dataloader: debug
-  - model: vesuvius_resnet3d # timesformer unetrpp vesuvius_unet vesuvius_resnet3d
+  - model: vesuvius_resnet3d
   - loss: resnet3d
   - path: local
   - wandb: debug
-  - train: noisy_student_debug_resnet3d # supervised_debug noisy_student_debug unimatch_debug
+  - train: noisy_student_debug_resnet3d
   - _self_
 
 experiment:

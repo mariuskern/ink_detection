@@ -25,6 +25,35 @@ from collections.abc import Mapping
 from pathlib import Path
 
 
+class _NonOverlappingAvgPool3d(nn.AvgPool3d):
+    """Average disjoint windows without CUDA's nondeterministic pool backward.
+
+    Used by the ResNet-D skip paths (kernel == stride, no padding).
+    Incomplete trailing windows are discarded, as in AvgPool3d.
+    """
+
+    def forward(self, x):
+        kernel = (self.kernel_size,) * 3 if isinstance(self.kernel_size, int) else tuple(self.kernel_size)
+
+        stride = (self.stride,) * 3 if isinstance(self.stride, int) else tuple(self.stride)
+
+        padding = (self.padding,) * 3 if isinstance(self.padding, int) else tuple(self.padding)
+
+        if stride != kernel or any(padding) or self.ceil_mode or self.divisor_override is not None:
+            return super().forward(x)
+        
+        d, h, w = x.shape[-3:]
+        kd, kh, kw = kernel
+
+        if d < kd or h < kh or w < kw:
+            return super().forward(x)
+        
+        x = x[..., :d // kd * kd, :h // kh * kh, :w // kw * kw]
+        x = x.reshape(*x.shape[:-3], d // kd, kd, h // kh, kh, w // kw, kw)
+
+        return x.mean(dim=(-5, -3, -1))
+
+
 def convert_conv_op_to_dim(conv_op: Type[_ConvNd]) -> int:
     """
     :param conv_op: conv class
@@ -89,7 +118,8 @@ def get_matching_pool_op(conv_op: Type[_ConvNd] = None,
             if adaptive:
                 return nn.AdaptiveAvgPool3d
             else:
-                return nn.AvgPool3d
+                # return nn.AvgPool3d
+                return _NonOverlappingAvgPool3d
         elif pool_type == 'max':
             if adaptive:
                 return nn.AdaptiveMaxPool3d

@@ -26,6 +26,30 @@ def get_inplanes():
     return [64, 128, 256, 512]
 
 
+def _validate_drop_rate(name, rate):
+    if not 0 <= rate < 1:
+        raise ValueError(f"{name} must be in [0, 1), got {rate}")
+
+
+class DropPath(nn.Module):
+    """Drop a residual branch per sample and preserve its expected magnitude."""
+
+    def __init__(self, drop_prob=0.0):
+        super().__init__()
+        _validate_drop_rate("drop_path_rate", drop_prob)
+        self.drop_prob = drop_prob
+
+    def forward(self, x):
+        if not self.training or self.drop_prob == 0:
+            return x
+        
+        keep_prob = 1 - self.drop_prob
+
+        mask = x.new_empty((x.shape[0],) + (1,) * (x.ndim - 1)).bernoulli_(keep_prob)
+
+        return x * mask / keep_prob
+
+
 class _SpatialMaxPool3d(nn.MaxPool2d):
     """Pool each depth slice independently using deterministic CUDA MaxPool2d."""
 
@@ -56,8 +80,13 @@ def conv1x1x1(in_planes, out_planes, stride=1):
 class BasicBlock(nn.Module):
     expansion = 1
 
-    def __init__(self, in_planes, planes, stride=1, downsample=None):
+    def __init__(self, in_planes, planes, stride=1, downsample=None, dropout_rate=0.0, drop_path_rate=0.0):
         super().__init__()
+
+        _validate_drop_rate("encoder_dropout_rate", dropout_rate)
+
+        self.dropout = nn.Dropout3d(dropout_rate)
+        self.drop_path = DropPath(drop_path_rate)
 
         self.conv1 = conv3x3x3(in_planes, planes, stride)
         self.bn1 = nn.BatchNorm3d(planes)
@@ -74,13 +103,14 @@ class BasicBlock(nn.Module):
         out = self.bn1(out)
         out = self.relu(out)
 
+        out = self.dropout(out)
         out = self.conv2(out)
         out = self.bn2(out)
 
         if self.downsample is not None:
             residual = self.downsample(x)
 
-        out += residual
+        out = self.drop_path(out) + residual
         out = self.relu(out)
 
         return out
@@ -89,8 +119,13 @@ class BasicBlock(nn.Module):
 class Bottleneck(nn.Module):
     expansion = 4
 
-    def __init__(self, in_planes, planes, stride=1, downsample=None):
+    def __init__(self, in_planes, planes, stride=1, downsample=None, dropout_rate=0.0, drop_path_rate=0.0):
         super().__init__()
+
+        _validate_drop_rate("encoder_dropout_rate", dropout_rate)
+
+        self.dropout = nn.Dropout3d(dropout_rate)
+        self.drop_path = DropPath(drop_path_rate)
 
         self.conv1 = conv1x1x1(in_planes, planes)
         self.bn1 = nn.BatchNorm3d(planes)
@@ -113,13 +148,14 @@ class Bottleneck(nn.Module):
         out = self.bn2(out)
         out = self.relu(out)
 
+        out = self.dropout(out)
         out = self.conv3(out)
         out = self.bn3(out)
 
         if self.downsample is not None:
             residual = self.downsample(x)
 
-        out += residual
+        out = self.drop_path(out) + residual
         out = self.relu(out)
 
         return out
@@ -147,8 +183,20 @@ class ResNet(nn.Module):
                  pool_padding=(0, 1, 1),
                  bn_eps=1e-5,
                  bn_momentum=0.1,
+                 encoder_dropout_rate=0.0,
+                 drop_path_rate=0.0,
                 ):
         super().__init__()
+
+        _validate_drop_rate("encoder_dropout_rate", encoder_dropout_rate)
+        _validate_drop_rate("drop_path_rate", drop_path_rate)
+
+        self.encoder_dropout_rate = encoder_dropout_rate
+
+        self._drop_path_rates = [drop_path_rate * (i / max(sum(layers) - 1, 1)) for i in range(sum(layers))]
+
+        self._block_index = 0
+
         self.forward_features=forward_features
         block_inplanes = [int(x * widen_factor) for x in block_inplanes]
 
@@ -223,6 +271,7 @@ class ResNet(nn.Module):
 
     def _make_layer(self, block, planes, blocks, shortcut_type, stride=1):
         downsample = None
+        
         if stride != 1 or self.in_planes != planes * block.expansion:
             if shortcut_type == 'A':
                 downsample = partial(self._downsample_basic_block,
@@ -238,10 +287,14 @@ class ResNet(nn.Module):
             block(in_planes=self.in_planes,
                   planes=planes,
                   stride=stride,
-                  downsample=downsample))
+                  downsample=downsample,
+                  dropout_rate=self.encoder_dropout_rate,
+                  drop_path_rate=self._drop_path_rates[self._block_index]))
+        self._block_index += 1
         self.in_planes = planes * block.expansion
         for i in range(1, blocks):
-            layers.append(block(self.in_planes, planes))
+            layers.append(block(self.in_planes, planes, dropout_rate=self.encoder_dropout_rate, drop_path_rate=self._drop_path_rates[self._block_index]))
+            self._block_index += 1
 
         return nn.Sequential(*layers)
 
@@ -296,8 +349,9 @@ def replace_batchnorm_with_groupnorm(module: nn.Module, *, desired_groups: int =
 
 
 class Decoder(nn.Module):
-    def __init__(self, encoder_dims, upscale, *, norm="batch", group_norm_groups=32, out_channels=1, kernel_size=3, bn_eps=1e-5, bn_momentum=0.1, align_corners=False):
+    def __init__(self, encoder_dims, upscale, *, norm="batch", group_norm_groups=32, out_channels=1, kernel_size=3, bn_eps=1e-5, bn_momentum=0.1, align_corners=False, dropout_rate=0.0):
         super().__init__()
+        _validate_drop_rate("decoder_dropout_rate", dropout_rate)
         norm = str(norm).lower()
         if norm not in {"batch", "group"}:
             raise ValueError(f"Unknown norm: {norm!r}")
@@ -312,7 +366,8 @@ class Decoder(nn.Module):
             nn.Sequential(
                 nn.Conv2d(encoder_dims[i] + encoder_dims[i - 1], encoder_dims[i - 1], kernel_size, 1, kernel_size // 2, bias=False),
                 _norm2d(encoder_dims[i - 1]),
-                nn.ReLU(inplace=True)
+                nn.ReLU(inplace=True),
+                nn.Dropout2d(dropout_rate),
             ) for i in range(1, len(encoder_dims))])
 
         self.logit = nn.Conv2d(encoder_dims[0], out_channels, 1, 1, 0)
@@ -353,6 +408,9 @@ class VesuviusResNet3D(nn.Module):
     ``stage_strides`` must preserve a spatial factor of two between decoder
     levels; use (depth_stride, 2, 2) to change only depth downsampling.
     Existing hybrid model state_dicts load directly with strict=True.
+    ``encoder_dropout_rate``/``decoder_dropout_rate`` drop feature channels.
+    ``drop_path_rate`` increases linearly from zero to this rate over encoder
+    blocks, dropping residual branches per sample. All three are training-only.
     """
 
     def __init__(
@@ -368,6 +426,7 @@ class VesuviusResNet3D(nn.Module):
         bn_momentum=0.1, with_norm=False, z_projection='max',
         decoder_kernel_size=3, upscale=1, align_corners=False,
         forward_features=False,
+        encoder_dropout_rate=0.0, decoder_dropout_rate=0.0, drop_path_rate=0.0,
     ):
         super().__init__()
         if model_depth not in _DEPTHS:
@@ -409,6 +468,7 @@ class VesuviusResNet3D(nn.Module):
             stem_spatial_stride=stem_spatial_stride, pool_kernel=pool_kernel,
             pool_stride=pool_stride, pool_padding=pool_padding,
             bn_eps=bn_eps, bn_momentum=bn_momentum,
+            encoder_dropout_rate=encoder_dropout_rate, drop_path_rate=drop_path_rate,
         )
         if norm == 'group':
             replace_batchnorm_with_groupnorm(self.backbone, desired_groups=group_norm_groups)
@@ -417,6 +477,7 @@ class VesuviusResNet3D(nn.Module):
             encoder_dims, upscale, norm=norm, group_norm_groups=group_norm_groups,
             out_channels=out_channels, kernel_size=decoder_kernel_size,
             bn_eps=bn_eps, bn_momentum=bn_momentum, align_corners=align_corners,
+            dropout_rate=decoder_dropout_rate,
         )
         if with_norm:
             self.normalization = (

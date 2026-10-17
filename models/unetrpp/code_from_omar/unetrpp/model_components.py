@@ -12,6 +12,17 @@ from .dynunet_block import get_conv_layer, UnetResBlock
 einops, _ = optional_import("einops")
 
 
+def drop_path_schedule(max_rate, num_blocks, *, descending=False):
+    """Linear per-block probabilities, reversed for the decoder."""
+
+    if not 0 <= max_rate < 1:
+        raise ValueError("drop_path_rate must be in [0, 1).")
+    
+    rates = [max_rate * (i / max(num_blocks - 1, 1)) for i in range(num_blocks)]
+
+    return rates[::-1] if descending else rates
+
+
 def _safe_num_groups(desired, channels):
     """Largest divisor of ``channels`` that is <= ``desired`` (and >= 1).
 
@@ -59,13 +70,8 @@ class UnetrPPEncoder(nn.Module):
 
         self.stages = nn.ModuleList()  # 4 feature resolution stages, each consisting of multiple Transformer blocks
 
-        # total_blocks = sum(depths)
-        # if not 0.0 <= drop_path_rate < 1.0:
-        #     raise ValueError("drop_path_rate must be in [0, 1).")
-
-        # drop_path_rates = torch.linspace(0.0, drop_path_rate, total_blocks).tolist()
-
-        # block_idx = 0
+        drop_path_rates = drop_path_schedule(drop_path_rate, sum(depths))
+        block_idx = 0
 
         for i in range(4):
             stage_blocks = []
@@ -80,12 +86,12 @@ class UnetrPPEncoder(nn.Module):
                                     attention_dropout_rate=attention_dropout_rate,
                                     conv_dropout_rate=conv_dropout_rate,
                                     conv_projection_dropout_rate=conv_projection_dropout_rate,
-                                    drop_path_rate=drop_path_rate,
+                                    drop_path_rate=drop_path_rates[block_idx],
                                     pos_embed=True,
                                      pe_mode=pe_mode, pe_depth=pe_depth_i,
                                      depth_attn=depth_attn, da_gamma_init=da_gamma_init, surface_relative=surface_relative,
                                      per_pixel=per_pixel, warp_stabilize=warp_stabilize))
-                # block_idx += 1
+                block_idx += 1
             self.stages.append(nn.Sequential(*stage_blocks))
         self.hidden_states = []
         self.apply(self._init_weights)
@@ -145,6 +151,7 @@ class UnetrUpBlock(nn.Module):
             conv_dropout_rate: float = 0.0,
             conv_projection_dropout_rate: float = 0.1,
             drop_path_rate: float = 0.0,
+            drop_path_rates: Sequence[float] = None,
     ) -> None:
         """
         Args:
@@ -158,6 +165,8 @@ class UnetrUpBlock(nn.Module):
             num_heads: number of heads inside each EPA module.
             out_size: spatial size for each decoder.
             depth: number of blocks for the current decoder stage.
+            drop_path_rates: explicit per-transformer probabilities; overrides
+                drop_path_rate. The final convolutional decoder has no DropPath.
         """
 
         super().__init__()
@@ -184,6 +193,12 @@ class UnetrUpBlock(nn.Module):
                 UnetResBlock(spatial_dims, out_channels, out_channels, kernel_size=kernel_size, stride=1,
                              norm_name=norm_name, dropout=conv_dropout_rate))
         else:
+            if drop_path_rates is None:
+                drop_path_rates = [drop_path_rate] * depth
+            
+            if len(drop_path_rates) != depth:
+                raise ValueError("drop_path_rates must contain one rate per decoder block")
+            
             stage_blocks = []
             for j in range(depth):
                 # stage_blocks.append(TransformerBlock(input_size=out_size, hidden_size= out_channels, proj_size=proj_size, num_heads=num_heads,
@@ -195,7 +210,7 @@ class UnetrUpBlock(nn.Module):
                                                     attention_dropout_rate=attention_dropout_rate,
                                                     conv_dropout_rate=conv_dropout_rate,
                                                     conv_projection_dropout_rate=conv_projection_dropout_rate,
-                                                    drop_path_rate=drop_path_rate,
+                                                    drop_path_rate=drop_path_rates[j],
                                                     pos_embed=True,
                                                      pe_mode=pe_mode, pe_depth=pe_depth,
                                                      depth_attn=depth_attn, da_gamma_init=da_gamma_init, surface_relative=surface_relative,

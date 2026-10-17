@@ -1,0 +1,6 @@
+defaults:
+  - base
+
+tile_size: 256
+stride: 128
+depth: 64

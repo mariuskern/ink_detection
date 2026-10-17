@@ -3,4 +3,3 @@ defaults:
   - override /aug@student.aug: resnet3d
 
 lr: 3.0e-4
-warmup_epochs: 5

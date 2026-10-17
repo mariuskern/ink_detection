@@ -17,6 +17,7 @@ def build_model(cfg):
                 num_heads=cfg.model.num_heads,
                 norm_name=cfg.model.norm_name,
                 depths=cfg.model.depths,
+                decoder_depths=cfg.model.decoder_depths,
                 dims=cfg.model.dims,
                 patch_size=cfg.model.patch_size,
                 proj_size=cfg.model.proj_size,
@@ -116,4 +117,7 @@ def build_model(cfg):
                 upscale=cfg.model.upscale,
                 align_corners=cfg.model.align_corners,
                 forward_features=cfg.model.forward_features,
+                encoder_dropout_rate=cfg.model.encoder_dropout_rate,
+                decoder_dropout_rate=cfg.model.decoder_dropout_rate,
+                drop_path_rate=cfg.model.drop_path_rate,
             )
