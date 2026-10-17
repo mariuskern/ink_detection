@@ -3,9 +3,9 @@ defaults:
   - data/sampler@sampler: default
   - data/dataloader@dataloader: unet
   - model: vesuvius_unet
-  - loss: default
+  - loss: dice_bce
   - path: alex
-  - wandb: dice_bce
+  - wandb: default
   - train: noisy_student_unet
   - _self_
 
