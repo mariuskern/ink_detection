@@ -20,6 +20,7 @@ from utils.teacher_checkpoints import resolve_teacher_checkpoints
 
 from training import train_supervised, train_noisy_student
 from training.seed import seed_everything
+from training.utils import configure_determinism
 from training.logging import WandbLogger
 
 from dotenv import load_dotenv
@@ -35,6 +36,11 @@ register_config_resolvers()
 
 @hydra.main(version_base=None, config_path="conf/", config_name="-provide_as_argument-")
 def main(cfg):
+    configure_determinism(
+        deterministic=cfg.train.deterministic,
+        benchmark=cfg.train.benchmark,
+    )
+
     prepare_teacher_source(cfg)
 
     resume_run = resolve_resume_run(cfg)
@@ -49,8 +55,6 @@ def main(cfg):
         resolve_teacher_checkpoints(cfg.train.get("teacher_checkpoint"), start_iteration)
 
     save_training_config(cfg, HydraConfig.get())
-
-    # pl.seed_everything(cfg.train.seed, workers=True)
 
     if cfg.train.seed is not None:
         seed_everything(cfg.train.seed)

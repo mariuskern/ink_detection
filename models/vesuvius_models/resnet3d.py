@@ -26,6 +26,16 @@ def get_inplanes():
     return [64, 128, 256, 512]
 
 
+class _SpatialMaxPool3d(nn.MaxPool2d):
+    """Pool each depth slice independently using deterministic CUDA MaxPool2d."""
+
+    def forward(self, x):
+        batch, channels, depth, height, width = x.shape
+        x = x.permute(0, 2, 1, 3, 4).reshape(batch * depth, channels, height, width)
+        x = super().forward(x)
+        return x.reshape(batch, depth, channels, *x.shape[-2:]).permute(0, 2, 1, 3, 4)
+
+
 def conv3x3x3(in_planes, out_planes, stride=1):
     return nn.Conv3d(in_planes,
                      out_planes,
@@ -153,8 +163,24 @@ class ResNet(nn.Module):
                                bias=False)
         self.bn1 = nn.BatchNorm3d(self.in_planes)
         self.relu = nn.ReLU(inplace=True)
-        self.maxpool = nn.MaxPool3d(kernel_size=pool_kernel, stride=pool_stride, padding=pool_padding)
-        # self.maxpool = nn.MaxPool3d(kernel_size=3, stride=2, padding=1)
+
+        # self.maxpool = nn.MaxPool3d(kernel_size=pool_kernel, stride=pool_stride, padding=pool_padding)
+
+        # # Hydra sequences must be plain tuples for PyTorch's pooling operators.
+        # self.maxpool = nn.MaxPool3d(
+        #     kernel_size=pool_kernel if isinstance(pool_kernel, int) else tuple(pool_kernel),
+        #     stride=pool_stride if isinstance(pool_stride, int) else tuple(pool_stride),
+        #     padding=pool_padding if isinstance(pool_padding, int) else tuple(pool_padding),
+        # )
+        
+        # Hydra sequences must be plain tuples for PyTorch's pooling operators.
+        pool_kernel = (pool_kernel,) * 3 if isinstance(pool_kernel, int) else tuple(pool_kernel)
+        pool_stride = (pool_stride,) * 3 if isinstance(pool_stride, int) else tuple(pool_stride)
+        pool_padding = (pool_padding,) * 3 if isinstance(pool_padding, int) else tuple(pool_padding)
+        if (pool_kernel[0], pool_stride[0], pool_padding[0]) == (1, 1, 0):
+            self.maxpool = _SpatialMaxPool3d(pool_kernel[1:], pool_stride[1:], pool_padding[1:])
+        else:
+            self.maxpool = nn.MaxPool3d(pool_kernel, pool_stride, pool_padding)
 
         self.layer1 = self._make_layer(block, block_inplanes[0], layers[0],
                                        shortcut_type, stride=stage_strides[0])

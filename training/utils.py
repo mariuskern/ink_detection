@@ -40,6 +40,7 @@ from pathlib import Path
 from dataclasses import dataclass
 import math
 import gc
+import os
 
 import torch
 # import torch.nn.functional as F
@@ -72,11 +73,6 @@ class TrainingResult:
 
 
 def fit(cfg, logger, output_dir, *, pseudo_label_version=None, iteration=None, augmentation=None, device=None):
-    configure_determinism(
-        deterministic=cfg.train.deterministic,
-        benchmark=cfg.train.benchmark,
-    )
-
     output_dir = Path(output_dir)
 
     checkpoint_dir = output_dir / "checkpoints"
@@ -1084,6 +1080,10 @@ def validate(
 def configure_determinism(*, deterministic: bool, benchmark: bool):
     if deterministic and benchmark:
         raise ValueError("deterministic=True and benchmark=True are incompatible for reproducible training.")
+
+    if deterministic:
+        # Must be configured before the first cuBLAS operation.
+        os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
 
     torch.backends.cudnn.benchmark = benchmark
     torch.backends.cudnn.deterministic = deterministic

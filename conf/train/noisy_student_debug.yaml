@@ -3,30 +3,34 @@ defaults:
   - override /aug@teacher: tta_none
   - override /refinement@refinement: debug
 
-max_epochs: 12
+max_epochs: 4
 warmup_epochs: 0
 compile: false
-val_image_every_n_epochs: 4
+val_image_every_n_epochs: 1
 checkpoint:
-  save_top_k: 2
+  save_top_k: 1
   swa_save_k: 2
 
 iterations: 4
 
-# start_iteration: 0
-# teacher_checkpoint: auto
-# resume_output_dir: auto
-# resume_run: auto
-
-start_iteration: 2
+start_iteration: 0
 teacher_checkpoint: auto
-resume_output_dir: outputs\noisy_student\unetrpp\2026-10-16_23-23-50
+resume_output_dir: auto
 resume_run: auto
+
+# start_iteration: 2
+# teacher_checkpoint: auto
+# resume_output_dir: outputs\noisy_student\unetrpp\2026-10-16_23-23-50
+# resume_run: auto
 
 # start_iteration: 1
 # teacher_checkpoint: outputs\noisy_student\unetrpp\2026-10-16_23-23-50\iteration\1\checkpoints\last.pt
 # resume_output_dir: auto
 # resume_run: auto
+
+seed: 42
+benchmark: false
+deterministic: true
 
 # labeled:
 #   - 20241025145341

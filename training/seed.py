@@ -1,4 +1,3 @@
-import os
 import random
 
 import numpy as np
@@ -11,14 +10,4 @@ def seed_everything(seed: int):
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
 
-    os.environ["PYTHONHASHSEED"] = str(seed)
-
-    # if workers:
-    #     os.environ["PL_GLOBAL_SEED"] = str(seed)
-    #     os.environ["PL_SEED_WORKERS"] = "1"
-
-
-# def create_generator(seed: int) -> torch.Generator:
-#     generator = torch.Generator()
-#     generator.manual_seed(seed)
-#     return generator
+    # PYTHONHASHSEED must be set before starting Python to affect this process.

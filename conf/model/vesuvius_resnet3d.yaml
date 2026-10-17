@@ -26,4 +26,4 @@ z_projection: max
 decoder_kernel_size: 3
 upscale: 1 # auto 1
 align_corners: false
-forward_features: true
+forward_features: false

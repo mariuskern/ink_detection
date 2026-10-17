@@ -5,6 +5,7 @@ import torch
 from torch.optim.swa_utils import AveragedModel
 
 from training.utils import fit
+from training.seed import seed_everything
 from utils.predict import predict
 from utils.postprocess import postprocess_prediction
 from utils.save import save_predictions_as_images, save_predictions_as_zarr
@@ -50,6 +51,11 @@ def train_noisy_student(cfg, logger):
         )
 
     for iteration in range(start_iteration, cfg.train.iterations):
+        if cfg.train.seed is not None:
+            iteration_seed = cfg.train.seed + iteration
+            seed_everything(iteration_seed)
+            print(f"Iteration seed: {iteration_seed}")
+
         print(f"Starting Noisy Student iteration {iteration}")
 
         output_dir_iteration = output_dir / "iteration" / str(iteration)
@@ -107,6 +113,10 @@ def backup_iteration_directories(output_dir, tmp_dir, iteration, checkpoint_path
 
 
 def generate_pseudo_labels(cfg, checkpoint_paths, iteration, output_dir, tmp_dir, device):
+        # Reset here so a resumed run reproduces the same TTA and loader randomness.
+        if cfg.train.seed is not None:
+            seed_everything(cfg.train.seed + iteration)
+
         # transform = build_augmentation(cfg.train.teacher.aug) if cfg.train.teacher.aug is not None else None
         transforms = []
         if cfg.train.teacher.aug is not None:
