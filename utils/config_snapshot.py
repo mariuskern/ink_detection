@@ -11,9 +11,9 @@ from utils.teacher_checkpoints import teacher_run_directory
 
 # Ignore historical control fields as well, so older run snapshots remain comparable.
 RESUME_FIELDS = {
-    "train.iteration", "train.start_iteration", "train.teacher_checkpoint", "train.logging_state",
+    "train.iterations", "train.start_iteration", "train.teacher_checkpoint", "train.logging_state",
     "train.resume_run", "train.resume_mode", "train.resume_output_dir", "experiment.name", "experiment.jobid",
-    "path.output_dir", "path.tmp_dir", "wandb.run_path",
+    "path.output_dir", "path.tmp_dir", "path.data_dir", "wandb.run_path",
 }
 
 
