@@ -3,3 +3,4 @@ defaults:
 
 # lr: 0.01
 # warmup_epochs: 5
+compile: false
