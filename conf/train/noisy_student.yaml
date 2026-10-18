@@ -9,10 +9,10 @@ name: noisy_student
 pseudo_target: soft # hard | soft
 iterations: 10
 
-start_iteration: 0
-teacher_checkpoint: auto
-resume_output_dir: auto
-resume_run: auto
+# start_iteration: 0
+# teacher_checkpoint: auto
+# resume_output_dir: auto
+# resume_run: auto
 
 start_iteration: 5
 teacher_checkpoint: auto
