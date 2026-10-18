@@ -12,7 +12,7 @@ encoder_dropout_rate: 0.0           # Original: 0.0
 attention_dropout_rate: 0.15        # Original: 0.15
 conv_dropout_rate: 0.0              # Original: 0.0
 conv_projection_dropout_rate: 0.1   # Original: 0.1
-drop_path_rate: 0.1                 # Original: 0.0
+drop_path_rate: 0.05                # Original: 0.0
 pe_mode: 2d
 depth_attn: True
 da_gamma_init: 0.1
