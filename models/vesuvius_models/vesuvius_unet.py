@@ -25,6 +25,15 @@ from collections.abc import Mapping
 from pathlib import Path
 
 
+def fp32_max_projection(logits):
+    """Compile depth reduction in FP32, retaining amax's tied-max gradients."""
+
+    with torch.autocast(device_type=logits.device.type, enabled=False):
+        output = torch.amax(logits.float(), dim=2)
+        
+    return output.to(dtype=logits.dtype)
+
+
 class _NonOverlappingAvgPool3d(nn.AvgPool3d):
     """Average disjoint windows without CUDA's nondeterministic pool backward.
 
@@ -1548,7 +1557,9 @@ class VesuviusUNet(nn.Module):
         features = self.shared_decoder(self.shared_encoder(x))
         logits = self.task_heads[self.target_name](features)
         if project_z and self.z_projection == "max":
-            return torch.amax(logits, dim=2)
+            # return torch.amax(logits, dim=2)
+            # FP32 reduction avoids non-finite compiled BF16 amax gradients.
+            return fp32_max_projection(logits)
         if project_z and self.z_projection == "mean":
             return torch.mean(logits, dim=2)
         return logits

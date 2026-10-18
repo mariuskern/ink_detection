@@ -5,7 +5,6 @@ defaults:
 
 max_epochs: 4
 warmup_epochs: 0
-compile: false
 val_image_every_n_epochs: 1
 checkpoint:
   save_top_k: 1

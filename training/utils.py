@@ -108,6 +108,11 @@ def fit(cfg, logger, output_dir, *, pseudo_label_version=None, iteration=None, a
     else:
         model = model.to(device)
     if cfg.train.compile:
+        from torch._functorch import config as functorch_config
+
+        # Backward runs outside autocast in train_one_epoch. Keep this setting
+        # active through the first forward, when compilation actually happens.
+        functorch_config.backward_pass_autocast = "off"
         model = torch.compile(model, mode=cfg.train.compile_mode)
 
     # ------------------------------------------------------------------------

@@ -19,6 +19,8 @@ wandb
 timm
 einops
 triton; platform_system != "Windows"
+# Triton 3.8 matches PyTorch 2.14 on Windows.
+triton-windows>=3.8,<3.9; platform_system == "Windows"
 matplotlib
 timesformer_pytorch
 scipy

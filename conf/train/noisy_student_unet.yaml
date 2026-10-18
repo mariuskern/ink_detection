@@ -1,6 +1,5 @@
 defaults:
   - noisy_student
 
-lr: 0.01
+lr: 0.001
 # warmup_epochs: 5
-compile: false
