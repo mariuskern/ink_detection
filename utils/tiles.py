@@ -18,6 +18,12 @@ TILE_DTYPE = np.dtype(
 
 
 def get_tiles(label, mask, size, stride, segment_name, h, w):
+    """Index tiles, measuring positive_fraction over valid pixels only.
+
+    Without a mask, all pixels are valid. Empty masks yield a positive
+    fraction of zero; missing labels yield NaN.
+    """
+
     l = []
     # h, w = label.shape[-2:]
 
@@ -27,9 +33,14 @@ def get_tiles(label, mask, size, stride, segment_name, h, w):
                 # label_tile = label[y:y+size, x:x+size]
                 # mask_tile = mask[y:y+size, x:x+size]
 
+                valid = mask[y:y+size, x:x+size].astype(bool)
+
                 if label is not None:
                     label_tile = label[y:y+size, x:x+size]
-                    positive_fraction = float(label_tile.mean())
+                    if valid is None:
+                        positive_fraction = float(label_tile.mean())
+                    else:
+                        positive_fraction = float(label_tile[valid].mean()) if valid.any() else 0.0
                 else:
                     positive_fraction = np.nan
 

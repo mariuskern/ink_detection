@@ -65,7 +65,8 @@ def build_dataset(
     pseudo_label_version=None,
     stride=None,
     min_mask_fraction=None,
-    split=None
+    split=None,
+    mask_refinement=None,
 ):
     use_pseudo_labels = pseudo_label_version is not None
 
@@ -84,14 +85,16 @@ def build_dataset(
         pseudo_label_version=pseudo_label_version,
         pseudo_target=cfg.train.pseudo_target if use_pseudo_labels else "hard",
         transform=transform,
-        split=split
+        split=split,
+        mask_refinement=mask_refinement,
+        intersect_pseudo_with_original_mask=cfg.dataset.intersect_pseudo_with_original_mask,
     )
 
 
-def build_train_dataset(cfg, use_unlabeled_data=False, pseudo_label_version=None, augmentation=None, split=None):
+def build_train_dataset(cfg, use_unlabeled_data=False, pseudo_label_version=None, augmentation=None, split=None, mask_refinement=None):
     transform = build_augmentation(augmentation) if augmentation is not None else None
 
-    dataset = build_dataset(cfg, cfg.train.labeled, transform=transform, split=split)
+    dataset = build_dataset(cfg, cfg.train.labeled, transform=transform, split=split, mask_refinement=mask_refinement)
 
     if not use_unlabeled_data:
         return dataset
@@ -102,7 +105,8 @@ def build_train_dataset(cfg, use_unlabeled_data=False, pseudo_label_version=None
         transform=transform,
         use_as_unlabeled=use_unlabeled_data,
         pseudo_label_version=pseudo_label_version,
-        split=split
+        split=split,
+        mask_refinement=mask_refinement,
     )
 
     return CombinedInkDataset([dataset, pseudo_dataset])

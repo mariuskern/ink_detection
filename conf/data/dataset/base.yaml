@@ -5,3 +5,4 @@ center: 32
 depth: 32
 norm: global
 min_mask_fraction: 0.5
+intersect_pseudo_with_original_mask: true

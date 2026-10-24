@@ -1,2 +1,2 @@
 defaults:
-  - debug_unet # debug_default debug_resnet3d debug_unet
+  - debug_default # debug_default debug_resnet3d debug_unet
