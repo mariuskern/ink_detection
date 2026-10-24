@@ -259,7 +259,11 @@ def fit(cfg, logger, output_dir, *, pseudo_label_version=None, iteration=None, a
         # VALIDATION
         # ====================================================================
 
-        export_predictions = (epoch + 1) % cfg.train.val_image_every_n_epochs == 0
+        image_interval = cfg.train.val_image_every_n_epochs
+        segment_metrics_interval = cfg.train.val_segment_metrics_every_n_epochs
+
+        export_predictions = image_interval > 0 and (epoch + 1) % image_interval == 0
+        compute_segment_metrics = segment_metrics_interval > 0 and (epoch + 1) % segment_metrics_interval == 0
 
         val_metrics = validate(
             model=model,
@@ -270,6 +274,7 @@ def fit(cfg, logger, output_dir, *, pseudo_label_version=None, iteration=None, a
             epoch=epoch,
             prediction_merger=prediction_merger,
             export_predictions=export_predictions,
+            compute_segment_metrics=compute_segment_metrics,
             val_image_dir=val_image_dir,
             # logger=logger,
             logger=logging_manager,
@@ -822,6 +827,7 @@ def validate(
     epoch,
     prediction_merger,
     export_predictions,
+    compute_segment_metrics,
     val_image_dir,
     logger,
     pseudo_labels_used,
@@ -935,7 +941,7 @@ def validate(
         # Prediction merger
         # --------------------------------------------------------------------
 
-        if export_predictions:
+        if export_predictions or compute_segment_metrics:
             if needs_resize:
                 output_for_export = interpolate_reverse(output, tile.shape[-2:])
                 # label_for_export = interpolate_reverse(label, tile.shape[-2:])
@@ -968,8 +974,8 @@ def validate(
     # PredictionMerger equivalent to on_validation_epoch_end()
     # ------------------------------------------------------------------------
 
-    if export_predictions:
-        metrics = prediction_merger.get_binary_metrics()
+    if compute_segment_metrics:
+        metrics = prediction_merger.get_binary_metrics(threshold=cfg.train.threshold)
 
         if metrics is not None:
             segment_dice = metrics["dice"]
@@ -983,6 +989,7 @@ def validate(
                 }
             )
 
+    if export_predictions:
         for prediction in prediction_merger.iter_predictions():
             save_predictions_as_images(
                 val_image_dir,

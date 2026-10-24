@@ -13,7 +13,7 @@ label_refinement:
   enabled: true
   targets: [real]             # real, pseudo, or [real, pseudo].
   radius: null                # Fixed pixels; overrides radius_factor.
-  radius_factor: 0.08         # Relative to median component size.
+  radius_factor: 0.15         # Relative to median component size.
   min_value: 0.5              # Target value at the foreground boundary.
   smooth_background: true     # Also soften background near ink.
   chunk_size: 2048

@@ -6,10 +6,11 @@ accelerator: auto
 # devices: 1
 gradient_clip_val: 1.0
 gradient_clip_algorithm: "norm"
-precision: bf16-mixed           # 16-true 16-mixed bf16-true bf16-mixed 32-true
-compile: true                   # Set this to false when debugging model code, where compilation errors are easier to read.
-compile_mode: reduce-overhead   # default
-val_image_every_n_epochs: 10
+precision: bf16-mixed                 # 16-true 16-mixed bf16-true bf16-mixed 32-true
+compile: true                         # Set this to false when debugging model code, where compilation errors are easier to read.
+compile_mode: reduce-overhead         # default
+val_image_every_n_epochs: 10          # 0 disables validation image export.
+val_segment_metrics_every_n_epochs: 1 # 0 disables segment Dice/IoU.
 seed: null # null 42
 checkpoint:
   checkpoint_every_n_epochs: 1
@@ -17,10 +18,10 @@ checkpoint:
   swa_save_k: 5
   save_last: True
   save_last_every_epoch: True
-  monitor: val/loss # val/loss train/loss
+  monitor: val/loss                   # val/loss train/loss
   mode: min
 benchmark: false
 deterministic: false
-threshold: 0.5                  # Used to calculate dice and iou
+threshold: 0.5                        # Used to calculate dice and iou
 gradient_accumulation_steps: 1
 use_validation_mask: false
