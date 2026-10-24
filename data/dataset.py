@@ -10,6 +10,7 @@ from torchvision import tv_tensors
 from utils.tiles import get_tiles, save_tiles
 from utils.segment_paths import get_segment_paths
 from utils.create_training_mask import create_training_mask
+from utils.refine_labels import refine_labels
 
 
 class CombinedInkDataset(ConcatDataset):
@@ -26,9 +27,10 @@ class InkDataset(Dataset):
     - a Zarr archive with the image volume
     - optionally a ground-truth label
     - optionally a ground-truth validity mask
-    - optionally versioned pseudo labels
-    - optionally versioned pseudo-label validity/confidence masks
     - a tile index used to determine valid tiles
+
+    Versioned pseudo targets, masks and their refinements are stored separately
+    in the run's temporary directory, supplied via pseudo_cache_dir.
 
     Tiles are extracted from the volume using the configured tile size,
     stride, center slice and depth. The image volume is normalized either
@@ -139,12 +141,23 @@ class InkDataset(Dataset):
         Optional transformation applied jointly to the image, labels and
         masks.
 
+    use_original_mask_for_pseudo_mask:
+        Intersect pseudo_mask with the original mask and restrict pseudo
+        tile selection accordingly. With use_as_unlabeled=True and no pseudo
+        label version, only restricts tile selection; no masks are loaded.
+
     mask_refinement:
         Optional configuration for label-neighborhood supervision. targets
         selects real and/or pseudo labels (default: real). None disables it.
         Unlabeled data without pseudo targets is never refined. Saved masks
         intersect only the corresponding target validity; the split is applied on reading. They filter
         tiles before augmentation.
+
+    label_refinement:
+        Optional configuration for soft targets; targets selects real and/or
+        pseudo labels (default: real). Soft pseudo targets are not supported.
+        Results are cached in Zarr;
+        tile selection and validity masks use original labels.
     """
 
     def __init__(
@@ -165,7 +178,9 @@ class InkDataset(Dataset):
         transform=None,
         split=None,
         mask_refinement=None,
-        intersect_pseudo_with_original_mask=False,
+        use_original_mask_for_pseudo_mask=False,
+        label_refinement=None,
+        pseudo_cache_dir=None,
     ):
         self.data_dir = Path(data_dir)
         self.tile_size = tile_size
@@ -181,7 +196,15 @@ class InkDataset(Dataset):
         self.split = split
         self.segment_crops = segment_crops or {}
         self.mask_refinement = mask_refinement or {}
-        self.intersect_pseudo_with_original_mask = intersect_pseudo_with_original_mask
+        self.use_original_mask_for_pseudo_mask = use_original_mask_for_pseudo_mask
+        self.label_refinement = label_refinement or {}
+        self.pseudo_cache_dir = Path(pseudo_cache_dir) if pseudo_cache_dir is not None else None
+        
+        if self.pseudo_label_version is not None:
+            if self.pseudo_cache_dir is None:
+                raise ValueError("pseudo_cache_dir is required when pseudo_label_version is set and must match the directory used to save pseudo Zarr archives.")
+            
+            self.pseudo_cache_dir.mkdir(parents=True, exist_ok=True)
 
         self.z0 = self.center - self.depth // 2
         self.z1 = self.z0 + self.depth
@@ -195,6 +218,9 @@ class InkDataset(Dataset):
         if split is not None and split not in ["train", "val"]:
             raise ValueError(f"Invalid split '{self.split}'. Must be None, 'train' or 'val'.")
 
+        # if use_as_unlabeled and pseudo_label_version is None:
+        #     raise ValueError("use_as_unlabeled=True requires pseudo_label_version.")
+
         self.segment_paths = get_segment_paths(self.data_dir)
 
         if segments is None:
@@ -203,21 +229,20 @@ class InkDataset(Dataset):
             self.segments = list(map(str, segments))
 
         self.tiles = []
-        self.zarr_data = {}
+        self.segment_archives = {}
         self.segment_shapes = {}
+        self.pseudo_archives = {}
 
-        self.refinement_params = {"margin": self.mask_refinement["margin"]} if self.mask_refinement.get("margin") is not None else {"margin_factor": self.mask_refinement.get("margin_factor", 0.2)}
-        if self.mask_refinement.get("closing_radius") is not None:
-            self.refinement_params["closing_radius"] = self.mask_refinement["closing_radius"]
-        else:
-            self.refinement_params["closing_factor"] = self.mask_refinement.get("closing_factor") or 0
-        self.refinement_params.update(method=self.mask_refinement.get("closing_method", "auto"), chunk=self.mask_refinement.get("chunk_size", 2048))
-        if self.pseudo_label_version is not None and self.pseudo_target == "soft":
-            self.refinement_params["threshold"] = self.mask_refinement.get("pseudo_threshold", 0.5)
-
-        refinement_targets = (mask_refinement or {}).get("targets", ["real"])
+        refinement_targets = (self.mask_refinement or {}).get("targets", ["real"])
         if isinstance(refinement_targets, str) or any(t not in ("real", "pseudo") for t in refinement_targets):
             raise ValueError("mask_refinement.targets must be a list containing real and/or pseudo")
+
+        label_targets = self.label_refinement.get("targets", ["real"])
+        if isinstance(label_targets, str) or any(t not in ("real", "pseudo") for t in label_targets):
+            raise ValueError("label_refinement.targets must be a list containing real and/or pseudo")
+        
+        if (self.label_refinement.get("enabled", False) and "pseudo" in label_targets and self.pseudo_label_version is not None and self.pseudo_target == "soft"):
+            raise ValueError("Label refinement does not support soft pseudo labels. Use pseudo_target='hard' or remove 'pseudo' from label_refinement.targets.")
 
         for segment in self.segments:
             if segment not in self.segment_paths:
@@ -226,27 +251,41 @@ class InkDataset(Dataset):
             segment_path = self.segment_paths[segment]
 
             # Load zarr data
-            self.zarr_data[segment] = self._get_zarr_data_for_segment(segment_path)
+            self.segment_archives[segment] = self._open_segment_archive(segment)
+            segment_archive = self.segment_archives[segment]
+            
+            if self.pseudo_label_version is not None:
+                self.pseudo_archives[segment] = self._open_pseudo_archive(segment)
+                pseudo_archive = self.pseudo_archives[segment]
+                group = "pseudo_labels" if self.pseudo_target == "hard" else "prediction"
 
-            volume_depth = self.zarr_data[segment]["volume"].shape[0]
+                for key in (f"{group}/{self.pseudo_label_version}", f"pseudo_masks/{self.pseudo_label_version}"):
+                    if key not in pseudo_archive:
+                        raise KeyError(f"Missing pseudo target '{key}' in {self.pseudo_cache_dir / segment}.")
+
+            volume_depth = segment_archive["volume"].shape[0]
             if not 0 <= self.z0 < self.z1 <= volume_depth:
                 raise ValueError(f"Invalid depth range [{self.z0}:{self.z1}] for segment '{segment}' with {volume_depth} layers (center={self.center}, depth={self.depth}).")
 
-            refine_real = not self.use_as_unlabeled and "label" in self.zarr_data[segment] and "real" in refinement_targets
+            refine_real = not self.use_as_unlabeled and "label" in segment_archive and "real" in refinement_targets
             refine_pseudo = self.pseudo_label_version is not None and "pseudo" in refinement_targets
 
-            if mask_refinement and mask_refinement.get("enabled", False):
+            if self.mask_refinement and self.mask_refinement.get("enabled", False):
                 if refine_real:
-                    self._prepare_refined_mask(segment_path, self.zarr_data[segment], mask_refinement)
+                    self._prepare_refined_mask(segment_archive)
 
                 if refine_pseudo:
-                    self._prepare_refined_mask(segment_path, self.zarr_data[segment], mask_refinement, pseudo=True)
-
-                if refine_real or refine_pseudo:
-                    self.zarr_data[segment] = self._get_zarr_data_for_segment(segment_path)
+                    self._prepare_refined_mask(pseudo_archive, pseudo=True)
 
             # Load tiles
             self.tiles.extend(self._get_tiles_for_segment(segment, min_mask_fraction, crop=self.segment_crops.get(segment)))
+
+            if self.label_refinement.get("enabled", False):
+                if "real" in label_targets and not self.use_as_unlabeled and "label" in segment_archive:
+                    self._prepare_refined_label(segment_archive)
+
+                if "pseudo" in label_targets and self.pseudo_label_version is not None:
+                    self._prepare_refined_label(pseudo_archive, pseudo=True)
 
             # Load meta
             self.segment_shapes[segment] = torch.tensor(self._get_meta_for_segment(segment_path)["volume_shape"])
@@ -261,18 +300,16 @@ class InkDataset(Dataset):
         x = entry["x"]
         y = entry["y"]
 
-        zarr_array = self.zarr_data[segment]
+        tile = self._get_tile(segment, x, y)
+        label = self._get_label(segment, x, y)
+        pseudo_label = self._get_pseudo_label(segment, x, y)
+        mask = self._get_mask(segment, x, y)
+        pseudo_mask = self._get_pseudo_mask(segment, x, y)
 
-        tile = self._get_tile(zarr_array, x, y)
-        label = self._get_label(zarr_array, x, y)
-        pseudo_label = self._get_pseudo_label(zarr_array, x, y)
-        mask = self._get_mask(zarr_array, x, y)
-        pseudo_mask = self._get_pseudo_mask(zarr_array, x, y)
-
-        if label is not None:
+        if label is not None and not self._refines_labels():
             self._assert_binary(label, "label")
 
-        if pseudo_label is not None and self.pseudo_target == "hard":
+        if pseudo_label is not None and self.pseudo_target == "hard" and not self._refines_labels(pseudo=True):
             self._assert_binary(pseudo_label, "pseudo_label")
 
         if mask is not None:
@@ -343,24 +380,32 @@ class InkDataset(Dataset):
                 z = (z + 3) / 6
                 return z
 
-    def _get_tile(self, zarr_array, x, y):
+    def _get_tile(self, segment, x, y):
+        zarr_array = self.segment_archives[segment]
+
         tile = torch.from_numpy(zarr_array["volume"][self.z0:self.z1, y:y+self.tile_size, x:x+self.tile_size]).float()
         tile = self._normalize(tile, mode=self.norm)
+
         return tile
 
-    def _get_label(self, zarr_array, x, y):
+    def _get_label(self, segment, x, y):
+        zarr_array = self.segment_archives[segment]
+
         if "label" not in zarr_array or self.use_as_unlabeled:
             return None
 
-        label = torch.from_numpy(zarr_array["label"][y:y+self.tile_size, x:x+self.tile_size]).float()
+        key = self._refined_label_key() if self._refines_labels() else "label"
+        label = torch.from_numpy(zarr_array[key][y:y+self.tile_size, x:x+self.tile_size]).float()
 
         return label
 
-    def _get_pseudo_label(self, zarr_array, x, y):
+    def _get_pseudo_label(self, segment, x, y):
         if self.pseudo_label_version is None:
             return None
 
+        zarr_array = self.pseudo_archives[segment]
         group = "pseudo_labels" if self.pseudo_target == "hard" else "prediction"
+        
         if group not in zarr_array:
             return None
 
@@ -368,7 +413,8 @@ class InkDataset(Dataset):
         if version not in zarr_array[group]:
             return None
 
-        label = torch.from_numpy(zarr_array[group][version][y:y+self.tile_size, x:x+self.tile_size]).float()
+        source = zarr_array[self._refined_label_key(pseudo=True)] if self._refines_labels(pseudo=True) else zarr_array[group][version]
+        label = torch.from_numpy(source[y:y+self.tile_size, x:x+self.tile_size]).float()
 
         return label
 
@@ -381,11 +427,12 @@ class InkDataset(Dataset):
         
         return torch.from_numpy(np.asarray(mask)).float() if mask is not None else None
 
-    def _get_mask(self, zarr_array, x, y):
+    def _get_mask(self, segment, x, y):
         if self.use_as_unlabeled:
             return None
         
-        source = self._get_refined_mask(zarr_array)
+        zarr_array = self.segment_archives[segment]
+        source = self._get_refined_mask(segment)
 
         if source is None:
             source = zarr_array.get("mask")
@@ -394,67 +441,60 @@ class InkDataset(Dataset):
 
         return self._apply_validation_mask(mask, zarr_array, x, y)
 
-    def _get_pseudo_mask(self, zarr_array, x, y):
+    def _get_pseudo_mask(self, segment, x, y):
         if self.pseudo_label_version is None:
             return None
         
+        zarr_array = self.segment_archives[segment]
+
         version = str(self.pseudo_label_version)
-        source = self._get_refined_mask(zarr_array, pseudo=True)
+        source = self._get_refined_mask(segment, pseudo=True)
 
         if source is None:
-            source = zarr_array.get("pseudo_masks", {}).get(version)
+            source = self.pseudo_archives[segment].get("pseudo_masks", {}).get(version)
 
         if source is None:
             return None
         
         mask = source[y:y+self.tile_size, x:x+self.tile_size]
 
-        if self.intersect_pseudo_with_original_mask and "mask" in zarr_array:
+        if self.use_original_mask_for_pseudo_mask and "mask" in zarr_array:
             mask = mask * zarr_array["mask"][y:y+self.tile_size, x:x+self.tile_size]
 
         return self._apply_validation_mask(mask, zarr_array, x, y)
 
     def _get_tiles_for_segment(self, segment, min_mask_fraction, crop=None):
         segment_path = self.segment_paths[segment]
-        zarr_data = self.zarr_data[segment]
+        zarr_data = self.segment_archives[segment]
 
-        refined_real_mask = self._get_refined_mask(zarr_data, pseudo=False)
-        refined_pseudo_mask = self._get_refined_mask(zarr_data, pseudo=True)
+        refined_real_mask = self._get_refined_mask(segment, pseudo=False)
+        refined_pseudo_mask = self._get_refined_mask(segment, pseudo=True)
 
         use_pseudo = self.pseudo_label_version is not None
-        has_refined_mask = refined_pseudo_mask is not None if use_pseudo else refined_real_mask is not None
 
-        if has_refined_mask:
-            refinement_suffix = "_".join(f"{key}_{value}" for key, value in sorted(self.refinement_params.items()))
-            tile_folder = f"refined_tiles_{refinement_suffix}"
-            pseudo_tile_folder = f"refined_pseudo_tiles_{refinement_suffix}"
-        else:
+        if not use_pseudo:
             tile_folder = "tiles"
-            pseudo_tile_folder = "pseudo_tiles"
+            if refined_real_mask is not None:
+                suffix = self._refined_mask_key().rsplit("/", 1)[1]
+                tile_folder = f"refined_tiles_{suffix}"
 
-        if use_pseudo:
-            tile_dir = segment_path / pseudo_tile_folder / str(self.pseudo_label_version) / self.pseudo_target
-            tile_path = tile_dir / f"tile_size_{self.tile_size}_stride_{self.stride}_split_{self.split if self.split is not None else 'None'}.npy"
-            csv_path = tile_dir / f"tile_size_{self.tile_size}_stride_{self.stride}_split_{self.split if self.split is not None else 'None'}.csv"
-        else:
             tile_dir = segment_path / tile_folder
-            tile_path = tile_dir / f"tile_size_{self.tile_size}_stride_{self.stride}_split_{self.split if self.split is not None else 'None'}.npy"
-            csv_path = tile_dir / f"tile_size_{self.tile_size}_stride_{self.stride}_split_{self.split if self.split is not None else 'None'}.csv"
+            
+            stem = (
+                f"tile_size_{self.tile_size}_stride_{self.stride}"
+                f"_split_{self.split}_use_as_unlabeled_{self.use_as_unlabeled}"
+            )
+            
+            if self.use_as_unlabeled:
+                stem += f"_original_mask_{self.use_original_mask_for_pseudo_mask}"
 
-        tile_path = tile_path.with_stem(f"{tile_path.stem}_use_as_unlabeled_{self.use_as_unlabeled}")
-        csv_path = csv_path.with_stem(f"{csv_path.stem}_use_as_unlabeled_{self.use_as_unlabeled}")
+            tile_path = tile_dir / f"{stem}.npy"
+            csv_path = tile_dir / f"{stem}.csv"
 
-        if use_pseudo:
-            tile_path = tile_path.with_stem(f"{tile_path.stem}_intersect_original_{self.intersect_pseudo_with_original_mask}")
-            csv_path = csv_path.with_stem(f"{csv_path.stem}_intersect_original_{self.intersect_pseudo_with_original_mask}")
-
-        # if not tile_path.exists():
-        #     raise FileNotFoundError(f"Missing tile index: {tile_path}")
-
-        if tile_path.exists():
+        if not use_pseudo and tile_path.exists():
             tiles = np.load(tile_path, allow_pickle=False)
         else:
-            print(f"Missing tile index: {tile_path}. Creating tiles.")
+            print(f"Creating pseudo tiles for {segment}." if use_pseudo else f"Missing tile index: {tile_path}. Creating tiles.")
 
             volume_shape = zarr_data["volume"].shape
             h, w = volume_shape[-2:]
@@ -465,21 +505,21 @@ class InkDataset(Dataset):
                 version = str(self.pseudo_label_version)
                 group = "pseudo_labels" if self.pseudo_target == "hard" else "prediction"
                 
-                label = np.asarray(zarr_data[group][version])
+                pseudo_archive = self.pseudo_archives[segment]
+                label = np.asarray(pseudo_archive[group][version])
 
-                pseudo_mask = np.asarray(refined_pseudo_mask if refined_pseudo_mask is not None else zarr_data["pseudo_masks"][version])
+                pseudo_mask = np.asarray(refined_pseudo_mask if refined_pseudo_mask is not None else pseudo_archive["pseudo_masks"][version])
 
-                if self.intersect_pseudo_with_original_mask and original_mask is not None:
+                if self.use_original_mask_for_pseudo_mask and original_mask is not None:
                     mask = original_mask * pseudo_mask
                 else:
                     mask = pseudo_mask
+            elif self.use_as_unlabeled:
+                label = None
+                mask = original_mask if self.use_original_mask_for_pseudo_mask else None
             else:
-                label = np.asarray(zarr_data["label"]) if "label" in zarr_data and not self.use_as_unlabeled else None
-
-                if self.use_as_unlabeled:
-                    mask = None
-                else:
-                    mask = np.asarray(refined_real_mask) if refined_real_mask is not None else original_mask
+                label = np.asarray(zarr_data["label"]) if "label" in zarr_data else None
+                mask = np.asarray(refined_real_mask) if refined_real_mask is not None else original_mask
 
             validation_mask = np.asarray(zarr_data["validation_mask"]) if "validation_mask" in zarr_data else None
 
@@ -490,8 +530,9 @@ class InkDataset(Dataset):
 
             tiles = get_tiles(label, mask, self.tile_size, self.stride, segment, h, w)
 
-            tile_path.parent.mkdir(parents=True, exist_ok=True)
-            save_tiles(tiles, tile_path, csv_path)
+            if not use_pseudo:
+                tile_path.parent.mkdir(parents=True, exist_ok=True)
+                save_tiles(tiles, tile_path, csv_path)
 
         if crop is not None:
             # x_min, y_min, x_max, y_max = crop
@@ -507,12 +548,9 @@ class InkDataset(Dataset):
         tile_list = []
 
         for t in tiles:
-            if self.use_as_unlabeled and self.pseudo_label_version is None:
-                positive_fraction = float("nan")
-                mask_fraction = float("nan")
-            else:
-                positive_fraction = float(t["positive_fraction"])
-                mask_fraction = float(t["mask_fraction"])
+            mask_fraction = float(t["mask_fraction"])
+
+            positive_fraction = float(t["positive_fraction"])
 
             if not np.isnan(mask_fraction) and mask_fraction < min_mask_fraction:
                 continue
@@ -529,46 +567,14 @@ class InkDataset(Dataset):
 
         return tile_list
 
-    def _get_zarr_data_for_segment(self, segment_path):
-        zarr_path = segment_path / f"{segment_path.name}.zarr"
+    def _open_segment_archive(self, segment):
+        segment_path = self.segment_paths[segment]
+        path = segment_path / f"{segment_path.name}.zarr"
 
-        if not zarr_path.exists():
-            raise FileNotFoundError(f"Missing zarr archive: {zarr_path}")
-
-        zarr_data = zarr.open(zarr_path, mode="r")
-
-        # if self.split is not None and "validation_mask" not in zarr_data:
-        #     raise ValueError("Split can only be used if the segment contains a validation mask")
-
-        if self.pseudo_label_version is not None:
-            group = "pseudo_labels" if self.pseudo_target == "hard" else "prediction"
-            if group not in zarr_data:
-                raise KeyError(f"Missing {self.pseudo_target} pseudo targets ('{group}') in {zarr_path}.")
-
-            # if self.pseudo_label_version is None:
-            #     raise ValueError("pseudo_label_version must be specified when use_pseudo_labels=True")
-
-            # pseudo_targets = zarr_data[group]
-            # available_versions = list(pseudo_targets.keys())
-
-            # version = str(self.pseudo_label_version)
-            # if version not in pseudo_targets:
-            #     raise KeyError(f"Missing pseudo target version '{version}'. Available versions: {available_versions}")
-
-            version = str(self.pseudo_label_version)
-
-            available_versions = list(zarr_data[group].keys())
-            if version not in zarr_data[group]:
-                raise KeyError(f"Missing pseudo target version '{version}'. Available versions: {available_versions}")
-
-            if "pseudo_masks" not in zarr_data:
-                raise KeyError(f"Missing 'pseudo_masks' in {zarr_path}.")
-
-            available_mask_versions = list(zarr_data["pseudo_masks"].keys())
-            if version not in zarr_data["pseudo_masks"]:
-                raise KeyError(f"Missing pseudo mask version '{version}'. Available versions: {available_mask_versions}")
-
-        return zarr_data
+        if not path.exists():
+            raise FileNotFoundError(f"Missing zarr archive: {path}")
+        
+        return zarr.open_group(str(path), mode="a")
 
     def _get_meta_for_segment(self, segment_path):
         meta_path = segment_path / "metadata.json"
@@ -585,36 +591,105 @@ class InkDataset(Dataset):
         values = torch.unique(tensor)
         assert torch.all((values == 0) | (values == 1)), (f"{name} is not binary. Found values: {values[:20].tolist()}")
 
-    def _refined_mask_key(self, settings, pseudo=False):
-        """Use the same parameter-derived path for writing and reading."""
+    def _label_refinement_options(self):
+        settings = self.label_refinement
 
-        version = str(self.pseudo_label_version) if pseudo else None
-        group_path = "refined_masks/pseudo" if pseudo else "refined_masks/real"
+        return {
+            "radius": settings.get("radius"),
+            "radius_factor": settings.get("radius_factor", 0.2),
+            "min_value": settings.get("min_value", 0.5),
+            "smooth_background": settings.get("smooth_background", False),
+            "chunk_size": settings.get("chunk_size", 2048),
+            "progress": settings.get("progress", False),
+        }
+
+    def _refines_labels(self, pseudo=False):
+        return self.label_refinement.get("enabled", False) and ("pseudo" if pseudo else "real") in self.label_refinement.get("targets", ["real"])
+
+    def _refined_label_key(self, pseudo=False):
+        options = self._label_refinement_options()
+
+        # Progress only affects display, not the stored target values.
+        name = "_".join(f"{key}_{value}" for key, value in sorted(options.items()) if key != "progress")
 
         if pseudo:
-            group_path += f"/{version}/{self.pseudo_target}"
+            return f"refined_labels/pseudo/{self.pseudo_label_version}/{self.pseudo_target}/{name}"
+        
+        return f"refined_labels/real/{name}"
 
-        margin = settings.get("margin")
-        margin_name = f"margin_{margin}" if margin is not None else f"margin_factor_{settings.get('margin_factor', 0.2)}"
+    def _open_pseudo_archive(self, segment):
+        path = self.pseudo_cache_dir / segment / f"{segment}.zarr"
 
-        closing = settings.get("closing_radius")
-        closing_name = f"closing_radius_{closing}" if closing is not None else f"closing_factor_{settings.get('closing_factor') or 0}"
+        if not path.exists():
+            raise FileNotFoundError(f"Missing pseudo Zarr archive: {path}")
+        
+        return zarr.open_group(str(path), mode="a")
 
-        name = f"{margin_name}_{closing_name}_method_{settings.get('closing_method', 'auto')}_chunk_{settings.get('chunk_size', 2048)}"
+    def _prepare_refined_label(self, archive, pseudo=False):
+        key = self._refined_label_key(pseudo=pseudo)
 
-        if pseudo and self.pseudo_target == "soft":
-            name += f"_threshold_{settings.get('pseudo_threshold', 0.5)}"
+        if key in archive:
+            return
 
-        mask_key = f"{group_path}/{name}"
+        options = self._label_refinement_options()
+        chunk_size = options["chunk_size"]
 
-        return mask_key
+        if not isinstance(chunk_size, int) or isinstance(chunk_size, bool) or chunk_size < 1:
+            raise ValueError("label_refinement.chunk_size must be a positive integer")
 
-    def _get_refined_mask(self, archive, pseudo=False):
+        source_key = f"{'pseudo_labels' if self.pseudo_target == 'hard' else 'prediction'}/{self.pseudo_label_version}" if pseudo else "label"
+        source = archive[source_key]
+
+        print(f"Creating refined label: {key}")
+
+        group_path, name = key.rsplit("/", 1)
+        group = archive.require_group(group_path)
+        create_array = group.create_array if hasattr(group, "create_array") else group.create_dataset
+
+        target = create_array(name, shape=source.shape, chunks=(min(chunk_size, 256),) * 2, dtype="float32")
+        
+        try:
+            target[:] = refine_labels(source, **options)
+        except BaseException:
+            # An interrupted/failed calculation must not become a valid cache.
+            del group[name]
+            raise
+
+    def _mask_refinement_options(self):
+        """Effective create_training_mask arguments, shared by calculation and caches."""
+
         settings = self.mask_refinement
 
-        target = "pseudo" if pseudo else "real"
+        return {
+            "margin": settings.get("margin"),
+            "margin_factor": settings.get("margin_factor", 0.2),
+            "closing": settings.get("closing"),
+            "closing_factor": settings.get("closing_factor") or 0,
+            "closing_method": settings.get("closing_method", "auto"),
+            "chunk_size": settings.get("chunk_size", 2048),
+            "progress": settings.get("progress", True),
+        }
 
-        if not settings.get("enabled", False) or target not in settings.get("targets", ["real"]):
+    def _refines_masks(self, pseudo=False):
+        return self.mask_refinement.get("enabled", False) and ("pseudo" if pseudo else "real") in self.mask_refinement.get("targets", ["real"])
+
+    def _refined_mask_key(self, pseudo=False):
+        options = self._mask_refinement_options()
+
+        if pseudo and self.pseudo_target == "soft":
+            options["pseudo_threshold"] = self.mask_refinement.get("pseudo_threshold", 0.5)
+
+        name = "_".join(f"{key}_{value}" for key, value in sorted(options.items()) if key != "progress")
+
+        if pseudo:
+            return f"refined_masks/pseudo/{self.pseudo_label_version}/{self.pseudo_target}/{name}"
+
+        return f"refined_masks/real/{name}"
+
+    def _get_refined_mask(self, segment, pseudo=False):
+        archive = self.segment_archives[segment]
+
+        if not self._refines_masks(pseudo=pseudo):
             return None
         
         if pseudo:
@@ -623,55 +698,59 @@ class InkDataset(Dataset):
         elif self.use_as_unlabeled or "label" not in archive:
             return None
         
-        key = self._refined_mask_key(settings, pseudo=pseudo)
-        mask = archive.get(key)
+        key = self._refined_mask_key(pseudo=pseudo)
+        source = self.pseudo_archives.get(segment) if pseudo else archive
+        mask = source.get(key) if source is not None else None
 
         return mask
 
-    def _prepare_refined_mask(self, segment_path, archive, settings, pseudo=False):
-        """Create the final validity mask inside the segment's Zarr archive."""
+    def _prepare_refined_mask(self, archive, pseudo=False):
+        """Store the refined validity mask in the source archive."""
+
+        mask_key = self._refined_mask_key(pseudo=pseudo)
+
+        if mask_key in archive:
+            return
 
         version = str(self.pseudo_label_version) if pseudo else None
         target = f"{'pseudo_labels' if self.pseudo_target == 'hard' else 'prediction'}/{version}" if pseudo else "label"
         labels = np.asarray(archive[target])
 
         if pseudo and self.pseudo_target == "soft":
-            threshold = settings.get("pseudo_threshold", 0.5)
+            threshold = self.mask_refinement.get("pseudo_threshold", 0.5)
 
             if not np.isfinite(threshold) or not 0 < threshold <= 1:
                 raise ValueError("pseudo_threshold must be in (0, 1]")
 
             labels = (labels >= threshold).astype(np.uint8)
 
-        mask_key = self._refined_mask_key(settings, pseudo=pseudo)
         group_path, name = mask_key.rsplit("/", 1)
-        zarr_path = segment_path / f"{segment_path.name}.zarr"
 
-        if mask_key in archive:
-            return
-
-        chunk_size = settings.get("chunk_size", 2048)
+        options = self._mask_refinement_options()
+        chunk_size = options["chunk_size"]
 
         if chunk_size < 1:
             raise ValueError("chunk_size must be positive")
 
-        print(f"Creating refined {'pseudo' if pseudo else 'real'} mask: {zarr_path}/{mask_key}")
+        print(f"Creating refined {'pseudo' if pseudo else 'real'} mask: {mask_key}")
 
-        writable_archive = zarr.open_group(str(zarr_path), mode="a")
-        group = writable_archive.require_group(group_path)
+        group = archive.require_group(group_path)
         create_array = group.create_array if hasattr(group, "create_array") else group.create_dataset
-        mask = create_array(name, shape=labels.shape, chunks=(min(chunk_size, 256),) * 2, dtype="uint8", overwrite=True)
+        mask = create_array(name, shape=labels.shape, chunks=(min(chunk_size, 256),) * 2, dtype="uint8")
 
-        options = {key: settings[key] for key in ("margin", "margin_factor", "closing_radius", "closing_factor", "closing_method", "chunk_size", "progress") if key in settings}
+        try:
+            valid = create_training_mask(labels, **options) > 0
 
-        valid = create_training_mask(labels, **options) > 0
+            if not pseudo and "mask" in archive:
+                valid &= np.asarray(archive["mask"]) > 0
 
-        if not pseudo and "mask" in archive:
-            valid &= np.asarray(archive["mask"]) > 0
+            if pseudo:
+                valid &= np.asarray(archive[f"pseudo_masks/{version}"]) > 0
 
-        if pseudo:
-            valid &= np.asarray(archive[f"pseudo_masks/{version}"]) > 0
-
-        mask[:] = valid.astype(np.uint8)
+            mask[:] = valid.astype(np.uint8)
+        except BaseException:
+            # Failed calculations, writes and user interrupts must not become a valid cache.
+            del group[name]
+            raise
 
         return

@@ -92,7 +92,7 @@ def create_training_mask(
     *,
     margin=None,
     chunk_size=2048,
-    closing_radius=None,
+    closing=None,
     closing_factor=None,
     closing_method="auto",
     progress=True,
@@ -109,12 +109,12 @@ def create_training_mask(
 
     Both modes use overlapping blocks. ``label`` may be a sliceable array
     such as Zarr or numpy.memmap. The returned mask has shape label.shape[:2]
-    and is allocated in RAM. Set ``closing_radius`` to a positive integer to close small gaps
+    and is allocated in RAM. Set ``closing`` to a positive integer to close small gaps
     in the expanded training mask with an elliptical kernel of diameter
-    2 * closing_radius + 1. Alternatively, ``closing_factor`` multiplies
+    2 * closing + 1. Alternatively, ``closing_factor`` multiplies
     the same median component size used for margin_factor (estimated once).
     Positive factors give at least one pixel for nonempty input, rounding
-    down otherwise. An explicit closing_radius takes precedence, including
+    down otherwise. An explicit closing takes precedence, including
     zero to disable closing. With neither option, closing is disabled.
     This changes only the
     training mask, not the labels or the component-size estimate. The gap
@@ -124,7 +124,7 @@ def create_training_mask(
     "distance" always uses a Euclidean disk; "opencv" preserves the old
     rasterized ellipse exactly. Disk and ellipse can differ at their edges.
     Block working memory is O((chunk_size + 2 * margin +
-    4 * closing_radius)**2); closing is also seamless across block borders.
+    4 * closing)**2); closing is also seamless across block borders.
     RGB input is converted with
     OpenCV's RGB-to-gray convention, as in the original implementation.
     """
@@ -143,11 +143,11 @@ def create_training_mask(
     if chunk_size < 1:
         raise ValueError("chunk_size must be positive")
 
-    if closing_radius is not None:
-        closing_radius = operator.index(closing_radius)
+    if closing is not None:
+        closing = operator.index(closing)
 
-        if closing_radius < 0:
-            raise ValueError("closing_radius must be nonnegative")
+        if closing < 0:
+            raise ValueError("closing must be nonnegative")
 
     if closing_factor is not None and (not math.isfinite(closing_factor) or closing_factor < 0):
         raise ValueError("closing_factor must be finite and nonnegative")
@@ -164,23 +164,23 @@ def create_training_mask(
 
     typical_size = 0.0
 
-    if margin is None or (closing_radius is None and closing_factor):
+    if margin is None or (closing is None and closing_factor):
         typical_size = estimate_component_size(label, chunk_size, progress=progress)
 
     if margin is None:
         margin = max(1, int(typical_size * margin_factor)) if typical_size and margin_factor else 0
 
-    if closing_radius is None:
-        closing_radius = max(1, int(typical_size * closing_factor)) if typical_size and closing_factor else 0
+    if closing is None:
+        closing = max(1, int(typical_size * closing_factor)) if typical_size and closing_factor else 0
 
     closing_kernel = None
-    use_distance = closing_method == "distance" or (closing_method == "auto" and closing_radius >= 100)
+    use_distance = closing_method == "distance" or (closing_method == "auto" and closing >= 100)
 
-    if closing_radius and not use_distance:
-        closing_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * closing_radius + 1,) * 2)
+    if closing and not use_distance:
+        closing_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * closing + 1,) * 2)
 
     # Closing is dilation followed by erosion: each needs radius pixels.
-    halo = margin + 2 * closing_radius
+    halo = margin + 2 * closing
 
     # Read a halo so that labels across block boundaries contribute too.
     for y, x in _blocks(height, width, chunk_size, progress=progress, desc="Creating training mask"):
@@ -202,14 +202,14 @@ def create_training_mask(
             # distance to implicit background outside the array.
             expanded = block
 
-        if closing_radius and use_distance:
+        if closing and use_distance:
             # Dilation and erosion with a Euclidean disk. EDT cost is
             # linear in block pixels rather than kernel area per pixel.
             if not expanded.all():
-                expanded = distance_transform_edt(expanded == 0) <= closing_radius
+                expanded = distance_transform_edt(expanded == 0) <= closing
 
             if not expanded.all():
-                expanded = distance_transform_edt(expanded) > closing_radius
+                expanded = distance_transform_edt(expanded) > closing
 
             # A full foreground block has no background to erode toward.
             # This also matches OpenCV's neutral image-border handling.

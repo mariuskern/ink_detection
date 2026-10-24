@@ -33,7 +33,7 @@ def get_tiles(label, mask, size, stride, segment_name, h, w):
                 # label_tile = label[y:y+size, x:x+size]
                 # mask_tile = mask[y:y+size, x:x+size]
 
-                valid = mask[y:y+size, x:x+size].astype(bool)
+                valid = mask[y:y+size, x:x+size].astype(bool) if mask is not None else None
 
                 if label is not None:
                     label_tile = label[y:y+size, x:x+size]

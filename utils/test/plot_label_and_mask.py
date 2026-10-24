@@ -57,7 +57,7 @@ def _get_arguments():
     closing = parser.add_mutually_exclusive_group()
 
     closing.add_argument(
-        "--closing-radius",
+        "--closing",
         default=None,
         type=int,
         help="Optional gap-closing radius in pixels (0 disables closing)",
@@ -93,7 +93,7 @@ def main(args):
         margin_factor=args.margin_factor,
         margin=args.margin,
         chunk_size=args.chunk_size,
-        closing_radius=args.closing_radius,
+        closing=args.closing,
         closing_factor=args.closing_factor,
         closing_method=args.closing_method,
         progress=not args.no_progress,
@@ -117,8 +117,8 @@ def main(args):
     axes[1].imshow(mask, cmap="gray")
     setting = f"margin={args.margin}px" if args.margin is not None else f"factor={args.margin_factor}"
 
-    if args.closing_radius:
-        setting += f", closing={args.closing_radius}px"
+    if args.closing:
+        setting += f", closing={args.closing}px"
     elif args.closing_factor:
         setting += f", closing_factor={args.closing_factor}"
 

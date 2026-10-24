@@ -66,7 +66,9 @@ def build_dataset(
     stride=None,
     min_mask_fraction=None,
     split=None,
-    mask_refinement=None,
+    pseudo_data_dir=None,
+    use_mask_refinement=True,
+    use_label_refinement=True,
 ):
     use_pseudo_labels = pseudo_label_version is not None
 
@@ -86,15 +88,17 @@ def build_dataset(
         pseudo_target=cfg.train.pseudo_target if use_pseudo_labels else "hard",
         transform=transform,
         split=split,
-        mask_refinement=mask_refinement,
-        intersect_pseudo_with_original_mask=cfg.dataset.intersect_pseudo_with_original_mask,
+        mask_refinement=cfg.train.mask_refinement if use_mask_refinement else None,
+        label_refinement=cfg.train.label_refinement if use_label_refinement else None,
+        pseudo_cache_dir=pseudo_data_dir,
+        use_original_mask_for_pseudo_mask=cfg.dataset.use_original_mask_for_pseudo_mask,
     )
 
 
-def build_train_dataset(cfg, use_unlabeled_data=False, pseudo_label_version=None, augmentation=None, split=None, mask_refinement=None):
+def build_train_dataset(cfg, use_unlabeled_data=False, pseudo_label_version=None, augmentation=None, split=None, pseudo_data_dir=None, use_mask_refinement=True, use_label_refinement=True,):
     transform = build_augmentation(augmentation) if augmentation is not None else None
 
-    dataset = build_dataset(cfg, cfg.train.labeled, transform=transform, split=split, mask_refinement=mask_refinement)
+    dataset = build_dataset(cfg, cfg.train.labeled, transform=transform, split=split, use_mask_refinement=use_mask_refinement, use_label_refinement=use_label_refinement)
 
     if not use_unlabeled_data:
         return dataset
@@ -105,8 +109,9 @@ def build_train_dataset(cfg, use_unlabeled_data=False, pseudo_label_version=None
         transform=transform,
         use_as_unlabeled=use_unlabeled_data,
         pseudo_label_version=pseudo_label_version,
+        pseudo_data_dir=pseudo_data_dir,
         split=split,
-        mask_refinement=mask_refinement,
+        use_mask_refinement=use_mask_refinement, use_label_refinement=use_label_refinement
     )
 
     return CombinedInkDataset([dataset, pseudo_dataset])

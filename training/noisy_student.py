@@ -18,7 +18,12 @@ from utils.teacher_checkpoints import resolve_teacher_checkpoints, save_teacher_
 
 def train_noisy_student(cfg, logger):
     output_dir = Path(cfg.path.output_dir)
+
     tmp_dir = Path(cfg.path.tmp_dir)
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+
+    pseudo_data_dir = tmp_dir / "pseudo_data"
+    pseudo_data_dir.mkdir(parents=True, exist_ok=True)
 
     start_iteration = cfg.train.get("start_iteration", 0)
     teacher_checkpoint = cfg.train.get("teacher_checkpoint")
@@ -48,6 +53,7 @@ def train_noisy_student(cfg, logger):
             output_dir / "iteration" / str(previous_iteration),
             tmp_dir / "iteration" / str(previous_iteration),
             get_device(cfg),
+            pseudo_data_dir,
         )
 
     for iteration in range(start_iteration, cfg.train.iterations):
@@ -75,6 +81,7 @@ def train_noisy_student(cfg, logger):
             iteration=iteration,
             augmentation=cfg.train.student.aug,
             device=device,
+            pseudo_data_dir=pseudo_data_dir,
         )
 
         checkpoint_paths = get_checkpoint_paths(cfg, result, device)
@@ -82,7 +89,7 @@ def train_noisy_student(cfg, logger):
         if "predict" in cfg.train and cfg.train.predict is not None and len(cfg.train.predict) > 0:
             save_predictions(cfg, checkpoint_paths, output_dir_iteration, tmp_dir_iteration, device)
 
-        generate_pseudo_labels(cfg, checkpoint_paths, iteration, output_dir_iteration, tmp_dir_iteration, device)
+        generate_pseudo_labels(cfg, checkpoint_paths, iteration, output_dir_iteration, tmp_dir_iteration, device, pseudo_data_dir)
 
 
 def backup_iteration_directories(output_dir, tmp_dir, iteration, checkpoint_path=None):
@@ -112,7 +119,7 @@ def backup_iteration_directories(output_dir, tmp_dir, iteration, checkpoint_path
     return paths if multiple else (paths[0] if paths else None)
 
 
-def generate_pseudo_labels(cfg, checkpoint_paths, iteration, output_dir, tmp_dir, device):
+def generate_pseudo_labels(cfg, checkpoint_paths, iteration, output_dir, tmp_dir, device, pseudo_data_dir):
         # Reset here so a resumed run reproduces the same TTA and loader randomness.
         if cfg.train.seed is not None:
             seed_everything(cfg.train.seed + iteration)
@@ -123,7 +130,7 @@ def generate_pseudo_labels(cfg, checkpoint_paths, iteration, output_dir, tmp_dir
             for variant in cfg.train.teacher.aug.variants:
                 transforms.append(build_augmentation(variant))
         # predict_dataset = build_dataset(cfg, cfg.train.unlabeled, min_mask_fraction=0.0, transform=transform)
-        predict_dataset = build_dataset(cfg, cfg.train.unlabeled, transform=None, split="train" if cfg.train.use_validation_mask else None)
+        predict_dataset = build_dataset(cfg, cfg.train.unlabeled, use_as_unlabeled=True, pseudo_label_version=None, transform=None, split="train" if cfg.train.use_validation_mask else None, use_mask_refinement=False, use_label_refinement=False)
         predict_loader = build_dataloader(cfg, predict_dataset, None)
 
         for prediction in predict(cfg, checkpoint_paths, predict_loader, device=device, transforms=transforms, tta_num=cfg.train.teacher.tta_num, cache_dir=tmp_dir):
@@ -147,7 +154,7 @@ def generate_pseudo_labels(cfg, checkpoint_paths, iteration, output_dir, tmp_dir
             )
 
             save_predictions_as_zarr(
-                Path(cfg.path.data_dir),
+                pseudo_data_dir,
                 [prediction],
                 iteration,
                 save_probability=True,
@@ -162,7 +169,7 @@ def save_predictions(cfg, checkpoint_paths, output_dir, tmp_dir, device):
         #     for variant in cfg.train.teacher.aug.variants:
         #         transforms.append(build_augmentation(variant))
         # predict_dataset = build_dataset(cfg, cfg.train.unlabeled, transform=None, split="train" if cfg.train.use_validation_mask else None)
-        predict_dataset = build_dataset(cfg, cfg.train.predict, transform=None, split=None)
+        predict_dataset = build_dataset(cfg, cfg.train.predict, use_as_unlabeled=True, pseudo_label_version=None, transform=None, split=None, use_mask_refinement=False, use_label_refinement=False)
         predict_loader = build_dataloader(cfg, predict_dataset, None)
 
         # for prediction in predict(model, predict_loader, device=device, transforms=transforms, tta_num=cfg.train.refinement.tta_num, cache_dir=output_dir / "tmp"):

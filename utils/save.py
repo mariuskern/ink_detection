@@ -8,7 +8,6 @@ import numpy as np
 import zarr
 from scipy.stats import gaussian_kde
 
-from .segment_paths import get_segment_paths
 
 
 def save_predictions_as_images(
@@ -251,8 +250,15 @@ def _save_kde_plot(output_dir, name, segment, image, name_suffix, create_subfold
     plt.close(fig)
 
 
-def save_predictions_as_zarr(data_dir, predictions, iteration, save_probability=False, save_confidence=False, save_uncertainty=False, save_label=False, save_mask=False, save_label_not_refined=False, save_mask_not_refined=False):
-    segment_paths = get_segment_paths(data_dir)
+def save_predictions_as_zarr(output_dir, predictions, iteration, save_probability=False, save_confidence=False, save_uncertainty=False, save_label=False, save_mask=False, save_label_not_refined=False, save_mask_not_refined=False):
+    """Save versioned pseudo data in the run's temporary directory."""
+
+    predictions = list(predictions)
+
+    segment_paths = {prediction.segment: Path(output_dir) / prediction.segment for prediction in predictions}
+    
+    for path in segment_paths.values():
+        path.mkdir(parents=True, exist_ok=True)
     
     for prediction in predictions:
         if save_probability:
