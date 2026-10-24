@@ -664,9 +664,7 @@ class InkDataset(Dataset):
 
         options = {key: settings[key] for key in ("margin", "margin_factor", "closing_radius", "closing_factor", "closing_method", "chunk_size", "progress") if key in settings}
 
-        create_training_mask(labels, out=mask, **options)
-
-        valid = np.asarray(mask) > 0
+        valid = create_training_mask(labels, **options) > 0
 
         if not pseudo and "mask" in archive:
             valid &= np.asarray(archive["mask"]) > 0

@@ -92,7 +92,6 @@ def create_training_mask(
     *,
     margin=None,
     chunk_size=2048,
-    out=None,
     closing_radius=None,
     closing_factor=None,
     closing_method="auto",
@@ -109,9 +108,8 @@ def create_training_mask(
     zero radius; positive factors give at least one pixel for nonempty input.
 
     Both modes use overlapping blocks. ``label`` may be a sliceable array
-    such as Zarr or numpy.memmap; ``out`` may be a writable uint8 array of
-    shape label.shape[:2]. Without ``out``, the full output is allocated in
-    RAM. Set ``closing_radius`` to a positive integer to close small gaps
+    such as Zarr or numpy.memmap. The returned mask has shape label.shape[:2]
+    and is allocated in RAM. Set ``closing_radius`` to a positive integer to close small gaps
     in the expanded training mask with an elliptical kernel of diameter
     2 * closing_radius + 1. Alternatively, ``closing_factor`` multiplies
     the same median component size used for margin_factor (estimated once).
@@ -127,15 +125,12 @@ def create_training_mask(
     rasterized ellipse exactly. Disk and ellipse can differ at their edges.
     Block working memory is O((chunk_size + 2 * margin +
     4 * closing_radius)**2); closing is also seamless across block borders.
-    Input and output must use separate storage. RGB input is converted with
+    RGB input is converted with
     OpenCV's RGB-to-gray convention, as in the original implementation.
     """
 
     if len(label.shape) not in (2, 3) or (len(label.shape) == 3 and label.shape[2] != 3):
         raise ValueError("label must be a 2D array or an RGB image")
-
-    if out is label or (isinstance(label, np.ndarray) and isinstance(out, np.ndarray) and np.may_share_memory(label, out)):
-        raise ValueError("label and out must use separate storage")
 
     if not math.isfinite(margin_factor) or margin_factor < 0:
         raise ValueError("margin_factor must be finite and nonnegative")
@@ -165,10 +160,7 @@ def create_training_mask(
 
     height, width = label.shape[:2]
 
-    if out is None:
-        out = np.zeros((height, width), dtype=np.uint8)
-    elif out.shape != (height, width) or np.dtype(out.dtype) != np.dtype(np.uint8):
-        raise ValueError("out must have shape label.shape[:2] and dtype uint8")
+    mask = np.zeros((height, width), dtype=np.uint8)
 
     typical_size = 0.0
 
@@ -201,7 +193,6 @@ def create_training_mask(
         block = _binary(label[top:bottom, left:right])
 
         if not block.any():
-            out[y:y1, x:x1] = np.zeros((y1 - y, x1 - x), dtype=np.uint8)
             continue
 
         if margin and block.any():
@@ -226,6 +217,6 @@ def create_training_mask(
             expanded = cv2.morphologyEx(expanded.astype(np.uint8), cv2.MORPH_CLOSE, closing_kernel)
         
         core = expanded[y - top:y1 - top, x - left:x1 - left]
-        out[y:y1, x:x1] = core.astype(np.uint8) * 255
+        mask[y:y1, x:x1] = core.astype(np.uint8) * 255
     
-    return out
+    return mask
