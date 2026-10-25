@@ -793,6 +793,29 @@ def train_one_epoch(
                 on_epoch=True,
             )
 
+        def count_positive_tiles(labels, masks, available, threshold):
+            valid = masks > 0
+            valid_pixels = valid.flatten(1).sum(dim=1)
+            positive_fraction = (labels * valid).flatten(1).sum(dim=1) / valid_pixels.clamp_min(1)
+
+            return (available & (valid_pixels > 0) & (positive_fraction > threshold)).sum().item()
+
+
+        num_positive_labeled_tiles = count_positive_tiles(label, mask, has_label, cfg.sampler.pos_threshold)
+        num_positive_pseudo_tiles = count_positive_tiles(pseudo_label, pseudo_mask, has_pseudo_label, cfg.sampler.pos_threshold)
+
+        logger.log_dict(
+            "train_debug",
+            {
+                "num_positive_tiles": num_positive_labeled_tiles + num_positive_pseudo_tiles,
+                "num_positive_labeled_tiles": num_positive_labeled_tiles,
+                "num_positive_pseudo_tiles": num_positive_pseudo_tiles,
+            },
+            batch_size=cfg.dataloader.batch_size,
+            on_step=True,
+            on_epoch=True,
+        )
+
         # --------------------------------------------------------------------
         # LR monitor
         # --------------------------------------------------------------------

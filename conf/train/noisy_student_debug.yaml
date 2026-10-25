@@ -28,6 +28,7 @@ resume_run: auto
 # resume_run: auto
 
 seed: 42
+compile: false
 benchmark: false
 deterministic: true
 
