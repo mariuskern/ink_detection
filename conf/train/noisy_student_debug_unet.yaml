@@ -1,4 +1,6 @@
 defaults:
   - noisy_student_debug
 
+model_schedule: [vesuvius_unet]
+
 lr: 0.01

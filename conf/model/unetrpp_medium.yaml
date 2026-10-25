@@ -1,0 +1,10 @@
+defaults:
+  - unetrpp
+  - _self_
+
+# Three quarters of the large model's channel widths; two blocks per stage.
+feature_size: 12
+hidden_size: 192
+dims: [24, 48, 96, 192]
+depths: [2, 2, 2, 2]
+decoder_depths: [2, 2, 2]

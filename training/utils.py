@@ -48,6 +48,7 @@ from tqdm import tqdm
 
 from data.builder import build_train_dataset, build_dataset, build_sampler, build_dataloader
 from models import build_model
+from omegaconf import OmegaConf
 from losses import build_loss
 from utils.prediction_merger import PredictionMerger
 from utils.save import save_predictions_as_images
@@ -87,7 +88,7 @@ def fit(cfg, logger, output_dir, *, pseudo_label_version=None, iteration=None, a
 
     if device is None:
         device = get_device(cfg)
-    print(f"Using device: {device}")
+    print(f"  Device:    {device} | precision: {cfg.train.precision} | compile: {cfg.train.compile}")
 
     # ------------------------------------------------------------------------
     # Precision
@@ -136,8 +137,8 @@ def fit(cfg, logger, output_dir, *, pseudo_label_version=None, iteration=None, a
     train_loader = build_dataloader(cfg, train_dataset, train_sampler)
     val_loader = build_dataloader(cfg, val_dataset, None)
 
-    print(f"Train samples: {len(train_dataset)}")
-    print(f"Val samples:   {len(val_dataset)}")
+    print(f"  Samples:   train={len(train_dataset):,} | validation={len(val_dataset):,}")
+    print(f"  Output:    {output_dir}")
 
     # ------------------------------------------------------------------------
     # Optimizer
@@ -215,6 +216,7 @@ def fit(cfg, logger, output_dir, *, pseudo_label_version=None, iteration=None, a
         filename_template=cfg.model.name + "_{epoch:03d}_{val_loss:.3f}",
         every_n_epochs=cfg.train.checkpoint.checkpoint_every_n_epochs,
         swa_save_k=cfg.train.checkpoint.swa_save_k,
+        model_config=OmegaConf.to_container(cfg.model, resolve=True),
     )
 
     logging_manager = LoggingManager(
@@ -230,8 +232,7 @@ def fit(cfg, logger, output_dir, *, pseudo_label_version=None, iteration=None, a
     # ------------------------------------------------------------------------
 
     for epoch in range(cfg.train.max_epochs):
-        print()
-        print(f"Epoch {epoch + 1}/{cfg.train.max_epochs}")
+        print(f"\n  Epoch {epoch + 1}/{cfg.train.max_epochs} | learning rate: {optimizer.param_groups[0]['lr']:.3e}")
 
         # ====================================================================
         # TRAIN
@@ -288,8 +289,7 @@ def fit(cfg, logger, output_dir, *, pseudo_label_version=None, iteration=None, a
         # Print epoch summary
         # ====================================================================
 
-        print(f"  train/loss: {metrics['train/loss']:.6f}")
-        print(f"  val/loss:   {metrics["val/loss"]:.6f}")
+        print(f"  Loss       train: {metrics['train/loss']:.6f} | validation: {metrics['val/loss']:.6f}")
 
         # ====================================================================
         # ModelCheckpoint equivalent
@@ -483,7 +483,7 @@ def train_one_epoch(
 
     optimizer.zero_grad(set_to_none=True)
 
-    for batch_idx, batch in enumerate(tqdm(train_loader, desc=f"Training Epoch {epoch + 1}")):
+    for batch_idx, batch in enumerate(tqdm(train_loader, desc="  Train", dynamic_ncols=True, leave=False)):
 
         # --------------------------------------------------------------------
         # Move batch to device
@@ -849,7 +849,7 @@ def validate(
     # Validation loop
     # ------------------------------------------------------------------------
 
-    for batch_idx, batch in enumerate(tqdm(val_loader, desc=f"Validation Epoch {epoch + 1}")):
+    for batch_idx, batch in enumerate(tqdm(val_loader, desc="  Validate", dynamic_ncols=True, leave=False)):
         # --------------------------------------------------------------------
         # Batch
         # --------------------------------------------------------------------

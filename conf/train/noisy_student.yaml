@@ -8,9 +8,13 @@ defaults:
 name: noisy_student
 pseudo_target: soft # hard | soft
 iterations: 5
+# One model per iteration; repeat the final entry for remaining iterations.
+# model.* CLI overrides apply to every scheduled model.
+# Set to null to use cfg.model unchanged (selected via model=...).
+model_schedule: [unetrpp_small, unetrpp_small, unetrpp_medium, unetrpp_large]
 
 label_refinement:
-  enabled: true
+  enabled: false
   targets: [real]             # real, pseudo, or [real, pseudo].
   radius: null                # Fixed pixels; overrides radius_factor.
   radius_factor: 0.15         # Relative to median component size.
@@ -20,7 +24,7 @@ label_refinement:
   progress: false
 
 mask_refinement:
-  enabled: true
+  enabled: false
   targets: [real]             # real, pseudo, or both
   pseudo_threshold: 0.5       # Threshold used for soft pseudo targets.
   margin: null                # Fixed pixel radius; overrides margin_factor when set.

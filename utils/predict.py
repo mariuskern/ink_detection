@@ -20,8 +20,7 @@ def predict(cfg, checkpoint_paths, dataloader, device, transforms=None, tta_num=
         raise ValueError("checkpoint_paths must not be empty.")
 
     if device.type == "cuda":
-        print(f"[predict] CUDA memory allocated: {torch.cuda.memory_allocated(device) / 1024**3:.2f} GiB")
-        print(f"[predict] CUDA memory reserved:  {torch.cuda.memory_reserved(device) / 1024**3:.2f} GiB")
+        print(f"  CUDA memory: allocated={torch.cuda.memory_allocated(device) / 1024**3:.2f} GiB | reserved={torch.cuda.memory_reserved(device) / 1024**3:.2f} GiB")
 
     if tta_num < 1:
         raise ValueError("tta_num must be >= 1")
@@ -69,7 +68,7 @@ def predict(cfg, checkpoint_paths, dataloader, device, transforms=None, tta_num=
                 else:
                     desc = f"Model {model_name} | TTA {tta_idx + 1}/{len(tta_transforms)} (repeat {repeat_idx + 1}/{repeats})"
 
-                for batch in tqdm(dataloader, desc=desc):
+                for batch in tqdm(dataloader, desc=f"  {desc}", dynamic_ncols=True, leave=False):
                     tile = batch["tile"]
                     segments = batch["segment"]
                     x = batch["x"]

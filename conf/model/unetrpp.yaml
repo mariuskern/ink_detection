@@ -1,13 +1,13 @@
 name: unetrpp
-feature_size: 16
-hidden_size: 256
-num_heads: 4
+feature_size: 16                    # Base channel count for the decoder and full-resolution skip
+hidden_size: 256                    # Bottleneck channel count; must equal dims[-1]
+num_heads: 4                        # Attention heads per block; must divide each channel count in dims
 norm_name: "instance"
-depths: [3, 3, 3, 3]
+depths: [3, 3, 3, 3]                # Transformer blocks per encoder stage (shallow -> deep)
 decoder_depths: [3, 3, 3]           # Transformer blocks in decoder5, decoder4, decoder3 (deep -> shallow)
-dims: [32, 64, 128, 256]
-patch_size: [1, 4, 4]
-proj_size: [64, 64, 64, 32]
+dims: [32, 64, 128, 256]            # Encoder channels per stage; match feature_size * [2, 4, 8, 16]
+patch_size: [1, 4, 4]               # Patch size and initial downsampling factors in (depth, height, width)
+proj_size: [64, 64, 64, 32]         # Token projection dimension for efficient attention per encoder stage
 encoder_dropout_rate: 0.0           # Original: 0.0
 attention_dropout_rate: 0.15        # Original: 0.15
 conv_dropout_rate: 0.0              # Original: 0.0
@@ -21,8 +21,8 @@ per_pixel: True
 warp_stabilize: True
 # Stem
 texture_stem: True
-stem_out_extra: 8
+stem_out_extra: 8                  # Additional feature channels produced by the texture stem
 # Collapse
 collapse: surface_relative
 # Head
-head_classes: 1
+head_classes: 1                    # Number of output channels / predicted classes

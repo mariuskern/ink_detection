@@ -2,5 +2,7 @@ defaults:
   - noisy_student
   - override /aug@student.aug: resnet3d # strong strong_v2 resnet3d
 
+model_schedule: [vesuvius_resnet3d]
+
 lr: 3.0e-4
 # warmup_epochs: 5

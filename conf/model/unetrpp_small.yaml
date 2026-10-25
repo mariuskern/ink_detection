@@ -1,0 +1,10 @@
+defaults:
+  - unetrpp
+  - _self_
+
+# Half the large model's channel widths; one transformer block per stage.
+feature_size: 8
+hidden_size: 128
+dims: [16, 32, 64, 128]
+depths: [1, 1, 1, 1]
+decoder_depths: [1, 1, 1]

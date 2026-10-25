@@ -2,4 +2,6 @@ defaults:
   - noisy_student_debug
   - override /aug@student.aug: resnet3d
 
+model_schedule: [vesuvius_resnet3d]
+
 lr: 3.0e-4

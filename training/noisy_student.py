@@ -1,8 +1,13 @@
 from pathlib import Path
 from datetime import datetime
+import copy
 
 import torch
 from torch.optim.swa_utils import AveragedModel
+from omegaconf import OmegaConf
+from hydra import compose
+from hydra.core.hydra_config import HydraConfig
+from omegaconf import open_dict
 
 from training.utils import fit
 from training.seed import seed_everything
@@ -44,25 +49,28 @@ def train_noisy_student(cfg, logger):
 
         teacher_paths = backup_iteration_directories(output_dir, tmp_dir, previous_iteration, teacher_paths)
 
-        print(f"Generating pseudo labels for iteration {previous_iteration} from {teacher_paths}")
+        print(f"\n{'=' * 64}\nNoisy Student | Resume: restore teacher from iteration {previous_iteration}\n{'=' * 64}")
+
+        cfg_previous_iteration = _get_config_for_iteration(cfg, previous_iteration)
 
         generate_pseudo_labels(
-            cfg,
+            cfg_previous_iteration,
             teacher_paths,
             previous_iteration,
             output_dir / "iteration" / str(previous_iteration),
             tmp_dir / "iteration" / str(previous_iteration),
-            get_device(cfg),
+            get_device(cfg_previous_iteration),
             pseudo_data_dir,
         )
 
     for iteration in range(start_iteration, cfg.train.iterations):
-        if cfg.train.seed is not None:
-            iteration_seed = cfg.train.seed + iteration
-            seed_everything(iteration_seed)
-            print(f"Iteration seed: {iteration_seed}")
+        print(f"\n{'=' * 64}\nNoisy Student | Iteration {iteration} (of 0..{cfg.train.iterations - 1})\n{'=' * 64}")
+        cfg_iteration = _get_config_for_iteration(cfg, iteration)
 
-        print(f"Starting Noisy Student iteration {iteration}")
+        if cfg_iteration.train.seed is not None:
+            iteration_seed = cfg_iteration.train.seed + iteration
+            seed_everything(iteration_seed)
+            print(f"  Seed:      {iteration_seed}")
 
         output_dir_iteration = output_dir / "iteration" / str(iteration)
         tmp_dir_iteration = tmp_dir / "iteration" / str(iteration)
@@ -70,26 +78,30 @@ def train_noisy_student(cfg, logger):
         if start_iteration > 0:
             backup_iteration_directories(output_dir, tmp_dir, iteration)
 
-        device = get_device(cfg)
+        device = get_device(cfg_iteration)
 
         # Training
         result = fit(
-            cfg,
+            cfg_iteration,
             logger,
             output_dir=output_dir_iteration,
             pseudo_label_version=iteration - 1 if iteration > 0 else None,
             iteration=iteration,
-            augmentation=cfg.train.student.aug,
+            augmentation=cfg_iteration.train.student.aug,
             device=device,
             pseudo_data_dir=pseudo_data_dir,
         )
 
-        checkpoint_paths = get_checkpoint_paths(cfg, result, device)
+        checkpoint_paths = get_checkpoint_paths(cfg_iteration, result, device)
+        print(f"\n  Teacher: {len(checkpoint_paths)} checkpoint(s)")
+        for path in checkpoint_paths:
+            print(f"    {path}")
 
-        if "predict" in cfg.train and cfg.train.predict is not None and len(cfg.train.predict) > 0:
-            save_predictions(cfg, checkpoint_paths, output_dir_iteration, tmp_dir_iteration, device)
+        if "predict" in cfg_iteration.train and cfg_iteration.train.predict is not None and len(cfg_iteration.train.predict) > 0:
+            save_predictions(cfg_iteration, checkpoint_paths, output_dir_iteration, tmp_dir_iteration, device)
 
-        generate_pseudo_labels(cfg, checkpoint_paths, iteration, output_dir_iteration, tmp_dir_iteration, device, pseudo_data_dir)
+        generate_pseudo_labels(cfg_iteration, checkpoint_paths, iteration, output_dir_iteration, tmp_dir_iteration, device, pseudo_data_dir)
+        print(f"  Iteration {iteration} complete.")
 
 
 def backup_iteration_directories(output_dir, tmp_dir, iteration, checkpoint_path=None):
@@ -114,12 +126,13 @@ def backup_iteration_directories(output_dir, tmp_dir, iteration, checkpoint_path
 
             paths = [backup / path.relative_to(directory) if path.is_relative_to(directory) else path for path in paths]
 
-            print(f"Preserved previous iteration directory: {backup}")
+            print(f"  Backup:    {backup}")
     
     return paths if multiple else (paths[0] if paths else None)
 
 
 def generate_pseudo_labels(cfg, checkpoint_paths, iteration, output_dir, tmp_dir, device, pseudo_data_dir):
+        print(f"\n  Pseudo labels | teacher iteration {iteration} | {len(checkpoint_paths)} checkpoint(s)")
         # Reset here so a resumed run reproduces the same TTA and loader randomness.
         if cfg.train.seed is not None:
             seed_everything(cfg.train.seed + iteration)
@@ -162,8 +175,11 @@ def generate_pseudo_labels(cfg, checkpoint_paths, iteration, output_dir, tmp_dir
                 save_mask=True,
             )
 
+        print(f"  Pseudo labels saved: {pseudo_data_dir} (version {iteration})")
+
 
 def save_predictions(cfg, checkpoint_paths, output_dir, tmp_dir, device):
+        print(f"\n  Export predictions | {len(checkpoint_paths)} checkpoint(s)")
         # transforms = []
         # if cfg.train.teacher.aug is not None:
         #     for variant in cfg.train.teacher.aug.variants:
@@ -228,14 +244,15 @@ def save_average_checkpoint(cfg, checkpoint_paths: list[Path], device, output_pa
 
         if averaged_model is None:
             averaged_model = AveragedModel(loaded_model)
-        else:
-            averaged_model.update_parameters(loaded_model)
+        # Construction copies weights but leaves n_averaged at zero.
+        averaged_model.update_parameters(loaded_model)
 
         del loaded_model
 
     torch.save(
         {
             "state_dict": averaged_model.module.state_dict(),
+            "model_config": OmegaConf.to_container(cfg.model, resolve=True),
         },
         output_path,
     )
@@ -243,3 +260,44 @@ def save_average_checkpoint(cfg, checkpoint_paths: list[Path], device, output_pa
     del averaged_model
 
     # return output_path
+
+
+def _get_config_for_iteration(cfg, iteration):
+    cfg_iteration = copy.deepcopy(cfg)
+
+    if iteration < 0:
+        raise ValueError("iteration must be non-negative")
+
+    models = cfg.train.get("model_schedule")
+
+    if models is None:
+        print(f"  Model:     {cfg_iteration.model.name} (fixed configuration)")
+        return cfg_iteration
+
+    if isinstance(models, str):
+        models = [models]
+
+    if not models:
+        raise ValueError("train.model_schedule must contain at least one model config name")
+
+    name = models[min(iteration, len(models) - 1)]
+
+    # Replay only explicit model-field overrides, preserving Hydra's syntax.
+    # The model group itself is selected by the iteration schedule.
+    model_overrides = []
+    if HydraConfig.initialized():
+        model_overrides = [override for override in HydraConfig.get().overrides.task if override.split("=", 1)[0].lstrip("+~").startswith("model.")]
+
+    model_cfg = compose(
+        config_name=None,
+        overrides=[f"+model={name}", *model_overrides],
+    ).model
+
+    with open_dict(cfg_iteration):
+        cfg_iteration.model = model_cfg
+
+    print(f"  Model:     {name} (architecture: {model_cfg.name})")
+    if model_overrides:
+        print(f"  Overrides: {', '.join(model_overrides)}")
+
+    return cfg_iteration

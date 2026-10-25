@@ -1,5 +1,7 @@
 defaults:
   - noisy_student
 
+model_schedule: [vesuvius_unet]
+
 lr: 0.001
 # warmup_epochs: 5

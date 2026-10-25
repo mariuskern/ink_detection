@@ -58,7 +58,9 @@ class CheckpointManager:
         every_n_epochs: int = 1,
         save_last_every_epoch: bool = False,
         swa_save_k: int = 0,
+        model_config: dict | None = None,
     ):
+        self.model_config = model_config
         self.dirpath = Path(dirpath)
         self.dirpath.mkdir(parents=True, exist_ok=True)
 
@@ -368,6 +370,9 @@ class CheckpointManager:
             "epoch": epoch,
             "state_dict": model.state_dict(),
         }
+
+        if self.model_config is not None:
+            state["model_config"] = self.model_config
 
         if optimizer is not None:
             state["optimizer_state_dict"] = optimizer.state_dict()
