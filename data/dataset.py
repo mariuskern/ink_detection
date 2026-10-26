@@ -137,6 +137,10 @@ class InkDataset(Dataset):
         from `pseudo_labels`, while `"soft"` loads continuous predictions
         from `prediction`.
 
+    pseudo_positive_threshold:
+        Pixel probability threshold for positive tile fractions with soft
+        pseudo targets. Only affects tile statistics, not training targets.
+
     transform:
         Optional transformation applied jointly to the image, labels and
         masks.
@@ -181,6 +185,7 @@ class InkDataset(Dataset):
         use_original_mask_for_pseudo_mask=False,
         label_refinement=None,
         pseudo_cache_dir=None,
+        pseudo_positive_threshold=0.5,
     ):
         self.data_dir = Path(data_dir)
         self.tile_size = tile_size
@@ -192,6 +197,7 @@ class InkDataset(Dataset):
         self.use_as_unlabeled = use_as_unlabeled
         self.pseudo_label_version = pseudo_label_version
         self.pseudo_target = pseudo_target
+        self.pseudo_positive_threshold = pseudo_positive_threshold
         self.transform = transform
         self.split = split
         self.segment_crops = segment_crops or {}
@@ -528,7 +534,10 @@ class InkDataset(Dataset):
                     validation_mask = validation_mask == 0
                 mask = mask * validation_mask if mask is not None else validation_mask
 
-            tiles = get_tiles(label, mask, self.tile_size, self.stride, segment, h, w)
+            tiles = get_tiles(
+                label, mask, self.tile_size, self.stride, segment, h, w,
+                positive_threshold=self.pseudo_positive_threshold if use_pseudo and self.pseudo_target == "soft" else None,
+            )
 
             if not use_pseudo:
                 tile_path.parent.mkdir(parents=True, exist_ok=True)

@@ -86,6 +86,7 @@ def build_dataset(
         use_as_unlabeled=use_as_unlabeled,
         pseudo_label_version=pseudo_label_version,
         pseudo_target=cfg.train.pseudo_target if use_pseudo_labels else "hard",
+        pseudo_positive_threshold=cfg.train.pseudo_positive_threshold,
         transform=transform,
         split=split,
         mask_refinement=cfg.train.mask_refinement if use_mask_refinement else None,

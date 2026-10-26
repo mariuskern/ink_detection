@@ -18,7 +18,8 @@ from hydra.core.hydra_config import HydraConfig
 from utils.config_snapshot import save_training_config, register_config_resolvers, resolve_resume_run, save_wandb_identity, prepare_teacher_source
 from utils.teacher_checkpoints import resolve_teacher_checkpoints
 
-from training import train_supervised, train_noisy_student
+from training.supervised import train_supervised
+from training.noisy_student import train_noisy_student
 from training.seed import seed_everything
 from training.utils import configure_determinism
 from training.logging import WandbLogger

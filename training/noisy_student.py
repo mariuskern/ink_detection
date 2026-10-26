@@ -15,7 +15,8 @@ from utils.predict import predict
 from utils.postprocess import postprocess_prediction
 from utils.save import save_predictions_as_images, save_predictions_as_zarr
 from utils.device import get_device
-from data import build_dataset, build_dataloader, build_augmentation
+from data.builder import build_dataset, build_train_dataset, build_sampler, build_dataloader, build_augmentation
+from training.batchnorm import update_batchnorm_statistics
 from training.precision import parse_precision
 from utils.load_model import load_model_from_checkpoint
 from utils.teacher_checkpoints import resolve_teacher_checkpoints, save_teacher_selection
@@ -92,7 +93,7 @@ def train_noisy_student(cfg, logger):
             pseudo_data_dir=pseudo_data_dir,
         )
 
-        checkpoint_paths = get_checkpoint_paths(cfg_iteration, result, device)
+        checkpoint_paths = get_checkpoint_paths(cfg_iteration, result, device, pseudo_label_version=iteration - 1 if iteration > 0 else None, pseudo_data_dir=pseudo_data_dir)
         print(f"\n  Teacher: {len(checkpoint_paths)} checkpoint(s)")
         for path in checkpoint_paths:
             print(f"    {path}")
@@ -199,7 +200,7 @@ def save_predictions(cfg, checkpoint_paths, output_dir, tmp_dir, device):
             )
 
 
-def get_checkpoint_paths(cfg, result, device):
+def get_checkpoint_paths(cfg, result, device, *, pseudo_label_version=None, pseudo_data_dir=None):
     checkpoint_paths = []
 
     # if cfg.train.teacher.use_best and result.best_checkpoint:
@@ -209,7 +210,10 @@ def get_checkpoint_paths(cfg, result, device):
         match cfg.train.teacher.top_k_mode:
             case "average":
                 top_k_average_path = result.top_checkpoints[0].parent / "top_k_average.pt"
-                save_average_checkpoint(cfg, result.top_checkpoints, device=device, output_path=top_k_average_path)
+                save_average_checkpoint(
+                    cfg, result.top_checkpoints, device=device, output_path=top_k_average_path,
+                    pseudo_label_version=pseudo_label_version, pseudo_data_dir=pseudo_data_dir,
+                )
                 checkpoint_paths.append(top_k_average_path)
             case "individual":
                 checkpoint_paths.extend(result.top_checkpoints)
@@ -220,7 +224,10 @@ def get_checkpoint_paths(cfg, result, device):
         match cfg.train.teacher.swa_mode:
             case "average":
                 swa_average_path = result.swa_checkpoints[0].parent / "swa_average.pt"
-                save_average_checkpoint(cfg, result.swa_checkpoints, device=device, output_path=swa_average_path)
+                save_average_checkpoint(
+                    cfg, result.swa_checkpoints, device=device, output_path=swa_average_path,
+                    pseudo_label_version=pseudo_label_version, pseudo_data_dir=pseudo_data_dir,
+                )
                 checkpoint_paths.append(swa_average_path)
             case "individual":
                 checkpoint_paths.extend(result.swa_checkpoints)
@@ -231,11 +238,12 @@ def get_checkpoint_paths(cfg, result, device):
     return checkpoint_paths
 
 
-def save_average_checkpoint(cfg, checkpoint_paths: list[Path], device, output_path: Path) -> None:
+def save_average_checkpoint(cfg, checkpoint_paths: list[Path], device, output_path: Path, *, pseudo_label_version=None, pseudo_data_dir=None,
+) -> None:
     if not checkpoint_paths:
         raise ValueError("No checkpoint paths provided.")
 
-    _, _, model_dtype = parse_precision(cfg.train.precision)
+    autocast_dtype, _, model_dtype = parse_precision(cfg.train.precision)
 
     averaged_model = None
 
@@ -248,6 +256,32 @@ def save_average_checkpoint(cfg, checkpoint_paths: list[Path], device, output_pa
         averaged_model.update_parameters(loaded_model)
 
         del loaded_model
+
+    has_batchnorm = any(
+        isinstance(module, torch.nn.modules.batchnorm._BatchNorm) and module.track_running_stats
+        for module in averaged_model.module.modules()
+    )
+
+    if len(checkpoint_paths) > 1 and has_batchnorm:
+        # Match this iteration's training selection, without stochastic augmentation.
+        # In particular, retain refined real masks and never use validation data.
+        use_unlabeled_data = pseudo_label_version is not None
+
+        calibration_dataset = build_train_dataset(
+            cfg,
+            use_unlabeled_data=use_unlabeled_data,
+            pseudo_label_version=pseudo_label_version,
+            augmentation=None,
+            split="train" if cfg.train.use_validation_mask else None,
+            pseudo_data_dir=pseudo_data_dir,
+            use_mask_refinement=True,
+            use_label_refinement=False,
+        )
+
+        calibration_sampler = build_sampler(cfg, calibration_dataset, use_unlabeled_data=use_unlabeled_data)
+        calibration_loader = build_dataloader(cfg, calibration_dataset, calibration_sampler, shuffle=False)
+        
+        update_batchnorm_statistics(averaged_model.module, calibration_loader, device, autocast_dtype)
 
     torch.save(
         {

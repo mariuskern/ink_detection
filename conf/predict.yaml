@@ -20,7 +20,9 @@ train:
     # - 0172_20241113090990
     # - 1667_w028_20251208130119156_2um
     # - 1667_w029_20251212185248662_2um
-    - 1667_w031_2025122323_2um
+    # - 1667_w031_2025122323_2um
+    - "0172_20241025145341"
+    - "0172_20241025145701"
   accelerator: cuda
   use_validation_mask: false
 
@@ -28,5 +30,10 @@ train:
 
   compile: false
   compile_mode: default
+
+  label_refinement: null
+  mask_refinement: null
+
+  precision: bf16-mixed
 
 checkpoint: null

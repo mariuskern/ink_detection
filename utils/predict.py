@@ -48,6 +48,11 @@ def predict(cfg, checkpoint_paths, dataloader, device, transforms=None, tta_num=
 
         # model.to(device)
         model.eval()
+        if cfg.train.compile:
+            # Keep prediction independent of training's CUDA-graph workspace.
+            compile_mode = cfg.train.predict_compile_mode
+            print(f"  Compile prediction model: {Path(path).stem} | mode: {compile_mode}")
+            model = torch.compile(model, mode=compile_mode)
 
         # ---------------------------------------------------------
         # TTA

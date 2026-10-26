@@ -23,7 +23,7 @@ from utils.save import save_predictions_as_images
 from utils.device import get_device
 from models import build_model
 from data.augmentations import build_augmentation
-from data import build_dataset, build_dataloader
+from data.builder import build_dataset, build_dataloader
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -69,26 +69,26 @@ def main(cfg: DictConfig):
 
     device = get_device(cfg)
 
-    model = build_model(cfg)
-    model = model.to(device)
-    # if cfg.train.compile:
-    #     model = torch.compile(model, mode=cfg.train.compile_mode)
-    ckpt = torch.load(checkpoint, map_location="cpu", weights_only=False)
+    # model = build_model(cfg)
+    # model = model.to(device)
+    # # if cfg.train.compile:
+    # #     model = torch.compile(model, mode=cfg.train.compile_mode)
+    # ckpt = torch.load(checkpoint, map_location="cpu", weights_only=False)
 
-    state_dict = ckpt["state_dict"]
+    # state_dict = ckpt["state_dict"]
 
-    model_keys = model.state_dict().keys()
-    checkpoint_keys = state_dict.keys()
+    # model_keys = model.state_dict().keys()
+    # checkpoint_keys = state_dict.keys()
 
-    first_model_key = next(iter(model_keys))
-    first_checkpoint_key = next(iter(checkpoint_keys))
+    # first_model_key = next(iter(model_keys))
+    # first_checkpoint_key = next(iter(checkpoint_keys))
 
-    for prefix in ("model.", "_orig_mod."): # Remove model or _orig_mod (used with torch.compile) prefix
-        if first_checkpoint_key.startswith(prefix) and not first_model_key.startswith(prefix):
-            state_dict = {key.removeprefix(prefix): value for key, value in state_dict.items()}
-            break
+    # for prefix in ("model.", "_orig_mod."): # Remove model or _orig_mod (used with torch.compile) prefix
+    #     if first_checkpoint_key.startswith(prefix) and not first_model_key.startswith(prefix):
+    #         state_dict = {key.removeprefix(prefix): value for key, value in state_dict.items()}
+    #         break
 
-    model.load_state_dict(state_dict)
+    # model.load_state_dict(state_dict)
 
     # transform = build_augmentation(cfg.aug) if cfg.aug is not None else None
     transforms = []
@@ -100,7 +100,7 @@ def main(cfg: DictConfig):
 
     # results = predict(model, predict_loader, device=device, tta_transform=transform, tta_num=cfg.train.tta_num)
     i = 0
-    for result in predict(model, predict_loader, device=device, transforms=transforms, tta_num=cfg.train.tta_num, cache_dir=tmp_dir):
+    for result in predict(cfg, checkpoint, predict_loader, device=device, transforms=transforms, tta_num=cfg.train.tta_num, cache_dir=tmp_dir):
         save_predictions_as_images(
             output_dir,
             [result],

@@ -17,6 +17,9 @@ sys.path.append(os.getenv("CODE_DIR"))
 from utils.create_training_mask import create_training_mask
 
 
+# python .\utils\test\plot_label_and_mask.py <path> --margin-factor 0.6 --closing-factor 1
+
+
 def _get_arguments():
     parser = argparse.ArgumentParser()
 
