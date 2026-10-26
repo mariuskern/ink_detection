@@ -11,7 +11,7 @@ iterations: 5
 # One model per iteration; repeat the final entry for remaining iterations.
 # model.* CLI overrides apply to every scheduled model.
 # Set to null to use cfg.model unchanged (selected via model=...).
-model_schedule: [unetrpp_small, unetrpp_small, unetrpp_medium, unetrpp_large]
+model_schedule: null # [unetrpp_small, unetrpp_small, unetrpp_medium, unetrpp_large] null
 
 label_refinement:
   enabled: false
