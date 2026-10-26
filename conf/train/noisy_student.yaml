@@ -25,7 +25,7 @@ label_refinement:
   progress: false
 
 mask_refinement:
-  enabled: true
+  enabled: false
   targets: [real]             # real, pseudo, or both
   pseudo_threshold: 0.5       # Threshold used for soft pseudo targets.
   margin: null                # Fixed pixel radius; overrides margin_factor when set.

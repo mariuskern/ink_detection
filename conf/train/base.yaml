@@ -1,4 +1,4 @@
-lr: 5.0e-5 # 1.0e-4 5.0e-5
+lr: 1.0e-4 # 1.0e-4 5.0e-5
 max_epochs: 50
 weight_decay: 3.0e-5
 warmup_epochs: 3 # 3 5
