@@ -1,0 +1,38 @@
+name: moderate_low
+
+# Same transforms, order and probabilities across all three ablation levels.
+# Based on strong.yaml: rotation is combined with affine; TPS replaces blur.
+transforms:
+  - name: random_horizontal_flip
+    p: 0.5
+
+  - name: random_vertical_flip
+    p: 0.5
+
+  # Joint rotation, translation, scale and shear in one resampling step.
+  - name: random_affine
+    degrees: 10
+    translate: [0.025, 0.025]
+    scale: [0.95, 1.05]
+    shear: 2.5
+    p: 0.5
+
+  # Shared deformation across slices and masks; no Gaussian blur.
+  - name: tps
+    grid_size: 4
+    strength: 0.015
+    keep_boundary: true
+    padding_mode: border
+    chunk_size: 4096
+    p: 0.2
+
+  - name: gaussian_noise
+    mean: 0.0
+    sigma: 0.025
+    p: 0.3
+
+  - name: random_resized_crop
+    size: ${dataset.tile_size}
+    scale: [0.9, 1.0]
+    ratio: [0.95, 1.05]
+    p: 0.5

@@ -12,7 +12,7 @@ load_dotenv()
 
 sys.path.append(os.getenv("CODE_DIR"))
 
-from data import build_augmentation
+from data.builder import build_augmentation
 
 
 # ============================================================
@@ -57,11 +57,12 @@ def make_triangle(H, W, points):
 # Synthetisches "CT"-Volumen erzeugen
 # ============================================================
 
-def create_test_data(H=256, W=256, D=8):
+def create_test_data(H=256, W=256, D=8, checkerboard_size=16):
     """
     Erzeugt:
 
-        image: (1, D, H, W)
+        image: (1, D + 1, H, W)
+        Die letzte Ebene zeigt ein Schachbrett mit checkerboard_size Pixeln pro Feld.
 
         mask_circle:    (1, H, W)
         mask_rectangle: (1, H, W)
@@ -134,6 +135,10 @@ def create_test_data(H=256, W=256, D=8):
     image += body.unsqueeze(0).unsqueeze(1) * 0.05
 
     image = image.clamp(0, 1)
+
+    # Separate Ebene zur Visualisierung der geometrischen Verformungen.
+    checkerboard = ((yy // checkerboard_size + xx // checkerboard_size) % 2).float()
+    image = torch.cat((image, checkerboard[None, None]), dim=1)
 
     return image, mask_circle, mask_rectangle, mask_triangle
 

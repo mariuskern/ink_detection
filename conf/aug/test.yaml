@@ -1,36 +1,27 @@
 name: test
+
 transforms:
-  # Geometrische Augmentierungen
   - name: random_horizontal_flip
-    p: 1
+    p: 0.5
 
   - name: random_vertical_flip
-    p: 1
+    p: 0.5
 
-  - name: random_rotation
-    degrees: 15
-    p: 1
-
+  # Joint rotation, translation, scale and shear in one resampling step.
   - name: random_affine
-    degrees: 10
+    degrees: 20
     translate: [0.05, 0.05]
     scale: [0.9, 1.1]
     shear: 5
     p: 1
 
-
-  # Scan-/Papyrus-spezifische Augmentierungen
-
-  # - name: color_jitter
-  #   brightness: 0.2
-  #   contrast: 0.2
-  #   saturation: 0.0
-  #   hue: 0.0
-  #   p: 0.5
-
-  - name: gaussian_blur
-    kernel_size: 25
-    sigma: [5, 10]
+  # Shared deformation across slices and masks; no Gaussian blur.
+  - name: tps
+    grid_size: 4
+    strength: 0.03
+    keep_boundary: true
+    padding_mode: border
+    chunk_size: 4096
     p: 1
 
   - name: gaussian_noise
@@ -38,22 +29,89 @@ transforms:
     sigma: 0.05
     p: 1
 
-
-  # Crop/Scale
   - name: random_resized_crop
     size: 64
     scale: [0.8, 1.0]
     ratio: [0.9, 1.1]
     p: 1
-  
-  - name: random_depth_flip
-    p: 1
-    max_swaps: 3
 
-  - name: blank_rectangle
-    p: 1
-    height: [0.125, 0.25] # [8, 16]
-    width: [0.125, 0.25] # [8, 16]
-    min_rectangles: 1
-    max_rectangles: 4
-    value: mean
+# transforms:
+#   - name: elastic_deformation
+#     alpha: 512
+#     sigma: 32
+#     p: 1
+
+#   - name: tps
+#     grid_size: 4
+#     strength: 0.05
+#     keep_boundary: true
+#     padding_mode: zeros
+#     chunk_size: 4096
+#     p: 0
+
+#   - name: mls
+#     grid_size: 4
+#     strength: 0.05
+#     alpha: 1.0
+#     keep_boundary: true
+#     padding_mode: zeros
+#     chunk_size: 4096
+#     p: 0
+
+# transforms:
+#   # Geometrische Augmentierungen
+#   - name: random_horizontal_flip
+#     p: 1
+
+#   - name: random_vertical_flip
+#     p: 1
+
+#   - name: random_rotation
+#     degrees: 15
+#     p: 1
+
+#   - name: random_affine
+#     degrees: 10
+#     translate: [0.05, 0.05]
+#     scale: [0.9, 1.1]
+#     shear: 5
+#     p: 1
+
+#   # Scan-/Papyrus-spezifische Augmentierungen
+
+#   # - name: color_jitter
+#   #   brightness: 0.2
+#   #   contrast: 0.2
+#   #   saturation: 0.0
+#   #   hue: 0.0
+#   #   p: 0.5
+
+#   - name: gaussian_blur
+#     kernel_size: 25
+#     sigma: [5, 10]
+#     p: 1
+
+#   - name: gaussian_noise
+#     mean: 0.0
+#     sigma: 0.05
+#     p: 1
+
+
+#   # Crop/Scale
+#   - name: random_resized_crop
+#     size: 64
+#     scale: [0.8, 1.0]
+#     ratio: [0.9, 1.1]
+#     p: 1
+  
+#   - name: random_depth_flip
+#     p: 1
+#     max_swaps: 3
+
+#   - name: blank_rectangle
+#     p: 1
+#     height: [0.125, 0.25] # [8, 16]
+#     width: [0.125, 0.25] # [8, 16]
+#     min_rectangles: 1
+#     max_rectangles: 4
+#     value: mean

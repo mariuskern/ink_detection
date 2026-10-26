@@ -1,8 +1,17 @@
+from copy import deepcopy
 from dataclasses import dataclass
+import math
 
 import torch
+import torch.nn.functional as F
 from torchvision.transforms import v2
 from torchvision import tv_tensors
+
+
+def _is_soft_label(mask):
+    """Infer probability targets from fractional values, not just float dtype."""
+
+    return mask.is_floating_point() and bool(((mask > 0) & (mask < 1)).any())
 
 
 @dataclass
@@ -79,6 +88,79 @@ class v2NotInversable(torch.nn.Module):
 
     def inverse(self, prediction, params):
         raise RuntimeError(f"Transform '{self.name}' is not compatible with TTA because it cannot be spatially inverted.")
+
+
+class SoftLabelSpatialTransform(torch.nn.Module):
+    """Adapt rotation, affine, resized crop and elastic to probability targets.
+
+    Images retain the wrapped transform's interpolation and fill settings.
+    Hard masks retain torchvision's nearest-neighbor mask dispatch. Soft labels
+    use bilinear image dispatch with an explicit probability-space fill (zero
+    by default). Other options, including center, expand and antialias, are
+    inherited from the wrapped transform. Geometry is sampled only once.
+    """
+
+    def __init__(self, transform, soft_label_fill=0.0):
+        super().__init__()
+
+        spatial = (v2.RandomRotation, v2.RandomAffine, v2.RandomResizedCrop, v2.ElasticTransform)
+
+        if not isinstance(transform, spatial):
+            raise TypeError("SoftLabelSpatialTransform requires rotation, affine, resized crop or elastic")
+        
+        if not 0 <= soft_label_fill <= 1:
+            raise ValueError("soft_label_fill must be a probability in [0, 1]")
+        
+        self.transform = transform
+
+        # Delegate operation-specific options to torchvision instead of
+        # reconstructing its functional calls or mutating the original module.
+        self.soft_label_transform = deepcopy(transform)
+        self.soft_label_transform.interpolation = v2.InterpolationMode.BILINEAR
+
+        if hasattr(self.soft_label_transform, "fill"):
+            # v2 prepares its type-specific fill lookup during construction.
+            self.soft_label_transform = type(transform)(**self._soft_label_options(transform, soft_label_fill))
+
+    @staticmethod
+    def _soft_label_options(transform, fill):
+        options = dict(interpolation=v2.InterpolationMode.BILINEAR, fill=fill)
+
+        match transform:
+            case v2.RandomRotation():
+                options.update(degrees=transform.degrees, expand=transform.expand, center=transform.center)
+            case v2.RandomAffine():
+                options.update(degrees=transform.degrees, translate=transform.translate, scale=transform.scale, shear=transform.shear, center=transform.center)
+            case _:
+                options.update(alpha=transform.alpha, sigma=transform.sigma)
+
+        return options
+
+    def forward(self, image, *masks):
+        soft_labels = tuple(_is_soft_label(mask) for mask in masks)
+
+        if not any(soft_labels):
+            return self.transform(image, *masks)
+        
+        params = self.transform.make_params([image])
+
+        result_image = self.transform.transform(image, params)
+
+        results = []
+        for mask, is_soft in zip(masks, soft_labels):
+            if not is_soft:
+                results.append(self.transform.transform(tv_tensors.Mask(mask), params))
+                continue
+
+            original_shape = mask.shape
+
+            target = tv_tensors.Image(mask.reshape(-1, *mask.shape[-2:]))
+
+            result = self.soft_label_transform.transform(target, params)
+            result = result.reshape(*original_shape[:-2], *result.shape[-2:])
+            results.append(_restore_type(result, mask))
+        
+        return result_image, *results
 
 
 class v2Inversable(torch.nn.Module):
@@ -372,6 +454,229 @@ class RandomBlankRectangle(torch.nn.Module):
         raise RuntimeError("RandomBlankRectangle is not compatible with TTA because the blanked image content cannot be restored.")
 
 
+def _restore_type(result, original):
+    if isinstance(original, (tv_tensors.Image, tv_tensors.Mask)):
+        return tv_tensors.wrap(result, like=original)
+    
+    return result
+
+
+def _identity_grid(height, width, device):
+    # align_corners=False also supports spatial dimensions of length one.
+    y = (torch.arange(height, device=device, dtype=torch.float32) + 0.5) / height * 2 - 1
+    x = (torch.arange(width, device=device, dtype=torch.float32) + 0.5) / width * 2 - 1
+
+    yy, xx = torch.meshgrid(y, x, indexing="ij")
+
+    return torch.stack((xx, yy), dim=-1)
+
+
+def _warp(tensor, grid, mode, padding_mode):
+    height, width = tensor.shape[-2:]
+
+    dtype = torch.float64 if tensor.dtype == torch.float64 else torch.float32
+
+    result = F.grid_sample(
+        tensor.reshape(1, -1, height, width).to(dtype),
+        grid.unsqueeze(0).to(device=tensor.device, dtype=dtype),
+        mode=mode, padding_mode=padding_mode, align_corners=False,
+    ).reshape(tensor.shape)
+
+    if not tensor.is_floating_point() and tensor.dtype != torch.bool:
+        result = result.round()
+
+    return _restore_type(result.to(tensor.dtype), tensor)
+
+
+class _SpatialDeformation(torch.nn.Module):
+    def __init__(self, padding_mode="zeros"):
+        super().__init__()
+
+        if padding_mode not in ("zeros", "border", "reflection"):
+            raise ValueError("padding_mode must be zeros, border or reflection")
+        
+        self.padding_mode = padding_mode
+
+    def forward(self, image, *masks, return_params=False):
+        if return_params:
+            raise RuntimeError(f"{type(self).__name__} is not compatible with TTA: resampling cannot be exactly inverted.")
+        
+        if image.ndim < 2 or min(image.shape[-2:]) < 1:
+            raise ValueError("image must have nonempty spatial dimensions")
+        
+        if any(mask.shape[-2:] != image.shape[-2:] for mask in masks):
+            raise ValueError("image and masks must have matching spatial shapes")
+        
+        grid = self.make_grid(*image.shape[-2:], image.device)
+
+        image = _warp(image, grid, "bilinear", self.padding_mode)
+        masks = tuple(_warp(mask, grid, "bilinear" if _is_soft_label(mask) else "nearest", self.padding_mode) for mask in masks)
+
+        return (image, *masks) if masks else image
+
+    def inverse(self, prediction, params):
+        raise RuntimeError(f"{type(self).__name__} is not compatible with TTA.")
+
+
+class _ControlPointDeformation(_SpatialDeformation):
+    def __init__(self, grid_size=4, strength=0.05, keep_boundary=True, padding_mode="zeros", chunk_size=4096):
+        super().__init__(padding_mode)
+
+        if not isinstance(grid_size, int) or grid_size < 2:
+            raise ValueError("grid_size must be an integer >= 2")
+        
+        if not math.isfinite(strength) or strength < 0:
+            raise ValueError("strength must be finite and nonnegative")
+        
+        if not isinstance(chunk_size, int) or chunk_size < 1:
+            raise ValueError("chunk_size must be a positive integer")
+        
+        if keep_boundary and grid_size < 3 and strength > 0:
+            raise ValueError("keep_boundary requires grid_size >= 3 to move interior points")
+        
+        self.grid_size = grid_size
+        self.strength = strength
+        self.keep_boundary = keep_boundary
+        self.chunk_size = chunk_size
+
+    def make_grid(self, height, width, device):
+        grid = _identity_grid(height, width, device)
+
+        if self.strength == 0:
+            return grid
+        
+        y = torch.linspace(-1 + 1 / height, 1 - 1 / height, self.grid_size, device=device)
+        x = torch.linspace(-1 + 1 / width, 1 - 1 / width, self.grid_size, device=device)
+
+        if min(height, width) < 2:
+            raise ValueError("control point deformations require H and W >= 2")
+        
+        yy, xx = torch.meshgrid(y, x, indexing="ij")
+        points = torch.stack((xx, yy), dim=-1)
+        offsets = (torch.rand_like(points) * 2 - 1) * (2 * self.strength)
+
+        if self.keep_boundary:
+            offsets[[0, -1], :, :] = 0
+            offsets[:, [0, -1], :] = 0
+
+        # Fit an output-to-input mapping directly to avoid holes from forward splatting.
+        return self.map_points(grid.reshape(-1, 2), points.reshape(-1, 2), (points + offsets).reshape(-1, 2)).reshape(height, width, 2)
+
+
+class ThinPlateSpline(_ControlPointDeformation):
+    """Thin-plate spline warp; strength is a fraction of image width/height."""
+
+    @staticmethod
+    def _kernel(squared_distance):
+        return 0.5 * squared_distance * squared_distance.clamp_min(1e-30).log()
+
+    def map_points(self, queries, source, target):
+        dtype = queries.dtype
+
+        queries, source, target = (t.to(torch.float64) for t in (queries, source, target))
+
+        count = source.shape[0]
+
+        affine = torch.cat((torch.ones_like(source[:, :1]), source), dim=1)
+        kernel = self._kernel((source[:, None] - source[None]).square().sum(-1))
+
+        system = source.new_zeros((count + 3, count + 3))
+        system[:count, :count] = kernel
+        system[:count, count:] = affine
+        system[count:, :count] = affine.T
+
+        rhs = torch.cat((target - source, source.new_zeros((3, 2))))
+
+        weights = torch.linalg.solve(system, rhs)
+
+        results = []
+        for query in queries.split(self.chunk_size):
+            radial = self._kernel((query[:, None] - source[None]).square().sum(-1))
+            basis = torch.cat((radial, torch.ones_like(query[:, :1]), query), dim=1)
+            results.append(query + basis @ weights)
+        
+        return torch.cat(results).to(dtype)
+
+
+class MovingLeastSquares(_ControlPointDeformation):
+    """Affine MLS with distance weights |p-v|^(-2*alpha).
+
+    Schaefer, McPhail, Warren (2006):
+    https://people.engr.tamu.edu/schaefer/research/mls.pdf
+    strength is a fraction of image width/height. Chunking bounds memory use.
+    """
+
+    def __init__(self, grid_size=4, strength=0.05, alpha=1.0, keep_boundary=True, padding_mode="zeros", chunk_size=4096):
+        super().__init__(grid_size, strength, keep_boundary, padding_mode, chunk_size)
+
+        if not math.isfinite(alpha) or alpha <= 0:
+            raise ValueError("alpha must be finite and positive")
+        
+        self.alpha = alpha
+
+    def map_points(self, queries, source, target):
+        dtype = queries.dtype
+
+        queries, source, target = (t.to(torch.float64) for t in (queries, source, target))
+
+        results = []
+        displacement = target - source
+        for query in queries.split(self.chunk_size):
+            distance = (query[:, None] - source[None]).square().sum(-1)
+            weights = (-self.alpha * distance.clamp_min(1e-20).log()).softmax(dim=-1)
+            center = weights @ source
+            delta_center = weights @ displacement
+            p = source[None] - center[:, None]
+            q = displacement[None] - delta_center[:, None]
+            covariance = p.transpose(1, 2) @ (weights[..., None] * p)
+            cross = p.transpose(1, 2) @ (weights[..., None] * q)
+            matrix = torch.linalg.solve(covariance + torch.eye(2, device=query.device) * 1e-10, cross)
+            mapped = query + ((query - center)[:, None] @ matrix).squeeze(1) + delta_center
+            nearest_distance, nearest = distance.min(dim=1)
+            mapped = torch.where((nearest_distance < 1e-18)[:, None], target[nearest], mapped)
+            results.append(mapped)
+        
+        return torch.cat(results).to(dtype)
+
+
+class TileMerge(torch.nn.Module):
+    """Blend images as weight * current + (1 - weight) * previous.
+
+    Labels and masks remain unchanged. The donor is an unmixed copy of the
+    previous input, local to each DataLoader worker, and may come from another
+    segment. The first call, or a change in shape, dtype or device, only
+    refreshes the donor cache. Batch inputs blend corresponding samples with
+    those of the previous batch, provided the full shapes match.
+    """
+
+    def __init__(self, weight=0.8):
+        super().__init__()
+
+        if not 0 <= weight <= 1:
+            raise ValueError("weight must be between 0 and 1")
+        
+        self.weight = weight
+        self._donor = None
+
+    def forward(self, image, *masks, return_params=False):
+        if return_params:
+            raise RuntimeError("TileMerge is not compatible with TTA because image blending cannot be inverted.")
+
+        donor = self._donor
+        
+        # Clone before blending the images, and before subsequent transforms can
+        # modify the output in place. Never keep a recursively merged donor.
+        self._donor = image.detach().clone()
+
+        if donor is not None and donor.shape == image.shape and donor.dtype == image.dtype and donor.device == image.device:
+            image = _restore_type(image * self.weight + donor * (1 - self.weight), image)
+
+        return (image, *masks) if masks else image
+
+    def inverse(self, prediction, params):
+        raise RuntimeError("TileMerge is not compatible with TTA.")
+
+
 class RandomApply(torch.nn.Module):
     """Randomly apply a transform while keeping TTA parameters."""
 
@@ -544,36 +849,69 @@ def build_augmentation(aug):
 
             case "random_rotation":
                 add_with_probability(
-                    v2NotInversable(
+                    v2NotInversable(SoftLabelSpatialTransform(
                         v2.RandomRotation(degrees=t.degrees)
-                    ),
+                    )),
                     t,
                 )
 
             case "random_affine":
                 add_with_probability(
-                    v2NotInversable(
+                    v2NotInversable(SoftLabelSpatialTransform(
                         v2.RandomAffine(
                             degrees=t.degrees,
                             translate=t.translate,
                             scale=t.scale,
                             shear=t.shear,
                         )
-                    ),
+                    )),
                     t,
                 )
 
             case "random_resized_crop":
                 add_with_probability(
-                    v2NotInversable(
+                    v2NotInversable(SoftLabelSpatialTransform(
                         v2.RandomResizedCrop(
                             size=t.size,
                             scale=t.scale,
                             ratio=t.ratio,
                         )
-                    ),
+                    )),
                     t,
                 )
+
+            case "tile_merge":
+                add_with_probability(
+                    TileMerge(weight=getattr(t, "weight", 0.8)),
+                    t,
+                )
+
+            case "elastic_deformation":
+                add_with_probability(
+                    v2NotInversable(SoftLabelSpatialTransform(
+                        v2.ElasticTransform(
+                            alpha=getattr(t, "alpha", 8.0),
+                            sigma=getattr(t, "sigma", 8.0),
+                        )
+                    )),
+                    t,
+                )
+
+            case "tps" | "mls":
+                kwargs = dict(
+                    grid_size=getattr(t, "grid_size", 4),
+                    strength=getattr(t, "strength", 0.05),
+                    keep_boundary=getattr(t, "keep_boundary", True),
+                    padding_mode=getattr(t, "padding_mode", "zeros"),
+                    chunk_size=getattr(t, "chunk_size", 4096),
+                )
+
+                if t.name == "mls":
+                    kwargs["alpha"] = getattr(t, "alpha", 1.0)
+
+                transform = ThinPlateSpline if t.name == "tps" else MovingLeastSquares
+
+                add_with_probability(transform(**kwargs), t)
 
             case "random_axis_flip":
                 raise ValueError("'random_axis_flip' has no torchvision v2 implementation.")
