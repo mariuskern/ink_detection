@@ -7,9 +7,14 @@ accelerator: auto
 gradient_clip_val: 1.0
 gradient_clip_algorithm: "norm"
 precision: bf16-mixed                 # 16-true 16-mixed bf16-true bf16-mixed 32-true
+
+# Increasing student sizes crashed with reduce-overhead unless caches were cleared.
+# Prefer default with cache reuse; clearing caches forces recompilation each iteration.
 compile: true                         # Set this to false when debugging model code, where compilation errors are easier to read.
-compile_mode: reduce-overhead         # default
+compile_mode: default                 # default reduce-overhead
 predict_compile_mode: default         # Used by predict when compile is true; avoids reduce-overhead's extra CUDA-graph workspace.
+compile_clear_caches: false
+
 val_image_every_n_epochs: 10          # 0 disables validation image export.
 val_segment_metrics_every_n_epochs: 1 # 0 disables segment Dice/IoU.
 seed: null # null 42

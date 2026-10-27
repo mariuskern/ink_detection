@@ -1,6 +1,8 @@
 from pathlib import Path
 from datetime import datetime
 import copy
+import gc
+from contextlib import contextmanager, nullcontext
 
 import torch
 from torch.optim.swa_utils import AveragedModel
@@ -21,6 +23,47 @@ from training.batchnorm import update_batchnorm_statistics
 from training.precision import parse_precision
 from utils.load_model import load_model_from_checkpoint
 from utils.teacher_checkpoints import resolve_teacher_checkpoints, save_teacher_selection
+
+
+@contextmanager
+def _iteration_caches(cfg):
+    """Isolate disk caches and release process-local state between students.
+
+    fresh_cache is an internal PyTorch API: it clears registered Inductor
+    caches and owns only its temporary directory, never shared job caches.
+    Loaded Windows binaries may remain on disk until the process exits.
+    """
+
+    if not cfg.train.compile_clear_caches:
+        yield
+        return
+
+    compiled = cfg.train.compile
+
+    if compiled:
+        from torch._inductor.utils import fresh_cache
+
+    def release():
+        if torch.cuda.is_initialized():
+            torch.cuda.synchronize()
+
+        if compiled:
+            torch.compiler.reset()
+
+        gc.collect()
+
+        if torch.cuda.is_initialized():
+            torch.cuda.empty_cache()
+
+    release()
+
+    with fresh_cache() if compiled else nullcontext():
+        try:
+            yield
+        finally:
+            release()
+            
+    print("  Cache cleanup complete (compiler state and unused CUDA memory).")
 
 
 def train_noisy_student(cfg, logger):
@@ -55,55 +98,57 @@ def train_noisy_student(cfg, logger):
 
         cfg_previous_iteration = _get_config_for_iteration(cfg, previous_iteration)
 
-        generate_pseudo_labels(
-            cfg_previous_iteration,
-            teacher_paths,
-            previous_iteration,
-            output_dir / "iteration" / str(previous_iteration),
-            tmp_dir / "iteration" / str(previous_iteration),
-            get_device(cfg_previous_iteration),
-            pseudo_data_dir,
-        )
+        with _iteration_caches(cfg_previous_iteration):
+            generate_pseudo_labels(
+                cfg_previous_iteration,
+                teacher_paths,
+                previous_iteration,
+                output_dir / "iteration" / str(previous_iteration),
+                tmp_dir / "iteration" / str(previous_iteration),
+                get_device(cfg_previous_iteration),
+                pseudo_data_dir,
+            )
 
     for iteration in range(start_iteration, cfg.train.iterations):
         print(f"\n{'=' * 64}\nNoisy Student | Iteration {iteration} (of 0..{cfg.train.iterations - 1})\n{'=' * 64}")
         cfg_iteration = _get_config_for_iteration(cfg, iteration)
 
-        if cfg_iteration.train.seed is not None:
-            iteration_seed = cfg_iteration.train.seed + iteration
-            seed_everything(iteration_seed)
-            print(f"  Seed:      {iteration_seed}")
+        with _iteration_caches(cfg_iteration):
+            if cfg_iteration.train.seed is not None:
+                iteration_seed = cfg_iteration.train.seed + iteration
+                seed_everything(iteration_seed)
+                print(f"  Seed:      {iteration_seed}")
 
-        output_dir_iteration = output_dir / "iteration" / str(iteration)
-        tmp_dir_iteration = tmp_dir / "iteration" / str(iteration)
+            output_dir_iteration = output_dir / "iteration" / str(iteration)
+            tmp_dir_iteration = tmp_dir / "iteration" / str(iteration)
 
-        if start_iteration > 0:
-            backup_iteration_directories(output_dir, tmp_dir, iteration)
+            if start_iteration > 0:
+                backup_iteration_directories(output_dir, tmp_dir, iteration)
 
-        device = get_device(cfg_iteration)
+            device = get_device(cfg_iteration)
 
-        # Training
-        result = fit(
-            cfg_iteration,
-            logger,
-            output_dir=output_dir_iteration,
-            pseudo_label_version=iteration - 1 if iteration > 0 else None,
-            iteration=iteration,
-            augmentation=cfg_iteration.train.student.aug,
-            device=device,
-            pseudo_data_dir=pseudo_data_dir,
-        )
+            # Training
+            result = fit(
+                cfg_iteration,
+                logger,
+                output_dir=output_dir_iteration,
+                pseudo_label_version=iteration - 1 if iteration > 0 else None,
+                iteration=iteration,
+                augmentation=cfg_iteration.train.student.aug,
+                device=device,
+                pseudo_data_dir=pseudo_data_dir,
+            )
 
-        checkpoint_paths = get_checkpoint_paths(cfg_iteration, result, device, pseudo_label_version=iteration - 1 if iteration > 0 else None, pseudo_data_dir=pseudo_data_dir)
-        print(f"\n  Teacher: {len(checkpoint_paths)} checkpoint(s)")
-        for path in checkpoint_paths:
-            print(f"    {path}")
+            checkpoint_paths = get_checkpoint_paths(cfg_iteration, result, device, pseudo_label_version=iteration - 1 if iteration > 0 else None, pseudo_data_dir=pseudo_data_dir)
+            print(f"\n  Teacher: {len(checkpoint_paths)} checkpoint(s)")
+            for path in checkpoint_paths:
+                print(f"    {path}")
 
-        if cfg_iteration.train.get("predict"):
-            save_predictions(cfg_iteration, checkpoint_paths, output_dir_iteration, tmp_dir_iteration, device, logger=logger, iteration=iteration)
+            if cfg_iteration.train.get("predict"):
+                save_predictions(cfg_iteration, checkpoint_paths, output_dir_iteration, tmp_dir_iteration, device, logger=logger, iteration=iteration)
 
-        generate_pseudo_labels(cfg_iteration, checkpoint_paths, iteration, output_dir_iteration, tmp_dir_iteration, device, pseudo_data_dir, logger=logger)
-        print(f"  Iteration {iteration} complete.")
+            generate_pseudo_labels(cfg_iteration, checkpoint_paths, iteration, output_dir_iteration, tmp_dir_iteration, device, pseudo_data_dir, logger=logger)
+            print(f"  Iteration {iteration} complete.")
 
 
 def backup_iteration_directories(output_dir, tmp_dir, iteration, checkpoint_path=None):

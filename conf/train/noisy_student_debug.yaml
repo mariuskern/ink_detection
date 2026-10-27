@@ -3,7 +3,7 @@ defaults:
   - override /aug@teacher: tta_none
   - override /refinement@refinement: debug
 
-max_epochs: 2
+max_epochs: 1
 warmup_epochs: 0
 val_image_every_n_epochs: 1
 checkpoint:
@@ -11,6 +11,7 @@ checkpoint:
   swa_save_k: 2
 
 iterations: 4
+model_schedule: [unetrpp_small, unetrpp_large, unetrpp_large] # [unetrpp_small, unetrpp_small, unetrpp_medium, unetrpp_large] null
 
 start_iteration: 0
 teacher_checkpoint: auto
@@ -28,7 +29,8 @@ resume_run: auto
 # resume_run: auto
 
 seed: 42
-compile: false
+compile: true
+# compile_mode: default
 benchmark: false
 deterministic: true
 
@@ -55,10 +57,10 @@ unlabeled:
   - "0172_20241113090990"
   # - 20251115002740-auto_grown_20251115002740308_0_flatboi
 val:
-  - "0172_20241025145701"
+  # - "0172_20241025145701"
   - "0172_20241113090990"
 predict:
-  - "0172_20241025145341"
+  # - "0172_20241025145341"
 
 # segment_crops:
 #   "0172_20241025145341": [500, 1000, 500, 5000]
