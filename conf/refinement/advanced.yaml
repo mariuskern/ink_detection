@@ -17,8 +17,8 @@ steps:
     connectivity: 4
     update_mask: true
   
-  # - name: binary_closing
-  #   kernel_size: 45
-  #   iterations: 2
-  #   probability_threshold: 0.5
-  #   update_mask: false
+  - name: binary_closing
+    kernel_size: 45
+    iterations: 2
+    probability_threshold: 0.5
+    update_mask: false
