@@ -206,7 +206,7 @@ def _get_validation_mask(folder):
     validation_mask_path = folder / f"{folder.name}_validation_mask.png"
     
     if not validation_mask_path.exists():
-        print(f"No mask file found for folder: {folder.name}")
+        print(f"No validation mask file found for folder: {folder.name}")
         return None
     
     validation_mask = _load_binary_image(validation_mask_path)
