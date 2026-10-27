@@ -76,8 +76,8 @@ class Threshold(torch.nn.Module):
         for prediction in predictions:
             prediction.pseudo_label = (prediction.probability >= self.threshold).astype(np.uint8)
             prediction.pseudo_mask = np.ones_like(prediction.pseudo_label, dtype=bool)
-            prediction.pseudo_label_not_refined = prediction.pseudo_label
-            prediction.pseudo_mask_not_refined = prediction.pseudo_mask
+            prediction.pseudo_label_not_refined = prediction.pseudo_label.copy()
+            prediction.pseudo_mask_not_refined = prediction.pseudo_mask.copy()
 
         return predictions
 
@@ -85,9 +85,11 @@ class Threshold(torch.nn.Module):
 class ConfidenceMask(torch.nn.Module):
     """Mask predictions below a confidence threshold."""
 
-    def __init__(self, threshold):
+    def __init__(self, threshold, update_label):
         super().__init__()
+
         self.threshold = threshold
+        self.update_label = update_label
 
     def forward(self, predictions):
         for prediction in predictions:
@@ -98,15 +100,20 @@ class ConfidenceMask(torch.nn.Module):
             else:
                 prediction.pseudo_mask &= mask
 
+            if self.update_label:
+                prediction.pseudo_label &= mask
+
         return predictions
 
 
 class UncertaintyMask(torch.nn.Module):
     """Mask predictions above an uncertainty threshold."""
 
-    def __init__(self, threshold):
+    def __init__(self, threshold, update_label):
         super().__init__()
+
         self.threshold = threshold
+        self.update_label = update_label
 
     def forward(self, predictions):
         for prediction in predictions:
@@ -116,6 +123,9 @@ class UncertaintyMask(torch.nn.Module):
                 prediction.pseudo_mask = mask
             else:
                 prediction.pseudo_mask &= mask
+
+            if self.update_label:
+                prediction.pseudo_label &= mask
 
         return predictions
 
@@ -195,7 +205,7 @@ class RemoveSmallObjects(torch.nn.Module):
             # refined_label = keep[labels].astype(np.uint8)
 
             if self.update_mask:
-                removed = label & ~refined_label
+                removed = (label > 0) & (refined_label == 0)
 
                 prediction.pseudo_mask[removed] = False
 
@@ -538,12 +548,14 @@ def build_label_refinement(cfg):
                 steps.append(
                     ConfidenceMask(
                         threshold=step.threshold,
+                        update_label=step.update_label,
                     )
                 )
             case "uncertainty_mask":
                 steps.append(
                     UncertaintyMask(
                         threshold=step.threshold,
+                        update_label=step.update_label,
                     )
                 )
             case "remove_small_objects":

@@ -22,8 +22,8 @@ from utils.refinement import build_label_refinement
 PREDICTION_PATH = Path("C:/Users/mariu/Documents/Studium/Masterarbeit/label_refinement_test_data")
 
 PROBABILITY_PATH = PREDICTION_PATH / "prediction"
-CONFIDENCE_PATH = None # PREDICTION_PATH / "confidence"
-UNCERTAINTY_PATH = None # PREDICTION_PATH / "uncertainty"
+CONFIDENCE_PATH = PREDICTION_PATH / "confidence"    # PREDICTION_PATH / "confidence" | None
+UNCERTAINTY_PATH = PREDICTION_PATH / "uncertainty"  # PREDICTION_PATH / "uncertainty" | None
 
 
 def load_image(path):
@@ -111,7 +111,8 @@ def load_predictions(probability_dir, confidence_dir=None, uncertainty_dir=None)
 
 
 def resize_for_plot(array, max_size=1500, interpolation=cv2.INTER_AREA):
-    array = array.astype(np.uint8)
+    # Preserve probabilities in [0, 1]; OpenCV also needs bool masks converted.
+    array = array.astype(np.float32, copy=False)
 
     h, w = array.shape[-2:]
 
@@ -126,9 +127,8 @@ def resize_for_plot(array, max_size=1500, interpolation=cv2.INTER_AREA):
     return cv2.resize(array, (new_w, new_h), interpolation=interpolation)
 
 
-def plot_refinement(prediction):
-    import matplotlib
-    matplotlib.use("TkAgg", force=True)
+def plot_refinement(prediction, *, show=True):
+    """Plot input maps and refinement steps; return the figure for saving."""
     import matplotlib.pyplot as plt
 
     probability = prediction.probability
@@ -148,10 +148,10 @@ def plot_refinement(prediction):
 
     n_blocks = len(blocks)
 
-    # 5 Bilder pro Schritt:
-    # Prediction | Label | Mask | Label ∩ Mask | Change
+    # Erste Spalte: Eingangskarten. Pro Block vier Spalten:
+    # Label | Mask | Label ∩ Mask | Change
     n_cols = 1 + n_blocks * 4
-    n_rows = max_steps_per_block
+    n_rows = max(3, min(max_steps_per_block, len(debug_items)))
 
     fig, axes = plt.subplots(n_rows, n_cols, figsize=(4 * n_cols, 4 * n_rows), squeeze=False)
 
@@ -161,12 +161,19 @@ def plot_refinement(prediction):
     for ax in axes.flat:
         ax.axis("off")
 
-    # # ---------------------------------------------------------
-    # # Original Prediction
-    # # ---------------------------------------------------------
+    # Eingangskarten einmal in der ersten Spalte anzeigen.
+    input_maps = (
+        (probability, "Original Prediction Probability"),
+        (confidence, "Confidence"),
+        (uncertainty, "Uncertainty"),
+    )
 
-    # axes[0, 0].imshow(probability, cmap="gray", vmin=0, vmax=1)
-    # axes[0, 0].set_title("Original Prediction Probability", fontsize=11)
+    for row, (array, title) in enumerate(input_maps):
+        if array is not None:
+            axes[row, 0].imshow(resize_for_plot(array), cmap="gray", vmin=0, vmax=1)
+            axes[row, 0].set_title(title, fontsize=11)
+        else:
+            axes[row, 0].set_title(f"{title}: None", fontsize=11)
 
     # ---------------------------------------------------------
     # Refinement-Schritte
@@ -189,13 +196,6 @@ def plot_refinement(prediction):
 
             # Änderungen dieses Schrittes
             difference = np.logical_xor(previous_label, pseudo_label)
-
-            # -------------------------------------------------
-            # Prediction
-            # -------------------------------------------------
-
-            axes[row, col_offset - 1].imshow(resize_for_plot(probability), cmap="gray", vmin=0, vmax=1)
-            axes[row, col_offset - 1].set_title("Original Prediction Probability", fontsize=11)
 
             # -------------------------------------------------
             # Label
@@ -228,12 +228,20 @@ def plot_refinement(prediction):
             axes[row, col_offset + 3].set_title(f"{global_idx + 1}: {step_name}\nLabel Change", fontsize=11)
 
     plt.tight_layout(rect=(0, 0, 1, 0.96))
-    plt.show()
+
+    if show:
+        plt.show()
+
+    return fig
 
 
 @hydra.main( version_base=None, config_path="../../conf/refinement", config_name="debug")
 # @hydra.main( version_base=None, config_path="../../conf/", config_name="debug")
 def main(cfg):
+    import matplotlib
+
+    matplotlib.use("TkAgg", force=True)
+
     # cfg = cfg.train.refinement
 
     # ---------------------------------------------------------

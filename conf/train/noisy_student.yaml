@@ -25,7 +25,7 @@ label_refinement:
   progress: false
 
 mask_refinement:
-  enabled: true
+  enabled: false
   apply_to_val: false         # Also apply mask refinement to validation segments.
   targets: [real]             # real, pseudo, or both
   pseudo_threshold: 0.5       # Threshold used for soft pseudo targets.

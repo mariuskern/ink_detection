@@ -1,16 +1,24 @@
-name: "base"
+name: "advanced"
 debug: false
 steps:
   - name: threshold
     threshold: 0.5
 
   - name: confidence_mask
-    threshold: 0.8 # 0.8 0.9 0.95
+    threshold: 0.8                # 0.7 0.8 0.9 0.95 0.95
+    update_label: true
 
   - name: uncertainty_mask
-    threshold: 0.15 # 0.15 0.05 0.05
+    threshold: 0.15               # 0.2 0.15 0.05 0.05 0.025
+    update_label: true
   
   - name: remove_small_objects
-    min_size: 200000 # 1000              # 1667: 200000; 0172: 20000
+    min_size: 20000               # 1667: 200000; 0172: 20000
     connectivity: 4
     update_mask: true
+  
+  # - name: binary_closing
+  #   kernel_size: 45
+  #   iterations: 2
+  #   probability_threshold: 0.5
+  #   update_mask: false

@@ -2,23 +2,25 @@ name: "debug"
 debug: true
 steps:
   - name: threshold
-    threshold: 0.4
+    threshold: 0.5
 
   - name: confidence_mask
-    threshold: 0 # 0.8 0.9 0.95
+    threshold: 0.7 # 0.7 0.8 0.9 0.95
+    update_label: true
 
   - name: uncertainty_mask
-    threshold: 1 # 0.15 0.05 0.05
+    threshold: 0.2 # 0.2 0.15 0.05 0.05
+    update_label: true
   
   - name: remove_small_objects
-    min_size: 2000 # 20000 # 1000
+    min_size: 20000 # 20000 # 1000
     connectivity: 4
     update_mask: true
     # chunk_size: 4000
     # tmp_dir: ${path.tmp_dir}
   
-  # - name: binary_closing
-  #   kernel_size: 25
-  #   iterations: 1
-  #   probability_threshold: 0
-  #   update_mask: false
+  - name: binary_closing
+    kernel_size: 45
+    iterations: 2
+    probability_threshold: 0.5
+    update_mask: false

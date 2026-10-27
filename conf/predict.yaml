@@ -36,4 +36,8 @@ train:
 
   precision: bf16-mixed
 
+  pseudo_positive_threshold: 0.5
+  threshold: 0.5
+  size: null
+
 checkpoint: null

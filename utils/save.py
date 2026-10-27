@@ -24,6 +24,7 @@ def save_predictions_as_images(
     save_uncertainty_kde=False,
     name_suffix=None,
     create_subfolders=True,
+    size=3000,
 ):
     for prediction in predictions:
         if save_probability:
@@ -33,7 +34,8 @@ def save_predictions_as_images(
                 prediction.segment,
                 prediction.probability,
                 name_suffix,
-                create_subfolders
+                create_subfolders,
+                size
             )
 
         if save_confidence and prediction.confidence is not None:
@@ -44,6 +46,7 @@ def save_predictions_as_images(
                 prediction.confidence,
                 name_suffix,
                 create_subfolders,
+                size
             )
 
         if save_confidence_kde and prediction.confidence is not None:
@@ -65,6 +68,7 @@ def save_predictions_as_images(
                 prediction.uncertainty,
                 name_suffix,
                 create_subfolders,
+                size
             )
 
         if save_uncertainty_kde and prediction.uncertainty is not None:
@@ -86,6 +90,7 @@ def save_predictions_as_images(
                 prediction.pseudo_label,
                 name_suffix,
                 create_subfolders,
+                size
             )
 
         if save_mask and prediction.pseudo_mask is not None:
@@ -96,6 +101,7 @@ def save_predictions_as_images(
                 prediction.pseudo_mask,
                 name_suffix,
                 create_subfolders,
+                size
             )
 
         if save_label_not_refined and prediction.pseudo_label_not_refined is not None:
@@ -106,6 +112,7 @@ def save_predictions_as_images(
                 prediction.pseudo_label_not_refined,
                 name_suffix,
                 create_subfolders,
+                size
             )
 
         if save_mask_not_refined and prediction.pseudo_mask_not_refined is not None:
@@ -116,6 +123,7 @@ def save_predictions_as_images(
                 prediction.pseudo_mask_not_refined,
                 name_suffix,
                 create_subfolders,
+                size
             )
 
 
@@ -135,7 +143,7 @@ def save_predictions_as_images(
 #     plt.close(fig)
 
 
-def _save_image(output_dir, name, segment, image, name_suffix, create_subfolders, cmap="gray"):
+def _save_image(output_dir, name, segment, image, name_suffix, create_subfolders, size, cmap="gray"):
     """
     cmap: gray magma
     """
@@ -180,7 +188,9 @@ def _save_image(output_dir, name, segment, image, name_suffix, create_subfolders
     # Image.fromarray(rgb, mode="RGB").save(filepath)
 
     image_pil = Image.fromarray(rgb, mode="RGB")
-    image_pil.thumbnail((3000, 3000), Image.Resampling.LANCZOS)
+    
+    if size:
+        image_pil.thumbnail((size, size), Image.Resampling.LANCZOS)
 
     image_pil.save(filepath)
 

@@ -105,8 +105,9 @@ def main(cfg: DictConfig):
             output_dir,
             [result],
             save_probability=True,
-            # save_confidence=True,
-            # save_uncertainty=True,
+            save_confidence=True,
+            save_uncertainty=True,
+            size=cfg.train.size,
         )
 
         i += 1
