@@ -15,7 +15,7 @@ iterations: 5
 model_schedule: null # [unetrpp_small, unetrpp_small, unetrpp_medium, unetrpp_large] null
 
 label_refinement:
-  enabled: true
+  enabled: false
   targets: [real]             # real, pseudo, or [real, pseudo].
   radius: null                # Fixed pixels; overrides radius_factor.
   radius_factor: 0.08         # Relative to median component size.
