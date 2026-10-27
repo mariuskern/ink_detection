@@ -3,7 +3,7 @@ defaults:
   - override /aug@teacher: tta_none
   - override /refinement@refinement: debug
 
-max_epochs: 4
+max_epochs: 2
 warmup_epochs: 0
 val_image_every_n_epochs: 1
 checkpoint:
@@ -50,6 +50,7 @@ deterministic: true
 
 labeled:
   - "0172_20241025145341"
+  # - "0172_fei_20241025145341"
 unlabeled:
   - "0172_20241113090990"
   # - 20251115002740-auto_grown_20251115002740308_0_flatboi

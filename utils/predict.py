@@ -122,13 +122,18 @@ def predict(cfg, checkpoint_paths, dataloader, device, transforms=None, tta_num=
                     # -------------------------------------------------
                     # Prediction merger
                     # -------------------------------------------------
+                    has_label = batch.get("has_label")
                     for i, segment in enumerate(segments):
+                        labeled = has_label is not None and bool(has_label[i])
                         prediction_merger.add(
                             segment=segment,
                             x=int(x[i]),
                             y=int(y[i]),
                             prediction=probs[i],
                             shape=shape[i].tolist(),
+                            target=batch["label"][i, 0].float().cpu().numpy() if labeled else None,
+                            # The dataset supplies an all-ones mask when no mask exists.
+                            valid_mask=batch["mask"][i, 0].float().cpu().numpy() if labeled else None,
                         )
 
         del model
@@ -140,7 +145,19 @@ def predict(cfg, checkpoint_paths, dataloader, device, transforms=None, tta_num=
     # Return merged predictions
     # ---------------------------------------------------------
 
+    # Evaluate the merged ensemble/TTA probabilities before pseudo-label refinement.
+    metrics = prediction_merger.get_binary_metrics(threshold=cfg.train.threshold)
+    
+    per_segment = metrics["per_segment"] if metrics is not None else {}
+    global_metrics = {name: metrics[name] for name in ("dice", "iou")} if metrics is not None else None
+
     for prediction in prediction_merger.iter_predictions():
+        segment_metrics = per_segment.get(prediction.segment)
+        prediction.metrics = {
+            **segment_metrics,
+            "global": global_metrics,
+        } if segment_metrics is not None else None
+
         yield prediction
 
     prediction_merger.clear()

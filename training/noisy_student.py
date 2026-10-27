@@ -10,6 +10,7 @@ from hydra.core.hydra_config import HydraConfig
 from omegaconf import open_dict
 
 from training.utils import fit
+from training.logging import LoggingManager
 from training.seed import seed_everything
 from utils.predict import predict
 from utils.postprocess import postprocess_prediction
@@ -98,10 +99,10 @@ def train_noisy_student(cfg, logger):
         for path in checkpoint_paths:
             print(f"    {path}")
 
-        if "predict" in cfg_iteration.train and cfg_iteration.train.predict is not None and len(cfg_iteration.train.predict) > 0:
-            save_predictions(cfg_iteration, checkpoint_paths, output_dir_iteration, tmp_dir_iteration, device)
+        if cfg_iteration.train.get("predict"):
+            save_predictions(cfg_iteration, checkpoint_paths, output_dir_iteration, tmp_dir_iteration, device, logger=logger, iteration=iteration)
 
-        generate_pseudo_labels(cfg_iteration, checkpoint_paths, iteration, output_dir_iteration, tmp_dir_iteration, device, pseudo_data_dir)
+        generate_pseudo_labels(cfg_iteration, checkpoint_paths, iteration, output_dir_iteration, tmp_dir_iteration, device, pseudo_data_dir, logger=logger)
         print(f"  Iteration {iteration} complete.")
 
 
@@ -132,8 +133,11 @@ def backup_iteration_directories(output_dir, tmp_dir, iteration, checkpoint_path
     return paths if multiple else (paths[0] if paths else None)
 
 
-def generate_pseudo_labels(cfg, checkpoint_paths, iteration, output_dir, tmp_dir, device, pseudo_data_dir):
+def generate_pseudo_labels(cfg, checkpoint_paths, iteration, output_dir, tmp_dir, device, pseudo_data_dir, *, logger=None):
         print(f"\n  Pseudo labels | teacher iteration {iteration} | {len(checkpoint_paths)} checkpoint(s)")
+
+        logging_manager = LoggingManager(logger)
+
         # Reset here so a resumed run reproduces the same TTA and loader randomness.
         if cfg.train.seed is not None:
             seed_everything(cfg.train.seed + iteration)
@@ -144,10 +148,20 @@ def generate_pseudo_labels(cfg, checkpoint_paths, iteration, output_dir, tmp_dir
             for variant in cfg.train.teacher.aug.variants:
                 transforms.append(build_augmentation(variant))
         # predict_dataset = build_dataset(cfg, cfg.train.unlabeled, min_mask_fraction=0.0, transform=transform)
-        predict_dataset = build_dataset(cfg, cfg.train.unlabeled, use_as_unlabeled=True, pseudo_label_version=None, transform=None, split="train" if cfg.train.use_validation_mask else None, use_mask_refinement=False, use_label_refinement=False)
+        predict_dataset = build_dataset(cfg, cfg.train.unlabeled, use_as_unlabeled=False, pseudo_label_version=None, transform=None, split="train" if cfg.train.use_validation_mask else None, use_mask_refinement=False, use_label_refinement=False)
         predict_loader = build_dataloader(cfg, predict_dataset, None)
 
+        global_metrics = None
+
         for prediction in predict(cfg, checkpoint_paths, predict_loader, device=device, transforms=transforms, tta_num=cfg.train.teacher.tta_num, cache_dir=tmp_dir):
+            if prediction.metrics is not None:
+                global_metrics = prediction.metrics["global"]
+
+                logging_manager.log_dict_once("unlabeled", {
+                    f"per_segment/{prediction.segment}/{name}": prediction.metrics[name]
+                    for name in ("dice", "iou")
+                })
+
             # results = predict(model, predict_loader, device=device)
             # # results = predict(model, predict_loader, device=device, tta_transform=transform, tta_num=cfg.train.refinement.tta_num)
 
@@ -176,21 +190,40 @@ def generate_pseudo_labels(cfg, checkpoint_paths, iteration, output_dir, tmp_dir
                 save_mask=True,
             )
 
+        if global_metrics is not None:
+            logging_manager.log_dict_once("unlabeled", global_metrics)
+
         print(f"  Pseudo labels saved: {pseudo_data_dir} (version {iteration})")
 
 
-def save_predictions(cfg, checkpoint_paths, output_dir, tmp_dir, device):
+def save_predictions(cfg, checkpoint_paths, output_dir, tmp_dir, device, *, logger=None, iteration=None):
         print(f"\n  Export predictions | {len(checkpoint_paths)} checkpoint(s)")
+
+        logging_manager = LoggingManager(logger)
+
         # transforms = []
         # if cfg.train.teacher.aug is not None:
         #     for variant in cfg.train.teacher.aug.variants:
         #         transforms.append(build_augmentation(variant))
         # predict_dataset = build_dataset(cfg, cfg.train.unlabeled, transform=None, split="train" if cfg.train.use_validation_mask else None)
-        predict_dataset = build_dataset(cfg, cfg.train.predict, use_as_unlabeled=True, pseudo_label_version=None, transform=None, split=None, use_mask_refinement=False, use_label_refinement=False)
+
+        predict_dataset = build_dataset(cfg, cfg.train.predict, use_as_unlabeled=False, pseudo_label_version=None, transform=None, split=None, use_mask_refinement=False, use_label_refinement=False)
         predict_loader = build_dataloader(cfg, predict_dataset, None)
+
+        global_metrics = None
 
         # for prediction in predict(model, predict_loader, device=device, transforms=transforms, tta_num=cfg.train.refinement.tta_num, cache_dir=output_dir / "tmp"):
         for prediction in predict(cfg, checkpoint_paths, predict_loader, device=device, transforms=None, tta_num=1, cache_dir=tmp_dir):
+            if prediction.metrics is not None:
+                global_metrics = prediction.metrics["global"]
+
+                stage = "labeled" if prediction.segment in cfg.train.labeled else "predict"
+
+                logging_manager.log_dict_once(stage, {
+                    f"per_segment/{prediction.segment}/{name}": prediction.metrics[name]
+                    for name in ("dice", "iou")
+                })
+            
             results = [prediction]
 
             save_predictions_as_images(
@@ -198,6 +231,9 @@ def save_predictions(cfg, checkpoint_paths, output_dir, tmp_dir, device):
                 results,
                 save_probability=True,
             )
+
+        if global_metrics is not None:
+            logging_manager.log_dict_once("labeled", global_metrics)
 
 
 def get_checkpoint_paths(cfg, result, device, *, pseudo_label_version=None, pseudo_data_dir=None):

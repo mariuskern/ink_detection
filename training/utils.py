@@ -1001,16 +1001,16 @@ def validate(
         metrics = prediction_merger.get_binary_metrics(threshold=cfg.train.threshold)
 
         if metrics is not None:
-            segment_dice = metrics["dice"]
-            segment_iou = metrics["iou"]
+            log_metrics = {
+                "segment_dice": metrics["dice"],
+                "segment_iou": metrics["iou"],
+            }
 
-            logger.log_dict_once(
-                "val",
-                {
-                    "segment_dice": segment_dice,
-                    "segment_iou": segment_iou,
-                }
-            )
+            for segment, values in metrics["per_segment"].items():
+                log_metrics[f"per_segment/{segment}/dice"] = values["dice"]
+                log_metrics[f"per_segment/{segment}/iou"] = values["iou"]
+
+            logger.log_dict_once("val", log_metrics)
 
     if export_predictions:
         for prediction in prediction_merger.iter_predictions():

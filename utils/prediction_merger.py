@@ -20,6 +20,8 @@ class Prediction:
     pseudo_mask_not_refined: np.ndarray | None = None
     
     debug: dict | None = None
+    # Segment Dice/IoU and a nested "global" dictionary for the full prediction run.
+    metrics: dict[str, float | dict[str, float]] | None = None
 
 
 class PredictionMerger:
@@ -157,11 +159,13 @@ class PredictionMerger:
 
 
     def get_binary_metrics(self, threshold=0.5):
-        """Return a pixel-weighted Dice/IoU after overlapping tiles are merged."""
+        """Return merged Dice/IoU, or None without valid labels; empty matches score 1."""
 
-        intersection = prediction_sum = target_sum = 0.0
+        intersection_sum = prediction_sum = target_sum = 0.0
 
-        for buffer in self.buffers.values():
+        dice_iou_per_segment = {}
+
+        for segment, buffer in self.buffers.items():
             valid = buffer["valid_weight_sum"] > 0
 
             if not valid.any():
@@ -176,17 +180,35 @@ class PredictionMerger:
             prediction = probability >= threshold
             target = buffer["target_sum"] >= 0.5 * np.maximum(buffer["valid_weight_sum"], 1e-6)
 
-            intersection += np.logical_and(prediction, target)[valid].sum()
-            prediction_sum += prediction[valid].sum()
-            target_sum += target[valid].sum()
+            intersection = np.logical_and(prediction, target)[valid].sum()
+            prediction = prediction[valid].sum()
+            target = target[valid].sum()
 
-        if prediction_sum + target_sum == 0:
+            intersection_sum += intersection
+            prediction_sum += prediction
+            target_sum += target
+
+            denominator = prediction + target
+            union = denominator - intersection
+
+            dice_segment = (2 * intersection) / denominator if denominator > 0 else 1.0
+            iou_segment = intersection / union if union > 0 else 1.0
+
+            dice_iou_per_segment[segment] = {"dice": float(dice_segment), "iou": float(iou_segment)}
+
+        if not dice_iou_per_segment:
             return None
         
-        dice = (2 * intersection) / (prediction_sum + target_sum)
-        iou = intersection / (prediction_sum + target_sum - intersection)
+        denominator = prediction_sum + target_sum
+        union = denominator - intersection_sum
+        dice = (2 * intersection_sum) / denominator if denominator > 0 else 1.0
+        iou = intersection_sum / union if union > 0 else 1.0
 
-        return {"dice": float(dice), "iou": float(iou)}
+        return {
+            "dice": float(dice),
+            "iou": float(iou),
+            "per_segment": dice_iou_per_segment,
+        }
 
 
     def _get_prediction(self, buffer):
