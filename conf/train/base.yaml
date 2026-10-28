@@ -20,8 +20,8 @@ val_segment_metrics_every_n_epochs: 1 # 0 disables segment Dice/IoU.
 seed: 42 # null 42
 checkpoint:
   checkpoint_every_n_epochs: 1
-  save_top_k: 1
-  swa_save_k: 5
+  save_top_k: 5
+  swa_save_k: 0
   save_last: True
   save_last_every_epoch: True
   monitor: val/loss                   # val/loss train/loss
