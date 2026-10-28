@@ -17,7 +17,7 @@ compile_clear_caches: false
 
 val_image_every_n_epochs: 10          # 0 disables validation image export.
 val_segment_metrics_every_n_epochs: 1 # 0 disables segment Dice/IoU.
-seed: null # null 42
+seed: 42 # null 42
 checkpoint:
   checkpoint_every_n_epochs: 1
   save_top_k: 1
@@ -27,7 +27,7 @@ checkpoint:
   monitor: val/loss                   # val/loss train/loss
   mode: min
 benchmark: false
-deterministic: false
+deterministic: true
 threshold: 0.5                        # Used to calculate dice and iou
 gradient_accumulation_steps: 1
 use_validation_mask: false
