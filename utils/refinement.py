@@ -519,12 +519,13 @@ class BinaryClosing(torch.nn.Module):
             )
 
             if self.probability_threshold is not None:
-                refined_label = closed & (prediction.probability >= self.probability_threshold)
+                allowed = prediction.probability >= self.probability_threshold
+                refined_label = (label > 0) | ((closed > 0) & allowed)
             else:
                 refined_label = closed
 
             if self.update_mask:
-                added = refined_label & ~label
+                added = (refined_label > 0) & (label == 0)
                 prediction.pseudo_mask[added] = True
 
             prediction.pseudo_label = refined_label.astype(np.uint8)

@@ -204,7 +204,7 @@ def generate_pseudo_labels(cfg, checkpoint_paths, iteration, output_dir, tmp_dir
 
                 logging_manager.log_dict_once("unlabeled", {
                     f"per_segment/{prediction.segment}/{name}": prediction.metrics[name]
-                    for name in ("dice", "iou")
+                    for name in ("dice", "iou", "precision", "recall", "f0_5", "f1_5", "f2")
                 })
 
             # results = predict(model, predict_loader, device=device)
@@ -266,7 +266,7 @@ def save_predictions(cfg, checkpoint_paths, output_dir, tmp_dir, device, *, logg
 
                 logging_manager.log_dict_once(stage, {
                     f"per_segment/{prediction.segment}/{name}": prediction.metrics[name]
-                    for name in ("dice", "iou")
+                    for name in ("dice", "iou", "precision", "recall", "f0_5", "f1_5", "f2")
                 })
             
             results = [prediction]

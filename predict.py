@@ -100,7 +100,15 @@ def main(cfg: DictConfig):
 
     # results = predict(model, predict_loader, device=device, tta_transform=transform, tta_num=cfg.train.tta_num)
     i = 0
+
+    metric_names = ("dice", "iou", "precision", "recall", "f0_5", "f1_5", "f2")
+    global_metrics = None
+
     for result in predict(cfg, checkpoint, predict_loader, device=device, transforms=transforms, tta_num=cfg.train.tta_num, cache_dir=tmp_dir):
+        if result.metrics is not None:
+            global_metrics = result.metrics["global"]
+            print(f"  Segment {result.segment}: " + " | ".join(f"{name}: {result.metrics[name]:.6f}" for name in metric_names))
+
         save_predictions_as_images(
             output_dir,
             [result],
@@ -111,6 +119,9 @@ def main(cfg: DictConfig):
         )
 
         i += 1
+
+    if global_metrics is not None:
+        print("  All segments: " + " | ".join(f"{name}: {global_metrics[name]:.6f}" for name in metric_names))
 
     print(f"Predicted {i} segments.")
 
