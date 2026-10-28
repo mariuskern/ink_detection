@@ -10,7 +10,7 @@ defaults:
   - _self_
 
 experiment:
-  name: ${now:%Y-%m-%d_%H-%M-%S} # ${model.name}_${now:%Y-%m-%d_%H-%M-%S}
+  name: ${now:%Y-%m-%d_%H-%M-%S}_${oc.env:SLURM_JOB_ID,local}
   jobid: ${oc.env:SLURM_JOB_ID,none}
 
 hydra:

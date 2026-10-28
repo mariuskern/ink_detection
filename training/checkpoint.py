@@ -40,11 +40,16 @@ class CheckpointManager:
         Python format string for checkpoint filenames.
 
     every_n_epochs : int
-        Only save monitored/SWA checkpoints every n epochs.
+        Only save monitored/additional/SWA checkpoints every n epochs.
 
     swa_save_k : int
         Number of most recent checkpoints to keep for SWA.
         ``0`` disables SWA checkpoint storage.
+
+    additional_monitors : dict[str, str] | None
+        Additional metric keys mapped to ``"min"`` or ``"max"``. Each keeps
+        a separate ``best_<metric>_<epoch>_<score>.pt`` at the checkpoint interval,
+        independently of the primary monitor, top-k and SWA selection.
     """
 
     def __init__(
@@ -59,6 +64,7 @@ class CheckpointManager:
         save_last_every_epoch: bool = False,
         swa_save_k: int = 0,
         model_config: dict | None = None,
+        additional_monitors: dict[str, str] | None = None,
     ):
         self.model_config = model_config
         self.dirpath = Path(dirpath)
@@ -89,6 +95,12 @@ class CheckpointManager:
         self.filename_template = filename_template
         self.every_n_epochs = every_n_epochs
         self.swa_save_k = swa_save_k
+        self.additional_monitors = additional_monitors or {}
+        for metric, metric_mode in self.additional_monitors.items():
+            if metric_mode not in {"min", "max"}:
+                raise ValueError(f"mode for {metric!r} must be 'min' or 'max', got {metric_mode!r}")
+        self._additional_best_scores: dict[str, float] = {}
+        self._additional_best_paths: dict[str, Path] = {}
 
         # List of (score, path), sorted best-first.
         self._top_k: list[tuple[float, Path]] = []
@@ -117,6 +129,7 @@ class CheckpointManager:
         - ``last.pt``
         - a monitored checkpoint
         - one or more top-k checkpoints
+        - a best checkpoint for each additional metric
         """
 
         is_checkpoint_epoch = (epoch + 1) % self.every_n_epochs == 0
@@ -135,6 +148,38 @@ class CheckpointManager:
 
         if not is_checkpoint_epoch:
             return
+
+        for metric, metric_mode in self.additional_monitors.items():
+            metric_score = metrics.get(metric)
+
+            if metric_score is None:
+                continue
+
+            metric_score = float(metric_score)
+            is_better = operator.lt if metric_mode == "min" else operator.gt
+            best_score = self._additional_best_scores.get(metric)
+
+            if best_score is None or is_better(metric_score, best_score):
+                metric_name = metric.replace("/", "_").replace("\\", "_")
+                metric_path = self.dirpath / f"best_{metric_name}_{epoch:03d}_{metric_score:.3f}.pt"
+
+                self._save_checkpoint(
+                    filepath=metric_path,
+                    epoch=epoch,
+                    model=model,
+                    optimizer=optimizer,
+                    scheduler=scheduler,
+                    monitor=metric,
+                    score=metric_score,
+                )
+
+                old_path = self._additional_best_paths.get(metric)
+
+                self._additional_best_scores[metric] = metric_score
+                self._additional_best_paths[metric] = metric_path
+                
+                if old_path is not None and old_path != metric_path:
+                    old_path.unlink(missing_ok=True)
 
         # --------------------------------------------------------------
         # Get monitored metric
@@ -177,6 +222,8 @@ class CheckpointManager:
             model=model,
             optimizer=optimizer,
             scheduler=scheduler,
+            monitor=self.monitor,
+            score=score,
         )
 
         paths_to_delete: list[Path] = []
@@ -361,6 +408,8 @@ class CheckpointManager:
         model: torch.nn.Module,
         optimizer: torch.optim.Optimizer | None,
         scheduler,
+        monitor: str | None = None,
+        score: float | None = None,
     ) -> None:
         """
         Save a training checkpoint.
@@ -370,6 +419,10 @@ class CheckpointManager:
             "epoch": epoch,
             "state_dict": model.state_dict(),
         }
+
+        if monitor is not None:
+            state["monitor"] = monitor
+            state["score"] = score
 
         if self.model_config is not None:
             state["model_config"] = self.model_config

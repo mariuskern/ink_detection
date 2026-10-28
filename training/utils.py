@@ -217,6 +217,7 @@ def fit(cfg, logger, output_dir, *, pseudo_label_version=None, iteration=None, a
         every_n_epochs=cfg.train.checkpoint.checkpoint_every_n_epochs,
         swa_save_k=cfg.train.checkpoint.swa_save_k,
         model_config=OmegaConf.to_container(cfg.model, resolve=True),
+        additional_monitors={"val/segment_iou": "max", "val/segment_dice": "max"},
     )
 
     logging_manager = LoggingManager(
@@ -238,7 +239,7 @@ def fit(cfg, logger, output_dir, *, pseudo_label_version=None, iteration=None, a
         # TRAIN
         # ====================================================================
 
-        train_metrics = train_one_epoch(
+        train_one_epoch(
             model=model,
             loss_fn=loss_fn,
             optimizer=optimizer,
@@ -283,7 +284,7 @@ def fit(cfg, logger, output_dir, *, pseudo_label_version=None, iteration=None, a
             autocast_dtype=autocast_dtype
         )
 
-        metrics = logging_manager.compute()
+        metrics = {**logging_manager.compute(), **val_metrics}
 
         # ====================================================================
         # Print epoch summary
@@ -294,11 +295,6 @@ def fit(cfg, logger, output_dir, *, pseudo_label_version=None, iteration=None, a
         # ====================================================================
         # ModelCheckpoint equivalent
         # ====================================================================
-
-        # checkpoint_metrics = {
-        #     **train_metrics,
-        #     **val_metrics,
-        # }
 
         checkpoint_manager.step(
             epoch=epoch,
@@ -831,9 +827,6 @@ def train_one_epoch(
             on_epoch=False,
         )
 
-    return logger.compute()
-
-
 # ============================================================================
 # Validation
 # ============================================================================
@@ -997,6 +990,8 @@ def validate(
     # PredictionMerger equivalent to on_validation_epoch_end()
     # ------------------------------------------------------------------------
 
+    segment_metrics = {}
+
     if compute_segment_metrics:
         metrics = prediction_merger.get_binary_metrics(threshold=cfg.train.threshold)
 
@@ -1009,6 +1004,8 @@ def validate(
             for segment, values in metrics["per_segment"].items():
                 log_metrics[f"per_segment/{segment}/dice"] = values["dice"]
                 log_metrics[f"per_segment/{segment}/iou"] = values["iou"]
+
+            segment_metrics = {f"val/{name}": value for name, value in log_metrics.items()}
 
             logger.log_dict_once("val", log_metrics)
 
@@ -1040,7 +1037,7 @@ def validate(
 
     prediction_merger.clear()
 
-    return logger.compute()
+    return segment_metrics
 
 
 # ============================================================================

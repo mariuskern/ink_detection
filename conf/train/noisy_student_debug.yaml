@@ -3,7 +3,7 @@ defaults:
   - override /aug@teacher: tta_none
   - override /refinement@refinement: debug
 
-max_epochs: 1
+max_epochs: 4
 warmup_epochs: 0
 val_image_every_n_epochs: 1
 checkpoint:
@@ -11,7 +11,7 @@ checkpoint:
   swa_save_k: 2
 
 iterations: 4
-model_schedule: [unetrpp_small, unetrpp_large, unetrpp_large] # [unetrpp_small, unetrpp_small, unetrpp_medium, unetrpp_large] null
+model_schedule: null # [unetrpp_small, unetrpp_small, unetrpp_medium, unetrpp_large] null
 
 start_iteration: 0
 teacher_checkpoint: auto
