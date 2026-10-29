@@ -194,7 +194,7 @@ def generate_pseudo_labels(cfg, checkpoint_paths, iteration, output_dir, tmp_dir
                 transforms.append(build_augmentation(variant))
         # predict_dataset = build_dataset(cfg, cfg.train.unlabeled, min_mask_fraction=0.0, transform=transform)
         predict_dataset = build_dataset(cfg, cfg.train.unlabeled, use_as_unlabeled=False, pseudo_label_version=None, transform=None, split="train" if cfg.train.use_validation_mask else None, use_mask_refinement=False, use_label_refinement=False)
-        predict_loader = build_dataloader(cfg, predict_dataset, None)
+        predict_loader = build_dataloader(cfg, predict_dataset, None, batch_size=cfg.dataloader.get("predict_batch_size"))
 
         global_metrics = None
 
@@ -253,7 +253,7 @@ def save_predictions(cfg, checkpoint_paths, output_dir, tmp_dir, device, *, logg
         # predict_dataset = build_dataset(cfg, cfg.train.unlabeled, transform=None, split="train" if cfg.train.use_validation_mask else None)
 
         predict_dataset = build_dataset(cfg, cfg.train.predict, use_as_unlabeled=False, pseudo_label_version=None, transform=None, split=None, use_mask_refinement=False, use_label_refinement=False)
-        predict_loader = build_dataloader(cfg, predict_dataset, None)
+        predict_loader = build_dataloader(cfg, predict_dataset, None, batch_size=cfg.dataloader.get("predict_batch_size"))
 
         global_metrics = None
 

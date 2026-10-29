@@ -138,13 +138,13 @@ def build_sampler(cfg, dataset, use_unlabeled_data=False):
     )
 
 
-def build_dataloader(cfg, dataset, sampler, shuffle=None):
+def build_dataloader(cfg, dataset, sampler, shuffle=None, batch_size=None):
     shuffle = cfg.dataloader.shuffle if shuffle is None else shuffle
 
     return create_dataloader(
         dataset,
         sampler=sampler,
-        batch_size=cfg.dataloader.batch_size,
+        batch_size=cfg.dataloader.batch_size if batch_size is None else batch_size,
         shuffle=shuffle,
         num_workers=cfg.dataloader.num_workers,
         pin_memory=cfg.dataloader.pin_memory,

@@ -96,7 +96,7 @@ def main(cfg: DictConfig):
         for variant in cfg.aug.variants:
             transforms.append(build_augmentation(variant))
     predict_dataset = build_dataset(cfg, cfg.train.segments, split="train" if cfg.train.use_validation_mask else None)
-    predict_loader = build_dataloader(cfg, predict_dataset, None)
+    predict_loader = build_dataloader(cfg, predict_dataset, None, batch_size=cfg.dataloader.get("predict_batch_size"))
 
     # results = predict(model, predict_loader, device=device, tta_transform=transform, tta_num=cfg.train.tta_num)
     i = 0

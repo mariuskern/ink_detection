@@ -1,3 +1,4 @@
+import argparse
 import os
 import shutil
 from pathlib import Path
@@ -34,9 +35,9 @@ def copy_and_extract_archive(src_file, tar_dest_folder, zarr_dest_folder):
 
 
 # @hydra.main(version_base=None, config_path="../../conf/", config_name="-provide_as_argument-")
-def main():
+def main(config_name, overrides=None):
     with initialize(config_path="../../conf/", version_base=None):
-        cfg = compose(config_name="config")
+        cfg = compose(config_name=config_name, overrides=overrides)
     
     stage_dir = Path(cfg.path.stage_dir) # data_tar
     data_dir = Path(cfg.path.data_dir) # data_zarr
@@ -70,4 +71,11 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument("--config-name", required=True)
+    parser.add_argument("overrides", nargs="*")
+
+    args = parser.parse_args()
+
+    main(args.config_name, args.overrides)

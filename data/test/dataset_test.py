@@ -9,7 +9,7 @@ load_dotenv()
 
 sys.path.append(os.getenv("CODE_DIR"))
 
-from data import build_train_dataset, build_sampler, build_dataloader
+from data.builder import build_train_dataset, build_sampler, build_dataloader
 
 
 @hydra.main(version_base=None, config_path="../../conf", config_name="debug")

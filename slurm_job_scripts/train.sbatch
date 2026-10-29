@@ -10,6 +10,9 @@
 #SBATCH --output=logs/%x_%j.out # logs/<job-name>_<job-id>.out
 #SBATCH --error=logs/%x_%j.err # logs/<job-name>_<job-id>.err
 
+# Usage: sbatch slurm_job_scripts/train.sbatch [config-name]
+config_name=${1:-config}
+
 unset SLURM_EXPORT_ENV
 
 export http_proxy=http://proxy.nhr.fau.de:80
@@ -18,6 +21,6 @@ export https_proxy=http://proxy.nhr.fau.de:80
 module load python cuda
 conda activate ink
 
-srun python data/utils/staging.py --config-name config
+srun python data/utils/staging.py --config-name "$config_name"
 
-srun python train.py --config-name config
+srun python train.py --config-name "$config_name"
