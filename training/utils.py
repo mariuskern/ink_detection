@@ -217,10 +217,7 @@ def fit(cfg, logger, output_dir, *, pseudo_label_version=None, iteration=None, a
         every_n_epochs=cfg.train.checkpoint.checkpoint_every_n_epochs,
         swa_save_k=cfg.train.checkpoint.swa_save_k,
         model_config=OmegaConf.to_container(cfg.model, resolve=True),
-        additional_monitors={
-            f"val/segment_{name}": "max"
-            for name in ("iou", "dice", "precision", "recall", "f0_5", "f1_5", "f2")
-        },
+        additional_monitors=cfg.train.checkpoint.get("additional_monitors", {}),
     )
 
     logging_manager = LoggingManager(

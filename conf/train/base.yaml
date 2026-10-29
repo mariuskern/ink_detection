@@ -26,6 +26,15 @@ checkpoint:
   save_last_every_epoch: True
   monitor: val/loss                   # val/loss train/loss
   mode: min
+  additional_monitors:                # Metric key -> min/max; {} disables additional checkpoints.
+    val/loss: min
+    val/segment_iou: max
+    val/segment_dice: max
+    val/segment_precision: max
+    val/segment_recall: max
+    val/segment_f0_5: max
+    val/segment_f1_5: max
+    val/segment_f2: max
 benchmark: false
 deterministic: true
 threshold: 0.5                        # Used to calculate dice and iou
