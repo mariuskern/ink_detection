@@ -88,6 +88,9 @@ def predict(cfg, checkpoint_paths, dataloader, device, transforms=None, tta_num=
 
                     if tta_transform is not None:
                         tile, params = tta_transform(tile, return_params=True)
+                        # TTA wraps inputs as tv_tensors.Image; compiled models
+                        # need a plain Tensor to avoid subclass dispatch errors.
+                        tile = tile.as_subclass(torch.Tensor)
 
                     # -------------------------------------------------
                     # Model
