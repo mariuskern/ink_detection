@@ -1,0 +1,9 @@
+# @package _global_
+
+defaults:
+  - pre_a1
+  - aug_strong
+  - _self_
+
+experiment:
+  name: pre_a6_strong_aug_seed_${train.seed}_${oc.env:SLURM_JOB_ID,local}

@@ -1,0 +1,37 @@
+# @package _global_
+
+defaults:
+  - pre_a
+  - aug_moderate
+  - _self_
+
+train:
+  teacher:
+    tta_num: 1
+    use_top_k: false
+    top_k_mode: average
+    use_swa: true
+    swa_mode: average
+    aug:
+      variants: []
+  refinement:
+    name: base
+    debug: false
+    steps:
+      - name: threshold
+        threshold: 0.5
+
+      - name: confidence_mask
+        threshold: 0.8
+        update_label: true
+
+      - name: uncertainty_mask
+        threshold: 0.15
+        update_label: true
+  name: noisy_student
+  iterations: 5
+  model_schedule: null
+  start_iteration: 0
+  teacher_checkpoint: auto
+  resume_output_dir: auto
+  resume_run: auto

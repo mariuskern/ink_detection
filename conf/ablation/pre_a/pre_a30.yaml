@@ -1,0 +1,28 @@
+# @package _global_
+
+defaults:
+  - pre_a1
+  - _self_
+
+train:
+  refinement:
+    name: base_remove_small
+    steps:
+      - name: threshold
+        threshold: 0.5
+
+      - name: confidence_mask
+        threshold: 0.8
+        update_label: true
+
+      - name: uncertainty_mask
+        threshold: 0.15
+        update_label: true
+
+      - name: remove_small_objects
+        min_size: 20000
+        connectivity: 4
+        update_mask: true
+
+experiment:
+  name: pre_a30_base_remove_small_pseudo_refinement_seed_${train.seed}_${oc.env:SLURM_JOB_ID,local}

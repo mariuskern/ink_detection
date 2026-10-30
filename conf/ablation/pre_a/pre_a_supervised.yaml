@@ -1,0 +1,11 @@
+# @package _global_
+
+defaults:
+  - pre_a
+  - aug_moderate@train.aug
+  - _self_
+
+train:
+  name: supervised
+  pseudo_label_version: null
+  pseudo_data_dir: null

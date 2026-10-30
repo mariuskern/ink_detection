@@ -404,9 +404,17 @@ def _get_config_for_iteration(cfg, iteration):
     if HydraConfig.initialized():
         model_overrides = [override for override in HydraConfig.get().overrides.task if override.split("=", 1)[0].lstrip("+~").startswith("model.")]
 
+    # Absolute config paths allow schedules to keep model presets beside ablations.
+    # Plain names continue to select presets from the model config group.
+    if name.startswith("/"):
+        group, preset = name.rsplit("/", 1)
+        model_selection = f"+{group.lstrip('/')}@model={preset}"
+    else:
+        model_selection = f"+model={name}"
+
     model_cfg = compose(
         config_name=None,
-        overrides=[f"+model={name}", *model_overrides],
+        overrides=[model_selection, *model_overrides],
     ).model
 
     with open_dict(cfg_iteration):

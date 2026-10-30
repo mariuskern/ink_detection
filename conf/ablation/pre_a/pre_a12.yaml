@@ -1,0 +1,12 @@
+# @package _global_
+
+defaults:
+  - pre_a11
+  - _self_
+
+train:
+  label_refinement:
+    enabled: true
+
+experiment:
+  name: pre_a12_top1_mask_refinement_label_refinement_seed_${train.seed}_${oc.env:SLURM_JOB_ID,local}

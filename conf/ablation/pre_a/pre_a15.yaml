@@ -1,0 +1,15 @@
+# @package _global_
+
+defaults:
+  - pre_a1
+  - _self_
+
+train:
+  checkpoint:
+    save_top_k: 5
+  teacher:
+    use_top_k: true
+    use_swa: false
+
+experiment:
+  name: pre_a15_top_average_seed_${train.seed}_${oc.env:SLURM_JOB_ID,local}

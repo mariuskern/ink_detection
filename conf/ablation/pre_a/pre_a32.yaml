@@ -1,0 +1,12 @@
+# @package _global_
+
+defaults:
+  - pre_a1
+  - _self_
+
+train:
+  mask_refinement:
+    enabled: true
+
+experiment:
+  name: pre_a32_mask_mf_0.25_cf_0.4_seed_${train.seed}_${oc.env:SLURM_JOB_ID,local}

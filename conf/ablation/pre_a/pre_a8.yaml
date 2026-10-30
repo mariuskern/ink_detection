@@ -1,0 +1,14 @@
+# @package _global_
+
+defaults:
+  - pre_a1
+  - _self_
+
+train:
+  teacher:
+    use_top_k: true
+    top_k_mode: individual
+    use_swa: false
+
+experiment:
+  name: pre_a8_top1_seed_${train.seed}_${oc.env:SLURM_JOB_ID,local}
