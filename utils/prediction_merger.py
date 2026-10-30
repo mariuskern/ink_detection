@@ -161,7 +161,7 @@ class PredictionMerger:
     def get_binary_metrics(self, threshold=0.5):
         """Return merged binary metrics, or None without valid labels; zero denominators score 1."""
 
-        intersection_sum = prediction_sum = target_sum = 0.0
+        intersection_sum = prediction_sum = target_sum = valid_sum = 0
 
         per_segment = {}
 
@@ -180,13 +180,15 @@ class PredictionMerger:
             prediction = probability >= threshold
             target = buffer["target_sum"] >= 0.5 * np.maximum(buffer["valid_weight_sum"], 1e-6)
 
-            intersection = np.logical_and(prediction, target)[valid].sum()
-            prediction = prediction[valid].sum()
-            target = target[valid].sum()
+            intersection = int(np.logical_and(prediction, target)[valid].sum())
+            prediction = int(prediction[valid].sum())
+            target = int(target[valid].sum())
+            valid_count = int(valid.sum())
 
             intersection_sum += intersection
             prediction_sum += prediction
             target_sum += target
+            valid_sum += valid_count
 
             denominator = prediction + target
             union = denominator - intersection
@@ -204,6 +206,10 @@ class PredictionMerger:
             f2_segment = (5 * intersection) / f2_denominator if f2_denominator > 0 else 1.0
 
             per_segment[segment] = {
+                "tp": int(intersection),
+                "fp": int(prediction - intersection),
+                "tn": int(valid_count - prediction - target + intersection),
+                "fn": int(target - intersection),
                 "dice": float(dice_segment),
                 "iou": float(iou_segment),
                 "precision": float(precision_segment),
@@ -231,6 +237,10 @@ class PredictionMerger:
         f2 = (5 * intersection_sum) / f2_denominator if f2_denominator > 0 else 1.0
 
         return {
+            "tp": int(intersection_sum),
+            "fp": int(prediction_sum - intersection_sum),
+            "tn": int(valid_sum - prediction_sum - target_sum + intersection_sum),
+            "fn": int(target_sum - intersection_sum),
             "dice": float(dice),
             "iou": float(iou),
             "precision": float(precision),

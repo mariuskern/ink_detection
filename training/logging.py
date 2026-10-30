@@ -7,6 +7,8 @@ from typing import Any
 import torch
 import wandb
 
+from utils.evaluation import COUNT_METRICS
+
 
 # class WandbLogger():
 #     def __init__(self, project: str, name: str | None = None, config: dict | None = None):
@@ -169,8 +171,8 @@ class LoggingManager:
     """
     Replacement for Lightning's metric logging.
 
-    Collects metrics during an epoch and logs their epoch averages
-    using the provided logger.
+    Collects metrics during an epoch and logs weighted averages;
+    TP/FP/TN/FN counts (including tile prefixes) are summed instead.
 
     Parameters
     ----------
@@ -250,9 +252,15 @@ class LoggingManager:
             self._log_to_backend({name: value for name in metric_names}, step)
 
         if on_epoch:
-            for name in metric_names:
-                self._values[name] += value * batch_size
-                self._weights[name] += batch_size
+            is_count = name.rsplit("/", 1)[-1].rsplit("_", 1)[-1] in COUNT_METRICS
+
+            for metric_name in metric_names:
+                if is_count:
+                    self._values[metric_name] += value
+                    self._weights[metric_name] = 1.0
+                else:
+                    self._values[metric_name] += value * batch_size
+                    self._weights[metric_name] += batch_size
 
     def log_dict(
         self,
@@ -377,7 +385,7 @@ class LoggingManager:
 
     def compute(self) -> dict[str, float]:
         """
-        Compute the weighted epoch averages without resetting them.
+        Compute weighted epoch averages and count sums without resetting them.
         """
 
         return {name: self._values[name] / self._weights[name] for name in self._values if self._weights[name] > 0}
@@ -415,6 +423,6 @@ class LoggingManager:
         """
 
         if isinstance(value, torch.Tensor):
-            return value.detach().float().item()
+            return value.detach().item()
 
         return float(value)

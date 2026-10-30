@@ -52,7 +52,7 @@ from omegaconf import OmegaConf
 from losses import build_loss
 from utils.prediction_merger import PredictionMerger
 from utils.save import save_predictions_as_images
-from utils.evaluation import calculate_dice, calculate_iou, calculate_precision_recall_f
+from utils.evaluation import calculate_metrics
 from utils.device import get_device
 from .precision import parse_precision, autocast_context
 from .checkpoint import CheckpointManager
@@ -631,82 +631,40 @@ def train_one_epoch(
         # Training metrics
         # --------------------------------------------------------------------
 
-        if has_label.any():
-            num_labeled = has_label.sum().item()
-
-            tile_dice = calculate_dice(
-                output[has_label],
-                label[has_label],
-                mask[has_label],
-                threshold=cfg.train.threshold,
-            )
-
-            tile_iou = calculate_iou(
-                output[has_label],
-                label[has_label],
-                mask[has_label],
-                threshold=cfg.train.threshold,
-            )
-
-            tile_metrics = calculate_precision_recall_f(
-                output[has_label],
-                label[has_label],
-                mask[has_label],
-                threshold=cfg.train.threshold
-            )
-        else:
-            num_labeled = 0
-            tile_dice = torch.tensor(0.0, device=device)
-            tile_iou = torch.tensor(0.0, device=device)
-            tile_metrics = dict.fromkeys(("precision", "recall", "f0_5", "f1_5", "f2"), 0.0)
+        # Empty labeled/pseudo-labeled selections are handled by calculate_metrics(),
+        # which returns zeros for every metric. Their sample count is also zero,
+        # so they do not affect epoch score averages or count sums.
+        num_labeled = has_label.sum().item()
+        tile_metrics = calculate_metrics(
+            output[has_label],
+            label[has_label],
+            mask[has_label],
+            threshold=cfg.train.threshold,
+        )
         
         logger.log_dict(
             "train",
             {
-                "tile_dice": tile_dice,
-                "tile_iou": tile_iou,
-                **{f"tile_{name}": value for name, value in tile_metrics.items()},
+                f"tile_{name}": value for name, value in tile_metrics.items()
             },
             batch_size=num_labeled,
             on_step=True,
             on_epoch=True,
         )
 
-        if has_pseudo_label.any():
-            num_pseudo_labeled = has_pseudo_label.sum().item()
-
-            pseudo_tile_dice = calculate_dice(
-                output[has_pseudo_label],
-                pseudo_label[has_pseudo_label],
-                pseudo_mask[has_pseudo_label],
-                threshold=cfg.train.threshold,
-            )
-
-            pseudo_tile_iou = calculate_iou(
-                output[has_pseudo_label],
-                pseudo_label[has_pseudo_label],
-                pseudo_mask[has_pseudo_label],
-                threshold=cfg.train.threshold,
-            )
-            pseudo_tile_metrics = calculate_precision_recall_f(
-                output[has_pseudo_label],
-                pseudo_label[has_pseudo_label],
-                pseudo_mask[has_pseudo_label],
-                threshold=cfg.train.threshold,
-            )
-        else:
-            num_pseudo_labeled = 0
-            pseudo_tile_dice = torch.tensor(0.0, device=device)
-            pseudo_tile_iou = torch.tensor(0.0, device=device)
-            pseudo_tile_metrics = dict.fromkeys(("precision", "recall", "f0_5", "f1_5", "f2"), 0.0)
+        num_pseudo_labeled = has_pseudo_label.sum().item()
+        pseudo_tile_metrics = calculate_metrics(
+            output[has_pseudo_label],
+            pseudo_label[has_pseudo_label],
+            pseudo_mask[has_pseudo_label],
+            threshold=cfg.train.threshold,
+        )
 
         if pseudo_labels_used:
             logger.log_dict(
                 "train",
                 {
-                    "pseudo_tile_dice": pseudo_tile_dice,
-                    "pseudo_tile_iou": pseudo_tile_iou,
-                    **{f"pseudo_tile_{name}": value for name, value in pseudo_tile_metrics.items()},
+                    f"pseudo_tile_{name}": value for name, value in pseudo_tile_metrics.items()
                 },
                 batch_size=num_pseudo_labeled,
                 on_step=True,
@@ -722,21 +680,7 @@ def train_one_epoch(
             targets_combined = torch.cat([label[has_label], pseudo_label[has_pseudo_label]])
             masks_combined = torch.cat([mask[has_label],pseudo_mask[has_pseudo_label]])
 
-            combined_tile_dice = calculate_dice(
-                logits_combined,
-                targets_combined,
-                masks_combined,
-                threshold=cfg.train.threshold,
-            )
-
-            combined_tile_iou = calculate_iou(
-                logits_combined,
-                targets_combined,
-                masks_combined,
-                threshold=cfg.train.threshold,
-            )
-            
-            combined_tile_metrics = calculate_precision_recall_f(
+            combined_tile_metrics = calculate_metrics(
                 logits_combined,
                 targets_combined,
                 masks_combined,
@@ -746,9 +690,7 @@ def train_one_epoch(
             logger.log_dict(
                 "train",
                 {
-                    "combined_tile_dice": combined_tile_dice,
-                    "combined_tile_iou": combined_tile_iou,
-                    **{f"combined_tile_{name}": value for name, value in combined_tile_metrics.items()},
+                    f"combined_tile_{name}": value for name, value in combined_tile_metrics.items()
                 },
                 batch_size=cfg.dataloader.batch_size,
                 on_step=True,
@@ -933,53 +875,31 @@ def validate(
             # Loss + tile metrics
             # --------------------------------------------------------------------
 
+            labeled_output = output[has_label]
+            labeled_label = label[has_label]
+            labeled_mask = mask[has_label]
+
             if has_label.any():
-                labeled_output = output[has_label]
-                labeled_label = label[has_label]
-                labeled_mask = mask[has_label]
-
                 loss = loss_fn(labeled_output, labeled_label, labeled_mask)
-
-                last_tile_dice = calculate_dice(
-                    labeled_output,
-                    labeled_label,
-                    labeled_mask,
-                    threshold=cfg.train.threshold,
-                )
-
-                last_tile_iou = calculate_iou(
-                    labeled_output,
-                    labeled_label,
-                    labeled_mask,
-                    threshold=cfg.train.threshold,
-                )
-                last_tile_metrics = calculate_precision_recall_f(
-                    labeled_output,
-                    labeled_label,
-                    labeled_mask,
-                    threshold=cfg.train.threshold,
-                )
-
-                num_labeled = has_label.sum().item()
-
-                # tile_dice_sum += last_tile_dice.detach().item() * num_labeled
-                # tile_dice_weight += num_labeled
-                # tile_iou_sum += last_tile_iou.detach().item() * num_labeled
-                # tile_iou_weight += num_labeled
             else:
                 loss = output.sum() * 0.0
-                last_tile_dice = output.sum() * 0.0
-                last_tile_iou = output.sum() * 0.0
-                last_tile_metrics = dict.fromkeys(("precision", "recall", "f0_5", "f1_5", "f2"), 0.0)
-                num_labeled = 0
+
+            num_labeled = has_label.sum().item()
+
+            last_tile_metrics = calculate_metrics(
+                labeled_output,
+                labeled_label,
+                labeled_mask,
+                threshold=cfg.train.threshold,
+            )
 
             logger.log_dict(
                 "val",
                 {
                     "loss": loss,
-                    "tile_dice": last_tile_dice,
-                    "tile_iou": last_tile_iou,
-                    **{f"tile_{name}": value for name, value in last_tile_metrics.items()},
+                    **{
+                        f"tile_{name}": value for name, value in last_tile_metrics.items()
+                    },
                 },
                 batch_size=num_labeled,
                 on_step=True,
@@ -1030,16 +950,16 @@ def validate(
 
         if metrics is not None:
             log_metrics = {
-                f"segment_{name}": metrics[name] for name in ("dice", "iou", "precision", "recall", "f0_5", "f1_5", "f2")
+                name: value for name, value in metrics.items() if name != "per_segment"
             }
 
             for segment, values in metrics["per_segment"].items():
                 for name, value in values.items():
                     log_metrics[f"per_segment/{segment}/{name}"] = value
 
-            segment_metrics = {f"val/{name}": value for name, value in log_metrics.items()}
+            segment_metrics = {f"metrics_val/{name}": value for name, value in log_metrics.items()}
 
-            logger.log_dict_once("val", log_metrics)
+            logger.log_dict_once("metrics_val", log_metrics)
 
     if export_predictions:
         for prediction in prediction_merger.iter_predictions():

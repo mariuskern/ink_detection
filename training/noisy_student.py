@@ -202,9 +202,9 @@ def generate_pseudo_labels(cfg, checkpoint_paths, iteration, output_dir, tmp_dir
             if prediction.metrics is not None:
                 global_metrics = prediction.metrics["global"]
 
-                logging_manager.log_dict_once("unlabeled", {
-                    f"per_segment/{prediction.segment}/{name}": prediction.metrics[name]
-                    for name in ("dice", "iou", "precision", "recall", "f0_5", "f1_5", "f2")
+                logging_manager.log_dict_once("metrics_unlabeled", {
+                    f"per_segment/{prediction.segment}/{name}": value
+                    for name, value in prediction.metrics.items() if name != "global"
                 })
 
             # results = predict(model, predict_loader, device=device)
@@ -236,7 +236,7 @@ def generate_pseudo_labels(cfg, checkpoint_paths, iteration, output_dir, tmp_dir
             )
 
         if global_metrics is not None:
-            logging_manager.log_dict_once("unlabeled", global_metrics)
+            logging_manager.log_dict_once("metrics_unlabeled", global_metrics)
 
         print(f"  Pseudo labels saved: {pseudo_data_dir} (version {iteration})")
 
@@ -262,11 +262,9 @@ def save_predictions(cfg, checkpoint_paths, output_dir, tmp_dir, device, *, logg
             if prediction.metrics is not None:
                 global_metrics = prediction.metrics["global"]
 
-                stage = "labeled" if prediction.segment in cfg.train.labeled else "predict"
-
-                logging_manager.log_dict_once(stage, {
-                    f"per_segment/{prediction.segment}/{name}": prediction.metrics[name]
-                    for name in ("dice", "iou", "precision", "recall", "f0_5", "f1_5", "f2")
+                logging_manager.log_dict_once("metrics_predict", {
+                    f"per_segment/{prediction.segment}/{name}": value
+                    for name, value in prediction.metrics.items() if name != "global"
                 })
             
             results = [prediction]
@@ -278,7 +276,7 @@ def save_predictions(cfg, checkpoint_paths, output_dir, tmp_dir, device, *, logg
             )
 
         if global_metrics is not None:
-            logging_manager.log_dict_once("labeled", global_metrics)
+            logging_manager.log_dict_once("metrics_predict", global_metrics)
 
 
 def get_checkpoint_paths(cfg, result, device, *, pseudo_label_version=None, pseudo_data_dir=None):

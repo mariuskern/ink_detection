@@ -149,7 +149,7 @@ def predict(cfg, checkpoint_paths, dataloader, device, transforms=None, tta_num=
     metrics = prediction_merger.get_binary_metrics(threshold=cfg.train.threshold)
     
     per_segment = metrics["per_segment"] if metrics is not None else {}
-    global_metrics = {name: metrics[name] for name in ("dice", "iou", "precision", "recall", "f0_5", "f1_5", "f2")} if metrics is not None else None
+    global_metrics = {name: value for name, value in metrics.items() if name != "per_segment"} if metrics is not None else None
 
     for prediction in prediction_merger.iter_predictions():
         segment_metrics = per_segment.get(prediction.segment)
