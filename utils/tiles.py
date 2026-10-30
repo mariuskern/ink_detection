@@ -20,6 +20,7 @@ TILE_DTYPE = np.dtype(
 def get_tiles(label, mask, size, stride, segment_name, h, w, *, positive_threshold=None):
     """Index tiles, measuring positive_fraction over valid pixels only.
 
+    Full tiles are also anchored to the bottom/right edge when needed.
     Without a mask, all pixels are valid. Empty masks yield a positive
     fraction of zero; missing labels yield NaN. Set positive_threshold for
     soft labels to count pixels at or above that probability instead of
@@ -29,9 +30,18 @@ def get_tiles(label, mask, size, stride, segment_name, h, w, *, positive_thresho
     l = []
     # h, w = label.shape[-2:]
 
-    with tqdm(total=((h - size) // stride + 1) * ((w - size) // stride + 1), desc=f"Tile size {size}, stride {stride}") as pbar:
-        for y in range(0, h - size + 1, stride):
-            for x in range(0, w - size + 1, stride):
+    ys = list(range(0, h - size + 1, stride))
+    xs = list(range(0, w - size + 1, stride))
+
+    if ys and ys[-1] != h - size:
+        ys.append(h - size)
+        
+    if xs and xs[-1] != w - size:
+        xs.append(w - size)
+
+    with tqdm(total=len(ys) * len(xs), desc=f"Tile size {size}, stride {stride}") as pbar:
+        for y in ys:
+            for x in xs:
                 # label_tile = label[y:y+size, x:x+size]
                 # mask_tile = mask[y:y+size, x:x+size]
 

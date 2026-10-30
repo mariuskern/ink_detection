@@ -262,7 +262,7 @@ class CheckpointManager:
             self._top_k.append((score, filepath))
             self._sort_top_k()
 
-            while len(self._top_k) > self.save_top_k:
+            while self.save_top_k != -1 and len(self._top_k) > self.save_top_k:
                 _, old_path = self._top_k.pop()
                 paths_to_delete.append(old_path)
 

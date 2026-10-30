@@ -80,7 +80,7 @@ def predict(cfg, checkpoint_paths, dataloader, device, transforms=None, tta_num=
                     y = batch["y"]
                     shape = batch["shape"]
 
-                    tile = tile.to(device, non_blocking=True)
+                    tile = tile.to(device=device, dtype=model_dtype, non_blocking=True)
 
                     # -------------------------------------------------
                     # Apply transform

@@ -33,6 +33,9 @@ For each processed segment, the script creates a Zarr store containing:
 Metadata describing the original and processed array shapes as well as the
 selected Zarr chunk size is stored in a separate JSON file.
 
+A .conversion_complete marker is written only after all slices are saved.
+Existing outputs without that marker are rebuilt on the next invocation.
+
 The input directory is expected to contain scroll, split, and segment
 subdirectories with the following structure:
 
@@ -291,11 +294,12 @@ def _process_folder(folder, output_root, chunks, crops=None):
 
         output_path = output_root / folder.parent.parent.name / folder.parent.name / segment_name
 
-        if output_path.exists():
-            print(f"Skipping existing: {segment_name}")
+        completion_marker = output_path / ".conversion_complete"
+        if completion_marker.is_file():
+            print(f"Skipping completed: {segment_name}")
             continue
 
-        output_path.mkdir(parents=True)
+        output_path.mkdir(parents=True, exist_ok=True)
 
         z = zarr.open(
             output_path / f"{segment_name}.zarr",
@@ -340,6 +344,7 @@ def _process_folder(folder, output_root, chunks, crops=None):
             "crop": crop,
             "z": z,
             "segment_name": segment_name,
+            "completion_marker": completion_marker,
         })
 
         meta = {
@@ -367,6 +372,9 @@ def _process_folder(folder, output_root, chunks, crops=None):
     # TIFFs Ebene für Ebene laden und in ALLE Crops schreiben
     # ---------------------------------------------------------
 
+    if not crop_infos:
+        return f"Skipping completed folder: {folder.name}"
+
     for i, file in enumerate(volume_files):
         img = tifffile.imread(file)
 
@@ -380,6 +388,10 @@ def _process_folder(folder, output_root, chunks, crops=None):
                 y_start, y_end, x_start, x_end = crop
 
                 volume_ds[i] = img[y_start:y_end, x_start:x_end]
+
+    # Only complete stores may be skipped on the next invocation.
+    for info in crop_infos:
+        info["completion_marker"].touch()
 
     return f"Finished processing folder: {folder.name}"
 

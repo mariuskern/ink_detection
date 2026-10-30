@@ -1,7 +1,5 @@
 import os
 import argparse
-import pathlib
-pathlib.PosixPath = pathlib.WindowsPath
 from pathlib import Path
 import warnings
 # warnings.simplefilter("error", FutureWarning)

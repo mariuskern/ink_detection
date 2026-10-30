@@ -476,6 +476,7 @@ def train_one_epoch(
     """
 
     model.train()
+    model_dtype = next(model.parameters()).dtype
 
     optimizer.zero_grad(set_to_none=True)
 
@@ -485,7 +486,7 @@ def train_one_epoch(
         # Move batch to device
         # --------------------------------------------------------------------
 
-        tile = batch["tile"].to(device, non_blocking=True)
+        tile = batch["tile"].to(device=device, dtype=model_dtype, non_blocking=True)
         label = batch["label"].to(device, non_blocking=True)
         pseudo_label = batch["pseudo_label"].to(device, non_blocking=True)
         mask = batch["mask"].to(device, non_blocking=True)
@@ -581,7 +582,9 @@ def train_one_epoch(
         # --------------------------------------------------------------------
 
         # loss.backward()
-        scaled_loss = loss / accumulation_steps
+        window_start = (batch_idx // accumulation_steps) * accumulation_steps
+        window_size = min(accumulation_steps, len(train_loader) - window_start)
+        scaled_loss = loss / window_size
         scaler.scale(scaled_loss).backward()
         # scaler.scale(loss).backward()
 
@@ -825,6 +828,7 @@ def validate(
     """
 
     model.eval()
+    model_dtype = next(model.parameters()).dtype
 
     # interpolate_labels = cfg.model.name == "timesformer"
 
@@ -837,7 +841,7 @@ def validate(
         # Batch
         # --------------------------------------------------------------------
 
-        tile = batch["tile"].to(device, non_blocking=True)
+        tile = batch["tile"].to(device=device, dtype=model_dtype, non_blocking=True)
         label = batch["label"].to(device, non_blocking=True)
         mask = batch["mask"].to(device, non_blocking=True)
         has_label = batch["has_label"].to(device)
