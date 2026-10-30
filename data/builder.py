@@ -61,13 +61,14 @@ from .augmentations import build_augmentation
 #     return v2.Compose(transforms)
 
 
-def validate_training_data(cfg):
+def validate_training_data(cfg, *, use_unlabeled_data=True):
     """Check required annotations once, before training or teacher prediction."""
 
     labeled = set(map(str, cfg.train.labeled))
     validation = set(map(str, cfg.train.val))
     
-    shared = (labeled | set(map(str, cfg.train.get("unlabeled", [])))) & validation
+    unlabeled = set(map(str, cfg.train.get("unlabeled", []))) if use_unlabeled_data else set()
+    shared = (labeled | unlabeled) & validation
 
     if shared and not cfg.train.use_validation_mask:
         raise ValueError(f"Shared training/validation segments require use_validation_mask=True: {sorted(shared)}")

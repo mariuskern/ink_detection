@@ -2,28 +2,11 @@ defaults:
   - base
   - /aug@aug: strong
 
-max_epochs: 250
+# max_epochs: 250
 
 name: supervised
-# labeled:
-#   - 20241025145341
-#   - 20241025145701
-#   - 20241030152031
-#   - 20241108111522
-#   - 20241108115232
-#   - 20241108120732
-#   - 20241113070770
-#   - 20241113080880
-# val:
-#   - 20241113090990
-labeled:
-  - "0172_20241025145341"
-  - "0172_20241025145701"
-  - "0172_20241030152031"
-  - "0172_20241108111522"
-  - "0172_20241108115232"
-  - "0172_20241108120732"
-  - "0172_20241113070770"
-  - "0172_20241113080880"
-val:
-  - "0172_20241113090990"
+
+# Optional fixed pseudo labels, e.g. version 0 from a previous Noisy Student run.
+# Set both fields and select the corresponding segments in unlabeled.
+pseudo_label_version: null
+pseudo_data_dir: null # Contains <segment>/<segment>.zarr (including the scroll prefix).

@@ -23,6 +23,19 @@ Call the following command in data/utils
 ./prepare_data.sh $TMPDIR/data/
 ```
 
+## Supervised training
+
+Run `python train.py --config-name=<config_name> train=supervised`.
+Training uses `train.labeled`; validation uses `train.val`.
+
+To include fixed pseudo labels from `train.unlabeled`, set both
+`train.pseudo_label_version` and `train.pseudo_data_dir`; choose hard or soft
+targets with `train.pseudo_target`. With both source fields set to null,
+`unlabeled` is ignored. Pseudo labels remain fixed throughout the run.
+
+For pseudo-only training, use `train.labeled=[]`, `sampler.real_fraction=null`
+and `sampler.limit_pseudo_tiles=false`.
+
 ## Noisy Student training
 
 Set these options in `conf/train/noisy_student.yaml` or an inherited variant.

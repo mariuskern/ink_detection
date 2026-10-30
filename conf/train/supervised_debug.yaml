@@ -1,11 +1,20 @@
 defaults:
   - supervised
 
-max_epochs: 2
+max_epochs: 4
 warmup_epochs: 0
-checkpoint_every_n_epochs: 1
-compile: false
 val_image_every_n_epochs: 1
+checkpoint:
+  monitor: metrics_val/dice
+  mode: max
+  save_top_k: 1
+  swa_save_k: 2
+
+seed: 42
+compile: true
+# compile_mode: default
+benchmark: false
+deterministic: true
 
 # labeled:
 #   - 20241025145341

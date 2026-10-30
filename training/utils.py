@@ -126,7 +126,7 @@ def fit(cfg, logger, output_dir, *, pseudo_label_version=None, iteration=None, a
     # Dataset / DataLoader
     # ------------------------------------------------------------------------
 
-    use_unlabeled_data = iteration is not None and iteration > 0
+    use_unlabeled_data = pseudo_label_version is not None
 
     train_dataset = build_train_dataset(cfg, use_unlabeled_data=use_unlabeled_data, pseudo_label_version=pseudo_label_version, augmentation=augmentation, split="train" if cfg.train.use_validation_mask else None, pseudo_data_dir=pseudo_data_dir, use_mask_refinement=True, use_label_refinement=True)
     # val_dataset = build_dataset(cfg, cfg.train.val, min_mask_fraction=0.0, split="val" if cfg.train.use_validation_mask else None)

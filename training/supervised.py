@@ -1,12 +1,31 @@
 from pathlib import Path
 
+from data.builder import validate_training_data
 from .utils import fit
 
 
 def train_supervised(cfg, logger=None):
+    pseudo_label_version = cfg.train.pseudo_label_version
+    pseudo_data_dir = cfg.train.pseudo_data_dir
+
+    if (pseudo_label_version is None) != (pseudo_data_dir is None):
+        raise ValueError("Set both train.pseudo_label_version and train.pseudo_data_dir to use fixed pseudo labels.")
+    
+    if pseudo_label_version is not None and not cfg.train.unlabeled:
+        raise ValueError("Fixed pseudo labels require segments in train.unlabeled.")
+
+    validate_training_data(cfg, use_unlabeled_data=pseudo_label_version is not None)
+
     output_dir = Path(cfg.path.output_dir)
 
-    return fit(cfg, logger, output_dir, augmentation=cfg.train.aug)
+    return fit(
+        cfg,
+        logger,
+        output_dir,
+        augmentation=cfg.train.aug,
+        pseudo_label_version=pseudo_label_version,
+        pseudo_data_dir=pseudo_data_dir,
+    )
 
 
 
