@@ -5,6 +5,3 @@ center: 32
 depth: 32
 norm: global
 min_mask_fraction: 0.5
-# If true, use the original mask to select tiles when generating pseudo labels.
-# During training on pseudo labels, also exclude pixels outside the original mask from the loss.
-use_original_mask_for_pseudo_mask: true

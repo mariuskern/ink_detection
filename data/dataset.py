@@ -67,6 +67,7 @@ class InkDataset(Dataset):
 
     pseudo_mask:
         Versioned pseudo-label validity/confidence mask of shape [1, H, W].
+        Intersected with the original segment mask when present.
         If no pseudo mask is available, a tensor of ones is returned.
 
     has_label:
@@ -128,9 +129,13 @@ class InkDataset(Dataset):
     min_mask_fraction:
         Minimum fraction of valid pixels required for a tile to be included.
 
+    use_as_unlabeled:
+        Suppress ground-truth supervision. Requires pseudo_label_version.
+        The original segment mask still restricts pseudo supervision.
+
     pseudo_label_version:
         Version of the pseudo targets to load. If `None`, no pseudo targets
-        are used.
+        are used. A non-None version requires use_as_unlabeled=True.
 
     pseudo_target:
         Type of pseudo target to use. `"hard"` loads binary pseudo labels
@@ -144,11 +149,6 @@ class InkDataset(Dataset):
     transform:
         Optional transformation applied jointly to the image, labels and
         masks.
-
-    use_original_mask_for_pseudo_mask:
-        Intersect pseudo_mask with the original mask and restrict pseudo
-        tile selection accordingly. With use_as_unlabeled=True and no pseudo
-        label version, only restricts tile selection; no masks are loaded.
 
     mask_refinement:
         Optional configuration for label-neighborhood supervision. targets
@@ -182,7 +182,6 @@ class InkDataset(Dataset):
         transform=None,
         split=None,
         mask_refinement=None,
-        use_original_mask_for_pseudo_mask=False,
         label_refinement=None,
         pseudo_cache_dir=None,
         pseudo_positive_threshold=0.5,
@@ -202,9 +201,14 @@ class InkDataset(Dataset):
         self.split = split
         self.segment_crops = segment_crops or {}
         self.mask_refinement = mask_refinement or {}
-        self.use_original_mask_for_pseudo_mask = use_original_mask_for_pseudo_mask
         self.label_refinement = label_refinement or {}
         self.pseudo_cache_dir = Path(pseudo_cache_dir) if pseudo_cache_dir is not None else None
+
+        if self.use_as_unlabeled and self.pseudo_label_version is None:
+            raise ValueError("use_as_unlabeled=True requires pseudo_label_version.")
+
+        if not self.use_as_unlabeled and self.pseudo_label_version is not None:
+            raise ValueError("pseudo_label_version requires use_as_unlabeled=True.")
         
         if self.pseudo_label_version is not None:
             if self.pseudo_cache_dir is None:
@@ -223,9 +227,6 @@ class InkDataset(Dataset):
 
         if split is not None and split not in ["train", "val"]:
             raise ValueError(f"Invalid split '{self.split}'. Must be None, 'train' or 'val'.")
-
-        # if use_as_unlabeled and pseudo_label_version is None:
-        #     raise ValueError("use_as_unlabeled=True requires pseudo_label_version.")
 
         self.segment_paths = get_segment_paths(self.data_dir)
 
@@ -464,7 +465,7 @@ class InkDataset(Dataset):
         
         mask = source[y:y+self.tile_size, x:x+self.tile_size]
 
-        if self.use_original_mask_for_pseudo_mask and "mask" in zarr_array:
+        if "mask" in zarr_array:
             mask = mask * zarr_array["mask"][y:y+self.tile_size, x:x+self.tile_size]
 
         return self._apply_validation_mask(mask, zarr_array, x, y)
@@ -491,9 +492,6 @@ class InkDataset(Dataset):
                 f"_split_{self.split}_use_as_unlabeled_{self.use_as_unlabeled}"
             )
             
-            if self.use_as_unlabeled:
-                stem += f"_original_mask_{self.use_original_mask_for_pseudo_mask}"
-
             tile_path = tile_dir / f"{stem}.npy"
             csv_path = tile_dir / f"{stem}.csv"
 
@@ -516,13 +514,10 @@ class InkDataset(Dataset):
 
                 pseudo_mask = np.asarray(refined_pseudo_mask if refined_pseudo_mask is not None else pseudo_archive["pseudo_masks"][version])
 
-                if self.use_original_mask_for_pseudo_mask and original_mask is not None:
+                if original_mask is not None:
                     mask = original_mask * pseudo_mask
                 else:
                     mask = pseudo_mask
-            elif self.use_as_unlabeled:
-                label = None
-                mask = original_mask if self.use_original_mask_for_pseudo_mask else None
             else:
                 label = np.asarray(zarr_data["label"]) if "label" in zarr_data else None
                 mask = np.asarray(refined_real_mask) if refined_real_mask is not None else original_mask

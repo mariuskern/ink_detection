@@ -7,6 +7,8 @@ max_epochs: 4
 warmup_epochs: 0
 val_image_every_n_epochs: 1
 checkpoint:
+  monitor: metrics_val/dice
+  mode: max
   save_top_k: 1
   swa_save_k: 2
 
@@ -60,7 +62,7 @@ val:
   # - "0172_20241025145701"
   - "0172_20241113090990"
 predict:
-  # - "0172_20241025145341"
+  - "0172_20241025145341"
 
 # segment_crops:
 #   "0172_20241025145341": [500, 1000, 500, 5000]

@@ -19,6 +19,7 @@ from utils.postprocess import postprocess_prediction
 from utils.save import save_predictions_as_images, save_predictions_as_zarr
 from utils.device import get_device
 from data.builder import build_dataset, build_train_dataset, build_sampler, build_dataloader, build_augmentation
+from data.builder import validate_training_data
 from training.batchnorm import update_batchnorm_statistics
 from training.precision import parse_precision
 from utils.load_model import load_model_from_checkpoint
@@ -67,6 +68,8 @@ def _iteration_caches(cfg):
 
 
 def train_noisy_student(cfg, logger):
+    validate_training_data(cfg)
+
     output_dir = Path(cfg.path.output_dir)
 
     tmp_dir = Path(cfg.path.tmp_dir)

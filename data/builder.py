@@ -1,6 +1,11 @@
 # import torch
 # from torchvision.transforms import v2
 
+from pathlib import Path
+
+import zarr
+
+from utils.segment_paths import get_segment_paths
 from .dataset import InkDataset, CombinedInkDataset
 from .sampler import create_sampler
 from .loader import create_dataloader
@@ -56,6 +61,33 @@ from .augmentations import build_augmentation
 #     return v2.Compose(transforms)
 
 
+def validate_training_data(cfg):
+    """Check required annotations once, before training or teacher prediction."""
+
+    labeled = set(map(str, cfg.train.labeled))
+    validation = set(map(str, cfg.train.val))
+    
+    shared = (labeled | set(map(str, cfg.train.get("unlabeled", [])))) & validation
+
+    if shared and not cfg.train.use_validation_mask:
+        raise ValueError(f"Shared training/validation segments require use_validation_mask=True: {sorted(shared)}")
+
+    segment_paths = get_segment_paths(Path(cfg.path.data_dir))
+
+    for segment in sorted(labeled | validation):
+        if segment not in segment_paths:
+            raise KeyError(f"Unknown labeled/validation segment '{segment}'.")
+
+        segment_path = segment_paths[segment]
+        archive = zarr.open_group(str(segment_path / f"{segment_path.name}.zarr"), mode="r")
+
+        if "label" not in archive:
+            raise KeyError(f"Labeled/validation segment '{segment}' is missing 'label'.")
+
+        if segment in shared and "validation_mask" not in archive:
+            raise KeyError(f"Shared training/validation segment '{segment}' is missing 'validation_mask'.")
+
+
 def build_dataset(
     cfg,
     segments,
@@ -92,7 +124,6 @@ def build_dataset(
         mask_refinement=cfg.train.mask_refinement if use_mask_refinement else None,
         label_refinement=cfg.train.label_refinement if use_label_refinement else None,
         pseudo_cache_dir=pseudo_data_dir,
-        use_original_mask_for_pseudo_mask=cfg.dataset.use_original_mask_for_pseudo_mask,
     )
 
 
