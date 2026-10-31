@@ -28,6 +28,8 @@ train:
     - "0172_20241025145341"
     - "0172_20241025145701"
     - "0172_20241030152031"
+    - "0172_20241108111522"
+    - "0172_20241108115232"
 
 experiment:
   name: pre_a49_more_labeled_and_inference_data_seed_${train.seed}_${oc.env:SLURM_JOB_ID,local}
