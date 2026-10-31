@@ -1,9 +1,15 @@
 # @package _global_
 
 defaults:
-  - pre_a15
-  - model_noise_even_more
+  - pre_a5
+  - aug_moderate_high
   - _self_
 
+train:
+  mask_refinement:
+    enabled: true
+    margin_factor: 0.25
+    closing_factor: 0.4
+
 experiment:
-  name: pre_a18_top_average_even_more_model_noise_seed_${train.seed}_${oc.env:SLURM_JOB_ID,local}
+  name: pre_a18_top1_mask_moderate_high_seed_${train.seed}_${oc.env:SLURM_JOB_ID,local}

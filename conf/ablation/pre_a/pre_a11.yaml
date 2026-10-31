@@ -1,12 +1,14 @@
 # @package _global_
 
 defaults:
-  - pre_a8
+  - pre_a5
   - _self_
 
 train:
   mask_refinement:
     enabled: true
+    margin_factor: 0.25
+    closing_factor: 0.4
 
 experiment:
-  name: pre_a11_top1_mask_refinement_seed_${train.seed}_${oc.env:SLURM_JOB_ID,local}
+  name: pre_a11_top1_mask_mf_0.25_cf_0.4_seed_${train.seed}_${oc.env:SLURM_JOB_ID,local}

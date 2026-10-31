@@ -1,12 +1,17 @@
 # @package _global_
 
 defaults:
-  - pre_a1
+  - pre_a5
   - _self_
 
 train:
-  teacher:
-    swa_mode: individual
+  mask_refinement:
+    enabled: true
+    margin_factor: 0.7
+    closing_factor: 0
+  label_refinement:
+    enabled: true
+    radius_factor: 0.08
 
 experiment:
-  name: pre_a14_swa_individual_seed_${train.seed}_${oc.env:SLURM_JOB_ID,local}
+  name: pre_a14_top1_mask_mf_0.7_cf_0_label_rf_0.08_seed_${train.seed}_${oc.env:SLURM_JOB_ID,local}

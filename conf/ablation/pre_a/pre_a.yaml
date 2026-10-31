@@ -71,7 +71,7 @@ train:
     swa_save_k: 5
     save_last: true
     save_last_every_epoch: true
-    monitor: metrics_val/f0_5
+    monitor: metrics_val/dice
     mode: max
     additional_monitors:
       val/loss: min
@@ -118,7 +118,6 @@ train:
     - "0172_20241108111522"
     - "0172_20241108115232"
     - "0172_20251115002740-auto_grown_20251115002740308_0_flatboi"
-
     - "0172_fei_20250926145427-w084_20250926145427439_flatboi"
     - "0172_fei_20251110135146-w085_20251110135146457_flatboi"
     - "0172_fei_20250926150345-w086_20250926150345176_flatboi"

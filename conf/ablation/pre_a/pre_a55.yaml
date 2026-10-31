@@ -1,0 +1,14 @@
+# @package _global_
+
+defaults:
+  - pre_a49
+  - _self_
+
+train:
+  mask_refinement:
+    enabled: true
+    margin_factor: 0.25
+    closing_factor: 0.4
+
+experiment:
+  name: pre_a55_more_labeled_and_inference_data_mask_seed_${train.seed}_${oc.env:SLURM_JOB_ID,local}

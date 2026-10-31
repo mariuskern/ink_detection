@@ -1,27 +1,9 @@
 # @package _global_
 
 defaults:
-  - pre_a1
+  - pre_a5
+  - model_noise_more
   - _self_
 
-train:
-  labeled:
-    - "0172_20241025145341"
-    - "0172_20241025145701"
-    - "0172_20241030152031"
-  unlabeled:
-    - "0172_20241108111522"
-    - "0172_20241108115232"
-    - "0172_20241108120732"
-    - "0172_20241113070770"
-    - "0172_20241113080880"
-    - "0172_20251115002740-auto_grown_20251115002740308_0_flatboi"
-  val:
-    - "0172_20241113090990"
-  predict:
-    - "0172_20241025145341"
-    - "0172_20241025145701"
-    - "0172_20241030152031"
-
 experiment:
-  name: pre_a7_normal_segments_seed_${train.seed}_${oc.env:SLURM_JOB_ID,local}
+  name: pre_a7_top1_more_model_noise_seed_${train.seed}_${oc.env:SLURM_JOB_ID,local}

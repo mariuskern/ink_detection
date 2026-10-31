@@ -1,0 +1,8 @@
+# @package _global_
+
+defaults:
+  - pre_a_supervised
+  - _self_
+
+experiment:
+  name: pre_a59_standard_supervised_seed_${train.seed}_${oc.env:SLURM_JOB_ID,local}

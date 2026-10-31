@@ -1,28 +1,9 @@
 # @package _global_
 
 defaults:
-  - pre_a27
+  - pre_a1
+  - aug_moderate_high
   - _self_
 
-train:
-  refinement:
-    name: weak_remove_small
-    steps:
-      - name: threshold
-        threshold: 0.5
-
-      - name: confidence_mask
-        threshold: 0.7
-        update_label: true
-
-      - name: uncertainty_mask
-        threshold: 0.2
-        update_label: true
-
-      - name: remove_small_objects
-        min_size: 20000
-        connectivity: 4
-        update_mask: true
-
 experiment:
-  name: pre_a28_weak_remove_small_pseudo_refinement_seed_${train.seed}_${oc.env:SLURM_JOB_ID,local}
+  name: pre_a28_moderate_high_seed_${train.seed}_${oc.env:SLURM_JOB_ID,local}

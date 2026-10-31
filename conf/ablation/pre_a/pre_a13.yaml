@@ -1,14 +1,14 @@
 # @package _global_
 
 defaults:
-  - pre_a8
+  - pre_a5
   - _self_
 
 train:
-  model_schedule:
-    - /ablation/pre_a/unetrpp_small
-    - /ablation/pre_a/unetrpp_medium
-    - /ablation/pre_a/unetrpp_large
+  mask_refinement:
+    enabled: true
+    margin_factor: 0.7
+    closing_factor: 0
 
 experiment:
-  name: pre_a13_top1_increasing_model_size_seed_${train.seed}_${oc.env:SLURM_JOB_ID,local}
+  name: pre_a13_top1_mask_mf_0.7_cf_0_seed_${train.seed}_${oc.env:SLURM_JOB_ID,local}

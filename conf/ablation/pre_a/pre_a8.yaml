@@ -1,14 +1,9 @@
 # @package _global_
 
 defaults:
-  - pre_a1
+  - pre_a5
+  - model_noise_even_more
   - _self_
 
-train:
-  teacher:
-    use_top_k: true
-    top_k_mode: individual
-    use_swa: false
-
 experiment:
-  name: pre_a8_top1_seed_${train.seed}_${oc.env:SLURM_JOB_ID,local}
+  name: pre_a8_top1_even_more_model_noise_seed_${train.seed}_${oc.env:SLURM_JOB_ID,local}

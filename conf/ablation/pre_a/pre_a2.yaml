@@ -4,5 +4,9 @@ defaults:
   - pre_a1
   - _self_
 
+train:
+  teacher:
+    swa_mode: individual
+
 experiment:
-  name: pre_a2_standard_as_array_seed_${train.seed}_${oc.env:SLURM_JOB_ID,local}
+  name: pre_a2_swa_individual_seed_${train.seed}_${oc.env:SLURM_JOB_ID,local}

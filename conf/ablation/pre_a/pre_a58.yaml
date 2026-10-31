@@ -1,0 +1,12 @@
+# @package _global_
+
+defaults:
+  - pre_a1
+  - _self_
+
+train:
+  start_iteration: 1
+  teacher_checkpoint: outputs_ws/noisy_student/unetrpp/2026-10-18_22-05-07 (0172, 3 segments, strong aug, val_loss, no label smoothing, swa average, old loss, real fraction and limit, drop path, gutian, reference)/iteration/0/checkpoints/swa_average.pt
+
+experiment:
+  name: pre_a58_standard_from_checkpoint_seed_${train.seed}_${oc.env:SLURM_JOB_ID,local}

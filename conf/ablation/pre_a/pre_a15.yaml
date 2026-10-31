@@ -1,15 +1,13 @@
 # @package _global_
 
 defaults:
-  - pre_a1
+  - pre_a5
   - _self_
 
 train:
-  checkpoint:
-    save_top_k: 5
-  teacher:
-    use_top_k: true
-    use_swa: false
+  label_refinement:
+    enabled: true
+    radius_factor: 0.08
 
 experiment:
-  name: pre_a15_top_average_seed_${train.seed}_${oc.env:SLURM_JOB_ID,local}
+  name: pre_a15_top1_label_rf_0.08_seed_${train.seed}_${oc.env:SLURM_JOB_ID,local}

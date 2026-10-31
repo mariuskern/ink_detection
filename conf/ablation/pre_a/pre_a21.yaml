@@ -1,9 +1,27 @@
 # @package _global_
 
 defaults:
-  - pre_a1
-  - aug_moderate_low
+  - pre_a5
   - _self_
 
+train:
+  model_schedule:
+    - /ablation/pre_a/unetrpp_small
+    - /ablation/pre_a/unetrpp_medium
+    - /ablation/pre_a/unetrpp_large
+  refinement:
+    name: weak
+    steps:
+      - name: threshold
+        threshold: 0.5
+
+      - name: confidence_mask
+        threshold: 0.7
+        update_label: true
+
+      - name: uncertainty_mask
+        threshold: 0.2
+        update_label: true
+
 experiment:
-  name: pre_a21_moderate_low_seed_${train.seed}_${oc.env:SLURM_JOB_ID,local}
+  name: pre_a21_top1_increasing_model_size_weak_pseudo_refinement_seed_${train.seed}_${oc.env:SLURM_JOB_ID,local}

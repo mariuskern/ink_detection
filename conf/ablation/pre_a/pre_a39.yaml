@@ -1,9 +1,14 @@
 # @package _global_
 
 defaults:
-  - pre_a32
-  - aug_moderate_high
+  - pre_a1
   - _self_
 
+train:
+  model_schedule:
+    - /ablation/pre_a/unetrpp_small
+    - /ablation/pre_a/unetrpp_medium
+    - /ablation/pre_a/unetrpp_large
+
 experiment:
-  name: pre_a39_mask_moderate_high_seed_${train.seed}_${oc.env:SLURM_JOB_ID,local}
+  name: pre_a39_increasing_model_size_seed_${train.seed}_${oc.env:SLURM_JOB_ID,local}

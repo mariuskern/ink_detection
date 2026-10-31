@@ -1,9 +1,14 @@
 # @package _global_
 
 defaults:
-  - pre_a1
-  - model_noise_even_more
+  - pre_a5
   - _self_
 
+train:
+  model_schedule:
+    - /ablation/pre_a/unetrpp_small
+    - /ablation/pre_a/unetrpp_medium
+    - /ablation/pre_a/unetrpp_large
+
 experiment:
-  name: pre_a20_even_more_model_noise_seed_${train.seed}_${oc.env:SLURM_JOB_ID,local}
+  name: pre_a20_top1_increasing_model_size_seed_${train.seed}_${oc.env:SLURM_JOB_ID,local}

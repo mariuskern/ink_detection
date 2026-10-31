@@ -1,0 +1,28 @@
+# @package _global_
+
+defaults:
+  - pre_a1
+  - _self_
+
+train:
+  teacher:
+    aug:
+      variants:
+        - transforms: []
+
+        - transforms:
+          - name: random_horizontal_flip
+            p: 1
+
+        - transforms:
+          - name: random_vertical_flip
+            p: 1
+
+        - transforms:
+          - name: random_horizontal_flip
+            p: 1
+          - name: random_vertical_flip
+            p: 1
+
+experiment:
+  name: pre_a60_tta_seed_${train.seed}_${oc.env:SLURM_JOB_ID,local}

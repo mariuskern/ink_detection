@@ -1,12 +1,27 @@
 # @package _global_
 
 defaults:
-  - pre_a15
+  - pre_a5
   - _self_
 
 train:
-  teacher:
-    top_k_mode: individual
+  mask_refinement:
+    enabled: true
+    margin_factor: 0.25
+    closing_factor: 0.4
+  refinement:
+    name: weak
+    steps:
+      - name: threshold
+        threshold: 0.5
+
+      - name: confidence_mask
+        threshold: 0.7
+        update_label: true
+
+      - name: uncertainty_mask
+        threshold: 0.2
+        update_label: true
 
 experiment:
-  name: pre_a16_top_individual_seed_${train.seed}_${oc.env:SLURM_JOB_ID,local}
+  name: pre_a16_top1_mask_weak_pseudo_refinement_seed_${train.seed}_${oc.env:SLURM_JOB_ID,local}

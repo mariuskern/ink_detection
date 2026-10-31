@@ -2,11 +2,14 @@
 
 defaults:
   - pre_a1
+  - model_noise_more
   - _self_
 
 train:
-  label_refinement:
+  mask_refinement:
     enabled: true
+    margin_factor: 0.25
+    closing_factor: 0.4
 
 experiment:
-  name: pre_a36_label_rf_0.08_seed_${train.seed}_${oc.env:SLURM_JOB_ID,local}
+  name: pre_a36_mask_more_model_noise_seed_${train.seed}_${oc.env:SLURM_JOB_ID,local}

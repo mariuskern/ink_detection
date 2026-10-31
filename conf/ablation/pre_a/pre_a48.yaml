@@ -1,0 +1,11 @@
+# @package _global_
+
+defaults:
+  - pre_a1
+  - _self_
+
+sampler:
+  real_fraction: 0.25
+
+experiment:
+  name: pre_a48_lower_real_fraction_seed_${train.seed}_${oc.env:SLURM_JOB_ID,local}

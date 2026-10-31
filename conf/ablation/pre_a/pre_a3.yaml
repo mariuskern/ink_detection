@@ -5,8 +5,12 @@ defaults:
   - _self_
 
 train:
-  start_iteration: 1
-  teacher_checkpoint: outputs_ws/noisy_student/unetrpp/2026-10-18_22-05-07 (0172, 3 segments, strong aug, val_loss, no label smoothing, swa average, old loss, real fraction and limit, drop path, gutian, reference)/iteration/0/checkpoints/swa_average.pt
+  checkpoint:
+    save_top_k: 5
+  teacher:
+    use_top_k: true
+    use_swa: false
+    top_k_mode: average
 
 experiment:
-  name: pre_a3_standard_from_checkpoint_seed_${train.seed}_${oc.env:SLURM_JOB_ID,local}
+  name: pre_a3_top_average_seed_${train.seed}_${oc.env:SLURM_JOB_ID,local}

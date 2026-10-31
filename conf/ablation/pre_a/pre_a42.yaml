@@ -1,28 +1,18 @@
 # @package _global_
 
 defaults:
-  - pre_a_noisy_student
+  - pre_a1
   - _self_
 
 train:
-  teacher:
-    aug:
-      variants:
-        - transforms: []
-
-        - transforms:
-          - name: random_horizontal_flip
-            p: 1
-
-        - transforms:
-          - name: random_vertical_flip
-            p: 1
-
-        - transforms:
-          - name: random_horizontal_flip
-            p: 1
-          - name: random_vertical_flip
-            p: 1
+  model_schedule:
+    - /ablation/pre_a/unetrpp_small
+    - /ablation/pre_a/unetrpp_medium
+    - /ablation/pre_a/unetrpp_large
+  mask_refinement:
+    enabled: true
+    margin_factor: 0.25
+    closing_factor: 0.4
 
 experiment:
-  name: pre_a42_tta_seed_${train.seed}_${oc.env:SLURM_JOB_ID,local}
+  name: pre_a42_increasing_model_size_mask_seed_${train.seed}_${oc.env:SLURM_JOB_ID,local}

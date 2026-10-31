@@ -1,0 +1,8 @@
+# @package _global_
+
+defaults:
+  - pre_a1
+  - _self_
+
+experiment:
+  name: pre_a57_standard_as_array_seed_${train.seed}_${oc.env:SLURM_JOB_ID,local}

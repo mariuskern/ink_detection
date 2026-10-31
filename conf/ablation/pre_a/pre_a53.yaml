@@ -1,0 +1,34 @@
+# @package _global_
+
+defaults:
+  - pre_a49
+  - _self_
+
+train:
+  refinement:
+    name: weak_remove_small_closing
+    steps:
+      - name: threshold
+        threshold: 0.5
+
+      - name: confidence_mask
+        threshold: 0.7
+        update_label: true
+
+      - name: uncertainty_mask
+        threshold: 0.2
+        update_label: true
+
+      - name: remove_small_objects
+        min_size: 20000
+        connectivity: 4
+        update_mask: true
+
+      - name: binary_closing
+        kernel_size: 45
+        iterations: 2
+        probability_threshold: 0.5
+        update_mask: false
+
+experiment:
+  name: pre_a53_more_labeled_and_inference_data_weak_remove_small_closing_seed_${train.seed}_${oc.env:SLURM_JOB_ID,local}
