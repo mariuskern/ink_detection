@@ -100,7 +100,7 @@ train:
     progress: false
   mask_refinement:
     enabled: false
-    apply_to_val: false
+    apply_to_val: true
     targets: [real]
     pseudo_threshold: 0.5
     margin: null
