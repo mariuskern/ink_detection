@@ -2,7 +2,7 @@
 
 defaults:
   - pre_a
-  - aug_moderate
+  - input_noise_moderate
   - _self_
 
 train:

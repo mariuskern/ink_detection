@@ -1,6 +1,6 @@
 # @package train.student.aug
 
-name: moderate_high
+name: input_noise_high
 
 transforms:
   - name: random_horizontal_flip

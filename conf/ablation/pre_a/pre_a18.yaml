@@ -2,7 +2,7 @@
 
 defaults:
   - pre_a5
-  - aug_moderate_high
+  - input_noise_high
   - _self_
 
 train:
@@ -12,4 +12,4 @@ train:
     closing_factor: 0.4
 
 experiment:
-  name: pre_a18_top1_mask_moderate_high_seed_${train.seed}_${oc.env:SLURM_JOB_ID,local}
+  name: pre_a18_top1_mask_input_noise_high_seed_${train.seed}_${oc.env:SLURM_JOB_ID,local}

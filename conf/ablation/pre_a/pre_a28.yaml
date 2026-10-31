@@ -2,8 +2,8 @@
 
 defaults:
   - pre_a1
-  - aug_moderate_high
+  - input_noise_high
   - _self_
 
 experiment:
-  name: pre_a28_moderate_high_seed_${train.seed}_${oc.env:SLURM_JOB_ID,local}
+  name: pre_a28_input_noise_high_seed_${train.seed}_${oc.env:SLURM_JOB_ID,local}
