@@ -25,6 +25,9 @@ Call the following command in data/utils
 
 ## Supervised training
 
+For cluster submission, job names, loops, and seed arrays, see
+[Submitting Slurm jobs](slurm_job_scripts/README.md).
+
 Run `python train.py --config-name=<config_name> train=supervised`.
 Training uses `train.labeled`; validation uses `train.val`.
 

@@ -1,0 +1,14 @@
+# @package _global_
+
+defaults:
+  - pre_b5
+  - _self_
+
+train:
+  model_schedule:
+    - /ablation/pre_b/unetrpp_small
+    - /ablation/pre_b/unetrpp_medium
+    - /ablation/pre_b/unetrpp_large
+
+experiment:
+  name: pre_b20_top1_increasing_model_size_seed_${train.seed}_${oc.env:SLURM_JOB_ID,local}

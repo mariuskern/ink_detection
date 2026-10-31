@@ -6,7 +6,7 @@
 #SBATCH --cpus-per-task=16
 #SBATCH --time=23:59:00
 #SBATCH --export=NONE
-#SBATCH --array=0-1%2
+#SBATCH --array=0-4%5
 #SBATCH --output=logs/%x_%j.out # logs/<job-name>_<job-id>.out
 #SBATCH --error=logs/%x_%j.err # logs/<job-name>_<job-id>.err
 
@@ -22,8 +22,8 @@ if [[ $# -ne 1 ]]; then
 fi
 
 : "${SLURM_ARRAY_TASK_ID:?Submit this script with sbatch as an array.}"
-if (( SLURM_ARRAY_TASK_ID < 0 || SLURM_ARRAY_TASK_ID > 1 )); then
-    echo "Expected an array task index between 0 and 1." >&2
+if (( SLURM_ARRAY_TASK_ID < 0 || SLURM_ARRAY_TASK_ID > 4 )); then
+    echo "Expected an array task index between 0 and 4." >&2
     exit 2
 fi
 
