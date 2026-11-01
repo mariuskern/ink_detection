@@ -1,0 +1,53 @@
+# @package model
+
+# Frozen model preset for pre_c ablations.
+
+name: unetrpp
+
+feature_size: 8
+
+hidden_size: 128
+
+num_heads: 4
+
+norm_name: instance
+
+depths: [1, 1, 1, 1]
+
+decoder_depths: [1, 1, 1]
+
+dims: [16, 32, 64, 128]
+
+patch_size: [1, 4, 4]
+
+proj_size: [64, 64, 64, 32]
+
+encoder_dropout_rate: 0.0
+
+attention_dropout_rate: 0.15
+
+conv_dropout_rate: 0.0
+
+conv_projection_dropout_rate: 0.1
+
+drop_path_rate: 0.1
+
+pe_mode: 2d
+
+depth_attn: true
+
+da_gamma_init: 0.1
+
+surface_relative: true
+
+per_pixel: true
+
+warp_stabilize: true
+
+texture_stem: true
+
+stem_out_extra: 8
+
+collapse: surface_relative
+
+head_classes: 1

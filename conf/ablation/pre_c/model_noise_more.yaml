@@ -1,0 +1,11 @@
+# @package model
+
+encoder_dropout_rate: 0.05
+
+attention_dropout_rate: 0.2
+
+conv_dropout_rate: 0.05
+
+conv_projection_dropout_rate: 0.15
+
+drop_path_rate: 0.15

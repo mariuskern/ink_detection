@@ -1,0 +1,9 @@
+# @package _global_
+
+defaults:
+  - pre_c5
+  - model_noise_more
+  - _self_
+
+experiment:
+  name: pre_c7_top1_more_model_noise_seed_${train.seed}_${oc.env:SLURM_JOB_ID,local}

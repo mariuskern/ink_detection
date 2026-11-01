@@ -1,0 +1,140 @@
+# @package _global_
+
+defaults:
+  - unetrpp_large
+  - _self_
+
+dataset:
+  tile_size: 192
+  stride: 96
+  n_layers: 65
+  center: 32
+  depth: 32
+  norm: global
+  min_mask_fraction: 0.5
+
+sampler:
+  mode: balanced
+  alpha: 5.0
+  num_samples: 4000
+  pos_threshold: 0.05
+  real_fraction: 0.5
+  limit_pseudo_tiles: true
+
+dataloader:
+  batch_size: 12
+  predict_batch_size: 40
+  shuffle: false
+  num_workers: 4
+  pin_memory: true
+  prefetch_factor: 1
+  persistent_workers: true
+
+loss:
+  name: dice_bce
+  w: 0.5
+  eps: 1.0e-06
+  bce_label_smoothing: 0
+  dice_label_smoothing: 0
+
+path:
+  stage_dir: ${oc.env:DATA_DIR}/data_tar
+  data_dir: ${oc.env:TMPDIR}/data_zarr
+  output_dir: ${training_output_dir:${oc.select:train.resume_output_dir,null},${oc.env:OUTPUT_DIR}/${train.name}/${model.name}/${experiment.name},${oc.select:train.teacher_checkpoint,null},${oc.select:train.start_iteration,0}}
+  tmp_dir: ${oc.env:TMP_DIR}/${train.name}/${model.name}/${experiment.name}/run_${now:%Y%m%d_%H%M%S_%f}
+
+wandb:
+  project: ink_${train.name}_pre_c
+  group: null
+  name: null
+  notes: null
+
+train:
+  lr: 0.0001
+  max_epochs: 50
+  weight_decay: 3.0e-05
+  warmup_epochs: 3
+  accelerator: auto
+  gradient_clip_val: 1.0
+  gradient_clip_algorithm: norm
+  precision: bf16-mixed
+  compile: true
+  compile_mode: default
+  predict_compile_mode: default
+  compile_clear_caches: false
+  val_image_every_n_epochs: 10
+  val_segment_metrics_every_n_epochs: 1
+  seed: 42
+  checkpoint:
+    checkpoint_every_n_epochs: 1
+    save_top_k: 1
+    swa_save_k: 5
+    save_last: true
+    save_last_every_epoch: true
+    monitor: val/loss
+    mode: min
+    additional_monitors:
+      val/loss: min
+      metrics_val/iou: max
+      metrics_val/dice: max
+      metrics_val/precision: max
+      metrics_val/recall: max
+      metrics_val/f0_5: max
+      metrics_val/f1_5: max
+      metrics_val/f2: max
+  benchmark: false
+  deterministic: false
+  threshold: 0.5
+  gradient_accumulation_steps: 1
+  use_validation_mask: false
+  pseudo_target: soft
+  pseudo_positive_threshold: 0.5
+  label_refinement:
+    enabled: false
+    targets: [real]
+    radius: null
+    radius_factor: 0.08
+    min_value: 0.5
+    smooth_background: true
+    chunk_size: 2048
+    progress: false
+  mask_refinement:
+    enabled: false
+    apply_to_val: true
+    targets: [real]
+    pseudo_threshold: 0.5
+    margin: null
+    margin_factor: 0.25
+    closing: null
+    closing_factor: 0.4
+    closing_method: auto
+    chunk_size: 2048
+    progress: false
+  labeled:
+    - "0172_20241025145341"
+    - "0172_20241025145701"
+    - "0172_20241030152031"
+  unlabeled:
+    - "0172_20241108111522"
+    - "0172_20241108115232"
+    - "0172_20251115002740-auto_grown_20251115002740308_0_flatboi"
+    - "0172_fei_20250926145427-w084_20250926145427439_flatboi"
+    - "0172_fei_20251110135146-w085_20251110135146457_flatboi"
+    - "0172_fei_20250926150345-w086_20250926150345176_flatboi"
+    - "0172_fei_20251112000002-w087_20251112000002214_flatboi"
+  val:
+    - "0172_20241108120732"
+    - "0172_20241113080880"
+    - "0172_20241113090990"
+  predict:
+    - "0172_20241025145341"
+    - "0172_20241025145701"
+    - "0172_20241030152031"
+
+experiment:
+  jobid: ${oc.env:SLURM_JOB_ID,none}
+
+hydra:
+  output_subdir: null
+  run:
+    dir: ${path.output_dir}
