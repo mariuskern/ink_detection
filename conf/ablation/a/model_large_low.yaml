@@ -1,0 +1,6 @@
+# @package model
+
+defaults:
+  - unetrpp_large
+  - model_noise_low
+  - _self_

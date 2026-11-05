@@ -6,7 +6,7 @@ import torch.nn as nn
 
 from monai.networks.blocks.convolutions import Convolution
 from monai.networks.layers.factories import Act, Norm
-from monai.networks.layers.utils import get_act_layer, get_norm_layer
+from monai.networks.layers.utils import get_act_layer, get_dropout_layer, get_norm_layer
 
 
 class UnetResBlock(nn.Module):
@@ -231,7 +231,7 @@ def get_conv_layer(
     output_padding = None
     if is_transposed:
         output_padding = get_output_padding(kernel_size, stride, padding)
-    return Convolution(
+    layer = Convolution(
         spatial_dims,
         in_channels,
         out_channels,
@@ -246,6 +246,13 @@ def get_conv_layer(
         padding=padding,
         output_padding=output_padding,
     )
+
+    # MONAI skips its entire ADN block with conv_only=True, including dropout.
+    # Keep the existing convolution names and the blocks' separate norm/act.
+    if conv_only and dropout:
+        layer.add_module("dropout", get_dropout_layer(name=dropout, dropout_dim=spatial_dims))
+        
+    return layer
 
 
 def get_padding(

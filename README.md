@@ -128,7 +128,9 @@ resume_output_dir: "outputs/old_run"
 resume_run: auto
 ```
 
-Teacher selection comes from `iteration/1/checkpoints/teacher_checkpoints.json`.
+Teacher selection is restored exactly from `iteration/1/checkpoints/teacher_checkpoints.json`,
+including saved weight averages. Missing/invalid selections or missing files raise
+an error; resume does not rebuild the ensemble from Top-k/SWA catalogs.
 The W&B identity is stored as `wandb.run_path` in `.hydra/config.yaml`.
 Explicit checkpoints can override the automatic teacher selection. For older
 runs without `wandb.run_path`, automatic resume raises an error; set
@@ -171,19 +173,37 @@ resume_output_dir: auto
 resume_run: auto
 ```
 
-Explicit lists are used as given. A folder supplied as `teacher_checkpoint`
+Explicit checkpoint-file lists are used as given for the initial pseudo-label generation.
+After each newly trained student iteration, its own checkpoints are selected using
+`train.teacher` and `train.checkpoint`. Folder lists, mixed folder/file lists and
+explicit JSON manifest paths are rejected. A single folder supplied as `teacher_checkpoint`
 also starts a new experiment when `resume_output_dir` is `auto` or `null`.
 To resume instead, set `resume_output_dir` to the old run folder and leave
 `teacher_checkpoint: auto`, as in example 2. Alternatively, `resume_output_dir:
 checkpoint` infers the common source run from explicit checkpoints. Files from
-different runs can be combined when starting a new experiment.
+different runs can be combined when starting a new experiment if their resolved
+filenames are distinct. Repeated paths to the same checkpoint remain allowed.
 
 > NOTE
-> - **Teacher selection:** New iterations save the exact ensemble in
->   `teacher_checkpoints.json`. Folder input without this manifest raises an
->   error, including when average files exist. For legacy runs, supply the
->   checkpoint file or list explicitly. An iteration/checkpoint folder selects that
->   iteration directly.
+> - **Teacher selection:** Supply one folder or explicit checkpoint files. Folder
+>   input for a new experiment uses `train.teacher`/`train.checkpoint` and the available
+>   Top-k/SWA catalogs, then writes a new `teacher_checkpoints.json` in the new run.
+>   Fewer than k entries require `checkpoint_potential_maximum_k.json` confirming a short
+>   training run (Top-k) or an early best epoch (SWA); insufficient retention raises an error.
+>   `save_top_k: -1` requires availability metadata confirming that all eligible
+>   checkpoints are listed; a truncated or unverified catalog raises an error.
+>   Resume instead reuses the saved `teacher_checkpoints.json` exactly. For legacy
+>   runs without the required manifest/catalogs, supply checkpoint files explicitly.
+>   An iteration/checkpoint folder selects that iteration directly.
+> - **Imported weight averages and BatchNorm:** Starting at iteration 1 from a
+>   supervised baseline calibrates newly computed averages on labeled training data,
+>   matching the baseline. Resuming in the same output folder restores saved averages
+>   unchanged. Neither workflow is affected by the following limitation: a new
+>   experiment starting at `start_iteration > 1` from a folder with `top_k_mode: average`
+>   or `swa_mode: average` currently recalibrates BatchNorm using only labeled data,
+>   omitting the source student's pseudo-labeled training data. This can change
+>   predictions; the effect depends on the model and data. To preserve existing
+>   averages in that case, supply their checkpoint files explicitly.
 > - **Logging:** Continuations always append; old points and duplicate X values
 >   remain. There is no rewind or continuation into a different W&B run.
 >   Counters are reconstructed exclusively from the same W&B run at the requested

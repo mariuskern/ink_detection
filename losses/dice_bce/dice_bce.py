@@ -82,7 +82,9 @@ class DiceBCELoss(nn.Module):
         # Dice
         # ------------------------------------------------------------
 
-        probs = torch.sigmoid(logits)
+        # probs = torch.sigmoid(logits)
+        # Keep sigmoid in FP32 to avoid BF16 rounding and early saturation.
+        probs = torch.sigmoid(logits.float())
 
         dice_targets = targets
         if self.dice_label_smoothing > 0.0:

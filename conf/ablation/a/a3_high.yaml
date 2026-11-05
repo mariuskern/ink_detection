@@ -1,0 +1,12 @@
+# @package _global_
+
+defaults:
+  - noisy_student
+  - model_large_high@model
+  - input_noise_high@train.student.aug
+  - _self_
+
+ablation:
+  id: a3
+  noise: high
+  baseline_id: a2

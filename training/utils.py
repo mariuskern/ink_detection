@@ -924,7 +924,8 @@ def validate(
                 # label_for_export = label
                 # mask_for_export = mask
 
-            probs = torch.sigmoid(output_for_export).squeeze(1).detach().float().cpu().numpy()
+            # probs = torch.sigmoid(output_for_export).squeeze(1).detach().float().cpu().numpy()
+            probs = torch.sigmoid(output_for_export.float()).squeeze(1).detach().cpu().numpy()
             targets = label_original.squeeze(1).detach().float().cpu().numpy()
             valid_masks = mask_original.squeeze(1).detach().float().cpu().numpy()
             has_label_cpu = has_label.detach().cpu().numpy()

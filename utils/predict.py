@@ -120,7 +120,8 @@ def predict(cfg, checkpoint_paths, dataloader, device, transforms=None, tta_num=
                     # -------------------------------------------------
 
                     # probs = torch.sigmoid(output).squeeze(1).cpu().numpy()
-                    probs = torch.sigmoid(output).squeeze(1).float().cpu().numpy()
+                    # probs = torch.sigmoid(output).squeeze(1).float().cpu().numpy()
+                    probs = torch.sigmoid(output.float()).squeeze(1).cpu().numpy()
 
                     # -------------------------------------------------
                     # Prediction merger

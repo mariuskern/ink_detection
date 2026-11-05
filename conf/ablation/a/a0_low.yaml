@@ -1,0 +1,11 @@
+# @package _global_
+
+defaults:
+  - supervised
+  - model_small_low@model
+  - input_noise_low@train.aug
+  - _self_
+
+ablation:
+  id: a0
+  noise: low

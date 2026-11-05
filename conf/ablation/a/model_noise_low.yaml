@@ -1,0 +1,8 @@
+# @package model
+
+# Half the normal attention/projection/drop-path noise; no encoder/conv dropout.
+encoder_dropout_rate: 0.0
+attention_dropout_rate: 0.075
+conv_dropout_rate: 0.0
+conv_projection_dropout_rate: 0.05
+drop_path_rate: 0.05

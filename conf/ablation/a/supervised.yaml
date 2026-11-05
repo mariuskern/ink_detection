@@ -1,0 +1,19 @@
+# @package _global_
+
+defaults:
+  - base
+  - _self_
+
+train:
+  name: supervised
+  pseudo_label_version: null
+  pseudo_data_dir: null
+  # Keep both sets for later comparisons; Noisy Student still selects Top-1.
+  checkpoint:
+    save_top_k: 10
+    swa_save_k: 10
+
+# Stable per-seed destination for the shared iteration-0 baseline.
+path:
+  output_dir: ${oc.env:OUTPUT_DIR}/ablation_a/supervised/${ablation.id}_${ablation.noise}/seed_${train.seed}
+  # tmp_dir: ${oc.env:TMP_DIR}/ablation_a/supervised/${ablation.id}_${ablation.noise}/seed_${train.seed}

@@ -1,0 +1,5 @@
+# @package model
+
+defaults:
+  - unetrpp_small
+  - _self_

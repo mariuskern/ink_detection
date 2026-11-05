@@ -16,7 +16,7 @@ import hydra
 from omegaconf import OmegaConf
 from hydra.core.hydra_config import HydraConfig
 from utils.config_snapshot import save_training_config, register_config_resolvers, resolve_resume_run, save_wandb_identity, prepare_teacher_source
-from utils.teacher_checkpoints import resolve_teacher_checkpoints
+from utils.teacher_checkpoints import resolve_teacher_checkpoint_groups
 
 from training.supervised import train_supervised
 from training.noisy_student import train_noisy_student
@@ -53,7 +53,7 @@ def main(cfg):
         raise ValueError("train.resume_run requires noisy_student with 0 < start_iteration < iterations")
         
     if is_noisy_student and start_iteration > 0:
-        resolve_teacher_checkpoints(cfg.train.get("teacher_checkpoint"), start_iteration)
+        resolve_teacher_checkpoint_groups(cfg.train.get("teacher_checkpoint"), start_iteration, cfg.train.teacher, cfg.train.checkpoint, resume=bool(resume_run))
 
     save_training_config(cfg, HydraConfig.get())
 

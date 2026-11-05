@@ -1,0 +1,21 @@
+# @package _global_
+
+defaults:
+  - noisy_student
+  - model_small_medium@model
+  - input_noise_medium@train.student.aug
+  - _self_
+
+ablation:
+  id: a4
+  noise: medium
+  baseline_id: a0
+
+train:
+  # Index 0 restores the S teacher; students use M, L, L, L at 1..4.
+  model_schedule:
+    - /ablation/a/model_small_medium
+    - /ablation/a/model_medium_medium
+    - /ablation/a/model_large_medium
+    - /ablation/a/model_large_medium
+    - /ablation/a/model_large_medium

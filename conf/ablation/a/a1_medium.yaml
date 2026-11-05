@@ -1,0 +1,11 @@
+# @package _global_
+
+defaults:
+  - supervised
+  - model_medium_medium@model
+  - input_noise_medium@train.aug
+  - _self_
+
+ablation:
+  id: a1
+  noise: medium

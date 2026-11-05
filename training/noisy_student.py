@@ -2,6 +2,7 @@ from pathlib import Path
 from datetime import datetime
 import copy
 import gc
+import shutil
 from contextlib import contextmanager, nullcontext
 
 import torch
@@ -23,7 +24,7 @@ from data.builder import validate_training_data
 from training.batchnorm import update_batchnorm_statistics
 from training.precision import parse_precision
 from utils.load_model import load_model_from_checkpoint
-from utils.teacher_checkpoints import resolve_teacher_checkpoints, save_teacher_selection
+from utils.teacher_checkpoints import resolve_teacher_checkpoint_groups, save_teacher_selection
 
 
 @contextmanager
@@ -90,18 +91,21 @@ def train_noisy_student(cfg, logger):
     if teacher_checkpoint and start_iteration == 0:
         raise ValueError("train.teacher_checkpoint requires train.start_iteration > 0")
 
-    teacher_paths = resolve_teacher_checkpoints(teacher_checkpoint, start_iteration) if teacher_checkpoint else []
-
+    resuming = cfg.train.get("resume_output_dir", "auto") not in {None, "auto"}
     if teacher_checkpoint:
         previous_iteration = start_iteration - 1
 
-        teacher_paths = backup_iteration_directories(output_dir, tmp_dir, previous_iteration, teacher_paths)
+        teacher_groups = resolve_teacher_checkpoint_groups(teacher_checkpoint, start_iteration, cfg.train.teacher, cfg.train.checkpoint, resume=resuming)
+
+        teacher_groups = backup_iteration_directories(output_dir, tmp_dir, previous_iteration, teacher_groups)
 
         print(f"\n{'=' * 64}\nNoisy Student | Resume: restore teacher from iteration {previous_iteration}\n{'=' * 64}")
 
         cfg_previous_iteration = _get_config_for_iteration(cfg, previous_iteration)
 
         with _iteration_caches(cfg_previous_iteration):
+            teacher_paths = prepare_teacher_checkpoints(cfg_previous_iteration, teacher_groups, output_dir / "iteration" / str(previous_iteration), resume=resuming)
+
             generate_pseudo_labels(
                 cfg_previous_iteration,
                 teacher_paths,
@@ -142,43 +146,43 @@ def train_noisy_student(cfg, logger):
                 pseudo_data_dir=pseudo_data_dir,
             )
 
-            checkpoint_paths = get_checkpoint_paths(cfg_iteration, result, device, pseudo_label_version=iteration - 1 if iteration > 0 else None, pseudo_data_dir=pseudo_data_dir)
+            # Catalog every retained set before selecting the teacher ensemble.
+            save_teacher_selection(result.top_checkpoints, "top_k_checkpoints.json")
+            save_teacher_selection(result.swa_checkpoints, "swa_checkpoints.json")
+
+            checkpoint_paths = get_checkpoint_paths(cfg_iteration, result, pseudo_label_version=iteration - 1 if iteration > 0 else None, pseudo_data_dir=pseudo_data_dir)
             print(f"\n  Teacher: {len(checkpoint_paths)} checkpoint(s)")
             for path in checkpoint_paths:
                 print(f"    {path}")
 
             if cfg_iteration.train.get("predict"):
-                save_predictions(cfg_iteration, checkpoint_paths, output_dir_iteration, tmp_dir_iteration, device, logger=logger, iteration=iteration)
+                save_predictions(cfg_iteration, checkpoint_paths, output_dir_iteration, tmp_dir_iteration, device, logger=logger)
 
             generate_pseudo_labels(cfg_iteration, checkpoint_paths, iteration, output_dir_iteration, tmp_dir_iteration, device, pseudo_data_dir, logger=logger)
             print(f"  Iteration {iteration} complete.")
 
 
-def backup_iteration_directories(output_dir, tmp_dir, iteration, checkpoint_path=None):
-    """Preserve iteration outputs and caches, relocating the teacher path if needed."""
-
-    multiple = isinstance(checkpoint_path, list)
-    paths = checkpoint_path if multiple else ([checkpoint_path] if checkpoint_path is not None else [])
-    paths = [path.resolve() for path in paths]
-
-    directories = {}
+def backup_iteration_directories(output_dir, tmp_dir, iteration, groups=None):
+    """Back up iteration folders and update the paths in each teacher group."""
+    groups = [([Path(path).resolve() for path in paths], mode, name) for paths, mode, name in (groups or [])]
 
     for root in (output_dir, tmp_dir):
+        root = Path(root).resolve()
         directory = (root / "iteration" / str(iteration)).resolve()
-        directory.relative_to(root.resolve())
-        directories[directory] = None
+        directory.relative_to(root)
 
-    for directory in directories:
-        if directory.exists():
-            backup = directory.with_name(f"{directory.name}_backup_{datetime.now():%Y%m%d_%H%M%S_%f}")
+        if not directory.exists():
+            continue
 
-            directory.rename(backup)
+        backup = directory.with_name(f"{directory.name}_backup_{datetime.now():%Y%m%d_%H%M%S_%f}")
+        directory.rename(backup)
+        for paths, _, _ in groups:
+            for index, path in enumerate(paths):
+                if path.is_relative_to(directory):
+                    paths[index] = backup / path.relative_to(directory)
+        print(f"  Backup:    {backup}")
 
-            paths = [backup / path.relative_to(directory) if path.is_relative_to(directory) else path for path in paths]
-
-            print(f"  Backup:    {backup}")
-    
-    return paths if multiple else (paths[0] if paths else None)
+    return groups
 
 
 def generate_pseudo_labels(cfg, checkpoint_paths, iteration, output_dir, tmp_dir, device, pseudo_data_dir, *, logger=None):
@@ -244,7 +248,7 @@ def generate_pseudo_labels(cfg, checkpoint_paths, iteration, output_dir, tmp_dir
         print(f"  Pseudo labels saved: {pseudo_data_dir} (version {iteration})")
 
 
-def save_predictions(cfg, checkpoint_paths, output_dir, tmp_dir, device, *, logger=None, iteration=None):
+def save_predictions(cfg, checkpoint_paths, output_dir, tmp_dir, device, *, logger=None):
         print(f"\n  Export predictions | {len(checkpoint_paths)} checkpoint(s)")
 
         logging_manager = LoggingManager(logger)
@@ -282,18 +286,89 @@ def save_predictions(cfg, checkpoint_paths, output_dir, tmp_dir, device, *, logg
             logging_manager.log_dict_once("metrics_predict", global_metrics)
 
 
-def get_checkpoint_paths(cfg, result, device, *, pseudo_label_version=None, pseudo_data_dir=None):
+def prepare_teacher_checkpoints(cfg, groups, output_dir, *, resume=False):
+    """Preserve raw catalogs and document the configured teacher combination.
+
+    Files are copied with their original names. Resume restores the exact saved
+    selection, preserving averages, raw checkpoints and catalogs together.
+    """
+
+    checkpoint_dir = Path(output_dir) / "checkpoints"
+
+    # A folder resume resolves to the exact saved ensemble, without averaging.
+    if resume:
+        paths = groups[0][0]
+        source_dir = paths[0].parent
+
+        if (source_dir / "teacher_checkpoints.json").is_file() and all(path.parent == source_dir for path in paths):
+            shutil.copytree(source_dir, checkpoint_dir)
+            selected = [checkpoint_dir / path.name for path in paths]
+
+            save_teacher_selection(selected)
+
+            return selected
+
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+
+    selected, copied = [], {}
+
+    def copy_checkpoint(path):
+        if path not in copied:
+            target = checkpoint_dir / path.name
+
+            if target.exists() or target.is_symlink():
+                raise FileExistsError(f"Cannot copy checkpoint {path}: destination already exists: {target}")
+
+            shutil.copy2(path, target)
+            copied[path] = target
+
+        return copied[path]
+
+    for paths, mode, name in groups:
+        raw_paths = [copy_checkpoint(path) for path in paths]
+
+        if name is not None:
+            save_teacher_selection(raw_paths, f"{name}_checkpoints.json")
+
+            metadata = paths[0].parent / "checkpoint_potential_maximum_k.json"
+            
+            if metadata.is_file():
+                shutil.copy2(metadata, checkpoint_dir / metadata.name)
+
+        if mode == "average":
+            filename = f"{name}_average.pt"
+
+            average_path = checkpoint_dir / filename
+
+            if average_path.exists() or average_path.is_symlink():
+                raise FileExistsError(f"Cannot save averaged checkpoint: destination already exists: {average_path}")
+
+            save_average_checkpoint(cfg, paths, average_path)
+
+            selected.append(average_path)
+        else:
+            selected.extend(raw_paths)
+
+    save_teacher_selection(selected)
+
+    return selected
+
+
+def get_checkpoint_paths(cfg, result, *, pseudo_label_version=None, pseudo_data_dir=None):
     checkpoint_paths = []
 
     # if cfg.train.teacher.use_best and result.best_checkpoint:
     #     checkpoint_paths.append(result.best_checkpoint)
 
-    if cfg.train.teacher.use_top_k and result.top_checkpoints:
+    if cfg.train.teacher.use_top_k:
+        if not result.top_checkpoints:
+            raise ValueError("Top-k teacher enabled, but no Top-k checkpoints available")
+
         match cfg.train.teacher.top_k_mode:
             case "average":
                 top_k_average_path = result.top_checkpoints[0].parent / "top_k_average.pt"
                 save_average_checkpoint(
-                    cfg, result.top_checkpoints, device=device, output_path=top_k_average_path,
+                    cfg, result.top_checkpoints, output_path=top_k_average_path,
                     pseudo_label_version=pseudo_label_version, pseudo_data_dir=pseudo_data_dir,
                 )
                 checkpoint_paths.append(top_k_average_path)
@@ -302,12 +377,15 @@ def get_checkpoint_paths(cfg, result, device, *, pseudo_label_version=None, pseu
             case _:
                 raise ValueError(f"Invalid top_k_mode: {cfg.train.teacher.top_k_mode}")
 
-    if cfg.train.teacher.use_swa and result.swa_checkpoints:
+    if cfg.train.teacher.use_swa:
+        if not result.swa_checkpoints:
+            raise ValueError("SWA teacher enabled, but no SWA checkpoints available")
+
         match cfg.train.teacher.swa_mode:
             case "average":
                 swa_average_path = result.swa_checkpoints[0].parent / "swa_average.pt"
                 save_average_checkpoint(
-                    cfg, result.swa_checkpoints, device=device, output_path=swa_average_path,
+                    cfg, result.swa_checkpoints, output_path=swa_average_path,
                     pseudo_label_version=pseudo_label_version, pseudo_data_dir=pseudo_data_dir,
                 )
                 checkpoint_paths.append(swa_average_path)
@@ -316,15 +394,19 @@ def get_checkpoint_paths(cfg, result, device, *, pseudo_label_version=None, pseu
             case _:
                 raise ValueError(f"Invalid swa_mode: {cfg.train.teacher.swa_mode}")
 
+    if not checkpoint_paths:
+        raise ValueError("No teacher checkpoints selected; enable Top-k and/or SWA")
+
     save_teacher_selection(checkpoint_paths)
+
     return checkpoint_paths
 
 
-def save_average_checkpoint(cfg, checkpoint_paths: list[Path], device, output_path: Path, *, pseudo_label_version=None, pseudo_data_dir=None,
-) -> None:
+def save_average_checkpoint(cfg, checkpoint_paths: list[Path], output_path: Path, *, pseudo_label_version=None, pseudo_data_dir=None) -> None:
     if not checkpoint_paths:
         raise ValueError("No checkpoint paths provided.")
 
+    device = get_device(cfg)
     autocast_dtype, _, model_dtype = parse_precision(cfg.train.precision)
 
     averaged_model = None

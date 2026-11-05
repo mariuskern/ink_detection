@@ -5,27 +5,47 @@ from pathlib import Path
 
 
 def _sources(source):
-    """Normalize a teacher input into a list without resolving any paths.
+    """Accept one folder/file path or an ordered list of explicit checkpoint files.
 
-    A str or Path is one source, not an iterable of characters/path parts.
-    Other inputs are converted with list(source or []), supporting ordinary
-    lists and OmegaConf ListConfig values. None or an empty input yields [].
-
-    Returns a new list retaining order and duplicates; repeated checkpoints may
-    contribute repeatedly to the existing ensemble behavior. Does not modify
-    the input, check files, or load model weights.
+    Folder lists, mixed folder/file inputs and explicit JSON manifests are not
+    supported. Different checkpoint files must have distinct resolved filenames.
+    Concrete checkpoint lists retain their order and repeated paths.
+    File existence is validated by the resolver, not by this normalization.
     """
 
-    return [source] if isinstance(source, (str, Path)) else list(source or [])
+    single = isinstance(source, (str, Path))
+    values = [source] if single else list(source or [])
+    extensions = {".pt", ".pth", ".ckpt"}
+    filenames = {}
+
+    for value in values:
+        if not isinstance(value, (str, Path)):
+            raise ValueError("teacher_checkpoint must be one folder path or explicit checkpoint file(s)")
+        
+        path = Path(value)
+
+        if not single and (path.is_dir() or path.suffix not in extensions):
+            raise ValueError("teacher_checkpoint lists must contain only .pt/.pth/.ckpt files; give a single folder as a scalar path")
+        
+        if single and not path.is_dir() and (path.is_file() or path.suffix == ".json") and path.suffix not in extensions:
+            raise ValueError("teacher_checkpoint must be one folder path or explicit .pt/.pth/.ckpt file(s), not a JSON manifest")
+
+        resolved = path.resolve()
+        previous = filenames.setdefault(resolved.name, resolved)
+        if previous != resolved:
+            raise ValueError(f"teacher_checkpoint files must have distinct filenames: {previous} and {resolved}")
+        
+    return values
 
 
-def checkpoint_directory(source, start_iteration):
+def checkpoint_directory(source, start_iteration=None):
     """Locate a checkpoint directory from one teacher source.
 
     Args:
         source: File path, checkpoint directory, iteration directory, or run.
         start_iteration: First iteration to train; a run selects the previous
-            iteration, start_iteration - 1.
+            iteration, start_iteration - 1. Optional for direct file,
+            checkpoint-directory or iteration-directory inputs.
 
     Resolve source to an absolute Path, then apply these rules in order:
     1. An existing file or .pt/.pth/.ckpt suffix selects its parent directory.
@@ -36,7 +56,7 @@ def checkpoint_directory(source, start_iteration):
     Example: a run source with start_iteration=3 selects iteration/2/checkpoints.
     Direct iteration/checkpoint input is not checked against start_iteration.
     Returns a Path without creating files. A recognized file suffix permits
-    inference for a missing file; resolve_teacher_checkpoints later validates
+    inference for a missing file; resolve_teacher_checkpoint_groups later validates
     actual existence. This helper alone does not guarantee a valid source.
     """
 
@@ -48,6 +68,12 @@ def checkpoint_directory(source, start_iteration):
     if (path / "checkpoints").is_dir():
         return path / "checkpoints"
     
+    if start_iteration is None:
+        if (path / "iteration").is_dir():
+            raise ValueError("start_iteration is required when source is a run directory")
+        
+        return path
+
     candidate = path / "iteration" / str(start_iteration - 1) / "checkpoints"
 
     return candidate if candidate.is_dir() else path
@@ -89,13 +115,14 @@ def teacher_run_directory(source, start_iteration):
     return roots.pop()
 
 
-def _folder_checkpoints(directory):
+def _folder_checkpoints(directory, filename="teacher_checkpoints.json"):
     """Read the exact teacher selection from a checkpoint folder's manifest.
 
     Args:
         directory: Checkpoint directory Path, already located by the caller.
+        filename: JSON file list relative to directory.
 
-    Require teacher_checkpoints.json containing a nonempty list of strings.
+    Require the named manifest containing a nonempty list of strings.
     Resolve entries relative to directory and reject paths escaping it.
     Retain order and duplicates; do not infer selection from filenames or
     current Top-K/SWA settings, even when average files are present.
@@ -106,10 +133,10 @@ def _folder_checkpoints(directory):
     File-read errors propagate. No weights are loaded and no files are changed.
     """
 
-    manifest = directory / "teacher_checkpoints.json"
+    manifest = directory / filename
 
     if not manifest.is_file():
-        raise ValueError(f"{directory} has no teacher_checkpoints.json. Provide an explicit checkpoint file or an explicit checkpoint list for legacy runs.")
+        raise ValueError(f"{directory} has no {filename}. Provide an explicit checkpoint file or an explicit checkpoint list for legacy runs.")
 
     names = json.loads(manifest.read_text(encoding="utf-8"))
 
@@ -127,54 +154,84 @@ def _folder_checkpoints(directory):
     return paths
 
 
-def resolve_teacher_checkpoints(source, start_iteration):
-    """Expand teacher inputs into a validated ordered list of checkpoint Paths.
+def resolve_teacher_checkpoint_groups(source, start_iteration=None, teacher=None, checkpoint=None, *, resume=False):
+    """Restore saved teachers on resume or select catalogs for a new run.
 
-    Args:
-        source: One file/folder or a sequence, including OmegaConf ListConfig.
-        start_iteration: Previous-iteration selection for source run folders.
-        teacher: Optional legacy argument, retained for caller compatibility.
-            Not used: folders must provide an exact saved manifest.
-
-    Explicit existing files are used directly, independently of group settings.
-    Directories are located by checkpoint_directory and expanded through
-    _folder_checkpoints. Mixed file/folder inputs are concatenated in input
-    order; duplicates are deliberately retained. No common run is required
-    unless a separate caller requests run-folder inference.
-
-    Returns absolute Paths after verifying every selected entry is a file.
-    Raises FileNotFoundError for a missing source or selected checkpoint, and
-    ValueError for empty selections or missing/invalid folder manifests.
-    Does not mutate cfg, write files, average weights, or initialize students;
-    the prediction code consumes the returned teacher ensemble later.
+    Resume reads teacher_checkpoints.json exactly, including saved averages.
+    New runs use teacher flags, counts and modes to select Top-k/SWA catalogs;
+    an existing teacher_checkpoints.json does not constrain their selection.
+    Explicit checkpoint files are used directly in either mode.
+    start_iteration is required only to select an iteration from a run directory.
+    Fewer than k checkpoints require availability metadata proving an early
+    training end (Top-k) or an early best epoch (SWA).
+    save_top_k=-1 requires metadata confirming the Top-k catalog is complete.
+    Groups contain (paths, mode, catalog name); exact selections have no name.
     """
 
-    paths = []
+    paths = [Path(value).resolve() for value in _sources(source)]
 
-    for item in _sources(source):
-        path = Path(item).resolve()
+    groups = []
 
-        if path.is_file():
-            paths.append(path)
-        elif path.is_dir():
-            paths.extend(_folder_checkpoints(checkpoint_directory(path, start_iteration)))
+    if len(paths) == 1 and paths[0].is_dir():
+        directory = checkpoint_directory(paths[0], start_iteration)
+
+        if resume or teacher is None:
+            groups.append((_folder_checkpoints(directory), "individual", None))
         else:
-            raise FileNotFoundError(f"Teacher checkpoint or directory not found: {path}")
+            settings = (("top_k", "use_top_k", "save_top_k", "top_k_mode"), ("swa", "use_swa", "swa_save_k", "swa_mode"))
+
+            for name, enabled, count_key, mode_key in settings:
+                if not getattr(teacher, enabled, False):
+                    continue
+
+                count = getattr(checkpoint, count_key, None)
+
+                if not isinstance(count, int) or count == 0 or count < -1 or (name == "swa" and count == -1):
+                    raise ValueError(f"{count_key} must be positive for {name} (save_top_k=-1 selects all)")
+                
+                mode = getattr(teacher, mode_key, "individual")
+
+                if mode not in {"individual", "average"}:
+                    raise ValueError(f"Invalid {mode_key}: {mode}")
+
+                selected = _folder_checkpoints(directory, f"{name}_checkpoints.json")
+
+                if count == -1 or len(selected) < count:
+                    metadata = directory / "checkpoint_potential_maximum_k.json"
+                    availability = json.loads(metadata.read_text(encoding="utf-8")) if metadata.is_file() else {}
+                    available = availability.get(name) if isinstance(availability, dict) else None
+
+                    # Selecting all or fewer than k requires a complete catalog.
+                    if type(available) is not int or available != len(selected):
+                        if count == -1:
+                            raise ValueError(f"Requested top_k=-1 (all checkpoints), but {directory} lists {len(selected)} checkpoints without checkpoint_potential_maximum_k.json confirming a complete Top-k catalog. Provide a complete catalog or request a finite save_top_k.")
+                        
+                        raise ValueError(f"Requested {name}={count}, but only {len(selected)} checkpoints are listed in {directory}. Fewer checkpoints are allowed only when checkpoint_potential_maximum_k.json confirms an early training end (Top-k) or an early best epoch (SWA).")
+
+                if count != -1:
+                    selected = selected[:count] if name == "top_k" else selected[-count:]
+                
+                groups.append((selected, mode, name))
+    elif paths:
+        # Explicit files are one fixed ensemble, independent of Top-k/SWA settings.
+        groups.append((paths, "individual", None))
+
+    paths = [path for selected, _, _ in groups for path in selected]
 
     if not paths:
-        raise ValueError("No teacher checkpoints selected")
-    
+        raise ValueError("No teacher checkpoints selected; enable Top-k and/or SWA for baseline folders")
+
     for path in paths:
         if not path.is_file():
             raise FileNotFoundError(f"Teacher checkpoint not found: {path}")
-        
-    return paths
+    return groups
 
 
-def save_teacher_selection(paths):
-    """Write the exact selected ensemble to teacher_checkpoints.json.
+def save_teacher_selection(paths, filename="teacher_checkpoints.json"):
+    """Write selected checkpoint paths to a named JSON manifest.
 
     Args:
+        filename: Manifest filename; defaults to the exact teacher selection.
         paths: Ordered checkpoint Paths. The first checkpoint's parent is the
             destination directory; every path must be relative to that parent.
 
@@ -187,8 +244,9 @@ def save_teacher_selection(paths):
     directory and return None. Does not create folders or verify file existence.
     Paths outside the first parent raise ValueError; write errors propagate.
     """
-    
+
     if paths:
         directory = paths[0].parent
         names = [str(path.relative_to(directory)) for path in paths]
-        (directory / "teacher_checkpoints.json").write_text(json.dumps(names, indent=2), encoding="utf-8")
+        
+        (directory / filename).write_text(json.dumps(names, indent=2), encoding="utf-8")

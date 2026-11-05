@@ -4,13 +4,13 @@ defaults:
   - data/dataloader@dataloader: debug
   - model: unetrpp_large # timesformer unetrpp vesuvius_unet vesuvius_resnet3d
   - loss: dice_bce
-  - path: local
+  - path: alex
   - wandb: debug
   - train: noisy_student_debug # supervised_debug noisy_student_debug noisy_student_debug_resnet3d noisy_student_debug_unet unimatch_debug
   - _self_
 
 experiment:
-  name: ${now:%Y-%m-%d_%H-%M-%S}_${oc.env:SLURM_JOB_ID,local}
+  name: ${now:%Y-%m-%d_%H-%M-%S}_${oc.env:SLURM_JOB_ID,local}_debug
   jobid: ${oc.env:SLURM_JOB_ID,none}
 
 hydra:

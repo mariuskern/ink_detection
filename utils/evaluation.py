@@ -8,7 +8,8 @@ COUNT_METRICS = ("tp", "fp", "tn", "fn")
 def calculate_metrics(logits, target, valid_mask, threshold=0.5):
     """Keep existing (possibly soft) scores; counts use target >= 0.5 and mask > 0."""
 
-    prediction = torch.sigmoid(logits) >= threshold
+    # prediction = torch.sigmoid(logits) >= threshold
+    prediction = torch.sigmoid(logits.float()) >= threshold
     positive = target >= 0.5
     valid = valid_mask > 0
 
@@ -31,7 +32,8 @@ def calculate_metrics(logits, target, valid_mask, threshold=0.5):
 
 
 def calculate_dice(logits, target, valid_mask, threshold=0.5):
-    prediction = (torch.sigmoid(logits) >= threshold).to(target.dtype) * valid_mask
+    # prediction = (torch.sigmoid(logits.float()) >= threshold).to(target.dtype) * valid_mask
+    prediction = (torch.sigmoid(logits.float()) >= threshold).to(target.dtype) * valid_mask
     target = target * valid_mask
 
     intersection = (prediction * target).sum()
@@ -41,7 +43,8 @@ def calculate_dice(logits, target, valid_mask, threshold=0.5):
 
 
 def calculate_iou(logits, target, valid_mask, threshold=0.5):
-    prediction = (torch.sigmoid(logits) >= threshold).to(target.dtype) * valid_mask
+    # prediction = (torch.sigmoid(logits) >= threshold).to(target.dtype) * valid_mask
+    prediction = (torch.sigmoid(logits.float()) >= threshold).to(target.dtype) * valid_mask
     target = target * valid_mask
 
     intersection = (prediction * target).sum()
@@ -54,7 +57,8 @@ def calculate_iou(logits, target, valid_mask, threshold=0.5):
 def calculate_precision_recall_f(logits, target, valid_mask, threshold=0.5, eps=1e-6):
     """Return masked Precision, Recall, F0.5, F1.5 and F2."""
 
-    prediction = (torch.sigmoid(logits) >= threshold).to(target.dtype)
+    # prediction = (torch.sigmoid(logits) >= threshold).to(target.dtype)
+    prediction = (torch.sigmoid(logits.float()) >= threshold).to(target.dtype)
 
     prediction = prediction * valid_mask
     target = target * valid_mask

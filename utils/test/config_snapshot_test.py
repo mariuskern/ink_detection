@@ -310,7 +310,7 @@ class ConfigSnapshotTests(unittest.TestCase):
 
             self.assertEqual(next(Path(folder).glob(".hydra_backup_*/overrides.yaml")).read_text(), "- model.width=8\n")
 
-    def test_resolved_snapshot_detects_changed_environment(self):
+    def test_resolved_snapshot_allows_changed_staging_directory(self):
         with TemporaryDirectory() as folder:
             hydra_cfg = OmegaConf.create({"runtime": {"output_dir": folder}, "overrides": {"task": []}})
             cfg = OmegaConf.create({"train": {"start_iteration": 0}, "path": {"data_dir": "${oc.env:SNAPSHOT_TEST_DATA}"}})
@@ -321,9 +321,32 @@ class ConfigSnapshotTests(unittest.TestCase):
             cfg.train.start_iteration = 2
             cfg.train.resume_output_dir = folder
 
+            # Slurm stages the same data into a different TMPDIR on each job.
             with patch.dict(os.environ, SNAPSHOT_TEST_DATA="new_data"):
-                with self.assertRaisesRegex(ValueError, "path.data_dir"):
+                save_training_config(cfg, hydra_cfg)
+
+            current = OmegaConf.load(Path(folder) / ".hydra/config.resolved.yaml")
+            backup = next(Path(folder).glob(".hydra_backup_*/config.resolved.yaml"))
+            self.assertEqual(current.path.data_dir, "new_data")
+            self.assertEqual(OmegaConf.load(backup).path.data_dir, "old_data")
+
+    def test_resolved_snapshot_detects_changed_training_environment(self):
+        with TemporaryDirectory() as folder:
+            hydra_cfg = OmegaConf.create({"runtime": {"output_dir": folder}, "overrides": {"task": []}})
+            cfg = OmegaConf.create({"train": {"start_iteration": 0, "lr": "${oc.env:SNAPSHOT_TEST_LR}"}})
+
+            with patch.dict(os.environ, SNAPSHOT_TEST_LR="0.0001"):
+                save_training_config(cfg, hydra_cfg)
+
+            cfg.train.start_iteration = 2
+            cfg.train.resume_output_dir = folder
+
+            with patch.dict(os.environ, SNAPSHOT_TEST_LR="0.001"):
+                with self.assertRaisesRegex(ValueError, "train.lr"):
                     save_training_config(cfg, hydra_cfg)
+
+            saved = OmegaConf.load(Path(folder) / ".hydra/config.resolved.yaml")
+            self.assertEqual(saved.train.lr, "0.0001")
 
     def test_real_hydra_startup_does_not_overwrite_old_config(self):
         with TemporaryDirectory() as folder:

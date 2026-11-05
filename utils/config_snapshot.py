@@ -78,7 +78,7 @@ def prepare_teacher_source(cfg):
 
     Example: start_iteration=3, teacher_checkpoint="auto", and
     resume_output_dir="outputs/old_run" replaces teacher_checkpoint with
-    "outputs/old_run". Later, resolve_teacher_checkpoints selects the teacher
+    "outputs/old_run". Later, resolve_teacher_checkpoint_groups selects the teacher
     files from iteration 2. This function does not select or load any weights.
 
     At iteration 0, automatic teacher input becomes None for a fresh start.

@@ -2,6 +2,7 @@ from pathlib import Path
 
 from data.builder import validate_training_data
 from .utils import fit
+from utils.teacher_checkpoints import save_teacher_selection
 
 
 def train_supervised(cfg, logger=None):
@@ -18,7 +19,7 @@ def train_supervised(cfg, logger=None):
 
     output_dir = Path(cfg.path.output_dir)
 
-    return fit(
+    result = fit(
         cfg,
         logger,
         output_dir,
@@ -26,6 +27,12 @@ def train_supervised(cfg, logger=None):
         pseudo_label_version=pseudo_label_version,
         pseudo_data_dir=pseudo_data_dir,
     )
+
+    # Preserve both raw checkpoint sets for later ablations.
+    save_teacher_selection(result.top_checkpoints, "top_k_checkpoints.json")
+    save_teacher_selection(result.swa_checkpoints, "swa_checkpoints.json")
+
+    return result
 
 
 

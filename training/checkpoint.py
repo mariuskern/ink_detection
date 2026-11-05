@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import operator
 from pathlib import Path
 
@@ -113,6 +114,8 @@ class CheckpointManager:
 
         self._best_score: float | None = None
         self._best_path: Path | None = None
+        self._checkpoint_count = 0
+        self._swa_checkpoint_count = 0
 
     def step(
         self,
@@ -191,6 +194,8 @@ class CheckpointManager:
             return
 
         score = float(score)
+        # Count eligible validation epochs even when top-k is already full.
+        self._checkpoint_count += 1
 
         # filename = self.filename_template.format(epoch=epoch, val_loss=score) + ".ckpt"
         filename = self.filename_template.format(epoch=epoch, val_loss=score) + ".pt"
@@ -253,6 +258,7 @@ class CheckpointManager:
                 #             old_path.unlink()
                 paths_to_delete.extend(path for _, path in self._swa_checkpoints)
                 self._swa_checkpoints = self._checkpoint_history.copy()
+                self._swa_checkpoint_count = self._checkpoint_count
 
         # --------------------------------------------------------------
         # Add to top-k
@@ -284,7 +290,7 @@ class CheckpointManager:
 
     def clear(self) -> None:
         """
-        Delete all checkpoints not referenced by top-k or SWA
+        Delete unused checkpoints and record how many were available per set.
         """
 
         checkpoints_to_delete = self._checkpoint_history.copy()
@@ -294,6 +300,15 @@ class CheckpointManager:
             if not self._is_path_referenced(path):
                 if path.exists():
                     path.unlink()
+
+        # Distinguish an early selection from a catalog truncated by retention.
+        (self.dirpath / "checkpoint_potential_maximum_k.json").write_text(
+            json.dumps({
+                "top_k": self._checkpoint_count,
+                "swa": self._swa_checkpoint_count
+            }, indent=2),
+            encoding="utf-8"
+        )
 
     # ------------------------------------------------------------------
     # Properties
