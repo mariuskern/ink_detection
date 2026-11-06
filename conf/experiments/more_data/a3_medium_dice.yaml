@@ -1,0 +1,13 @@
+# @package _global_
+
+defaults:
+  - a3_medium_base
+  - _self_
+
+experiment:
+  checkpoint_selection: dice
+
+train:
+  checkpoint:
+    monitor: metrics_val/dice
+    mode: max
