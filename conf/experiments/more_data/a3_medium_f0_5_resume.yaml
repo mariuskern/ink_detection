@@ -1,0 +1,14 @@
+# @package _global_
+
+defaults:
+  - a3_medium_f0_5
+  - _self_
+
+# Continue after completed iterations 0..4 with five more iterations (5..9).
+# Reuse the saved teacher selection from iteration 4 and the existing W&B run.
+train:
+  iterations: 10
+  start_iteration: 5
+  teacher_checkpoint: auto
+  resume_output_dir: outputs_ws/experiments/more_data/a3_medium_f0_5_more_data_seed_42_20261107_161343_471679_4933467_task_none
+  resume_run: auto
