@@ -1,0 +1,23 @@
+# @package _global_
+
+# A4-low with the shared more_data splits and separate experiment outputs.
+# Train the initial S teacher on the shared data at iteration 0, then run
+# the five A4 student iterations with the inherited M -> L schedule.
+
+defaults:
+- /ablation/a/a4_low
+- data
+- _self_
+dataloader:
+  num_workers: 8
+train:
+  start_iteration: 0
+  teacher_checkpoint: null
+path:
+  tmp_dir: ${oc.env:TMP_DIR}/experiments/more_data/${experiment.name}
+  output_dir: ${training_output_dir:${oc.select:train.resume_output_dir,null},${oc.env:OUTPUT_DIR}/experiments/more_data/${experiment.name},${oc.select:train.teacher_checkpoint,null},${oc.select:train.start_iteration,0}}
+wandb:
+  project: ink_more_data
+experiment:
+  checkpoint_selection: dice
+  name: a4_low_${experiment.checkpoint_selection}_more_data_seed_${train.seed}_${now:%Y%m%d_%H%M%S_%f}_${oc.env:SLURM_JOB_ID,local}_task_${oc.env:SLURM_ARRAY_TASK_ID,none}
