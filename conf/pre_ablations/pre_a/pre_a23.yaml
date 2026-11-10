@@ -6,9 +6,9 @@ defaults:
 
 train:
   model_schedule:
-    - /ablation/pre_a/unetrpp_small
-    - /ablation/pre_a/unetrpp_medium
-    - /ablation/pre_a/unetrpp_large
+    - /pre_ablations/pre_a/unetrpp_small
+    - /pre_ablations/pre_a/unetrpp_medium
+    - /pre_ablations/pre_a/unetrpp_large
   mask_refinement:
     enabled: true
     margin_factor: 0.25

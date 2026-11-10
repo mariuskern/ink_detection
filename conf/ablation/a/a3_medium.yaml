@@ -2,8 +2,8 @@
 
 defaults:
   - noisy_student
-  - model_large_medium@model
-  - input_noise_medium@train.student.aug
+  - /ablation/common/model_large_medium@model
+  - /ablation/common/input_noise_medium@train.student.aug
   - _self_
 
 ablation:

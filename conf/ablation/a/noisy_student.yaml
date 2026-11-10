@@ -2,42 +2,11 @@
 
 defaults:
   - base
+  - /ablation/common/noisy_student
   - _self_
 
 path:
   output_dir: ${training_output_dir:${oc.select:train.resume_output_dir,null},${oc.env:OUTPUT_DIR}/ablation_a/noisy_student/${ablation.id}_${ablation.noise}/seed_${train.seed}_time_${now:%Y%m%d_%H%M%S_%f}_job_id_${oc.env:SLURM_JOB_ID,local}_task_${oc.env:SLURM_ARRAY_TASK_ID,none},${oc.select:train.teacher_checkpoint,null},${oc.select:train.start_iteration,0}}
-  # tmp_dir: ${oc.env:TMP_DIR}/ablation_a/noisy_student/${ablation.id}_${ablation.noise}/seed_${train.seed}_time_${now:%Y%m%d_%H%M%S_%f}_job_id_${oc.env:SLURM_JOB_ID,local}_task_${oc.env:SLURM_ARRAY_TASK_ID,none}
 
 ablation:
   teacher_root: ${oc.env:OUTPUT_DIR}/ablation_a/supervised
-
-train:
-  teacher:
-    tta_num: 1
-    use_top_k: true
-    top_k_mode: individual
-    use_swa: false
-    swa_mode: average
-    aug:
-      variants: []
-  refinement:
-    name: base
-    debug: false
-    steps:
-      - name: threshold
-        threshold: 0.5
-
-      - name: confidence_mask
-        threshold: 0.8
-        update_label: true
-
-      - name: uncertainty_mask
-        threshold: 0.15
-        update_label: true
-  name: noisy_student
-  iterations: 6
-  model_schedule: null
-  start_iteration: 1
-  teacher_checkpoint: ${ablation.teacher_root}/${ablation.baseline_id}_${ablation.noise}/seed_${train.seed}/checkpoints
-  resume_output_dir: auto
-  resume_run: auto

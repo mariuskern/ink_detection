@@ -6,9 +6,9 @@ defaults:
 
 train:
   model_schedule:
-    - /ablation/pre_c/unetrpp_small
-    - /ablation/pre_c/unetrpp_medium
-    - /ablation/pre_c/unetrpp_large
+    - /pre_ablations/pre_c/unetrpp_small
+    - /pre_ablations/pre_c/unetrpp_medium
+    - /pre_ablations/pre_c/unetrpp_large
 
 experiment:
   name: pre_c39_increasing_model_size_seed_${train.seed}_${oc.env:SLURM_JOB_ID,local}

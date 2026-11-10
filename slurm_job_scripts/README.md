@@ -87,8 +87,9 @@ must use isolated data storage; see the repository's main README.
 
 ## Submit numbered experiments, skipping missing configs
 
+Pre-ablation configs live under `conf/pre_ablations/`, outside `conf/ablation/`.
 Check run numbers 1 through 60 and skip missing YAML files. Change `series`
-and the range to reuse the loop for another ablation.
+and the range to reuse the loop for another pre-ablation.
 Job names follow the config names (`pre_b1`, `pre_b5`, etc.):
 
 ```bash
@@ -96,7 +97,7 @@ mkdir -p logs
 series="pre_b"
 for i in {1..60}; do
     config="${series}${i}"
-    config_path="ablation/${series}/${config}"
+    config_path="pre_ablations/${series}/${config}"
     [[ -f "conf/${config_path}.yaml" ]] || continue
     sbatch --job-name="$config" slurm_job_scripts/train.sbatch "$config_path"
 done
@@ -109,7 +110,7 @@ mkdir -p logs
 series="pre_b"
 for i in {1..60}; do
     config="${series}${i}"
-    config_path="ablation/${series}/${config}"
+    config_path="pre_ablations/${series}/${config}"
     [[ -f "conf/${config_path}.yaml" ]] || continue
     sbatch --job-name="${config}_seeds" slurm_job_scripts/train_array.sbatch "$config_path"
 done

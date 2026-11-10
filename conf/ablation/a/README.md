@@ -15,6 +15,13 @@ The six iterations comprise the supervised baseline at iteration 0 and five stud
 iterations (1–5). Noisy Student starts at iteration 1 using the matching baseline's size, noise,
 and seed. There are 45 baseline runs and 30 Noisy Student runs.
 
+Model and input-noise presets, shared training defaults, and shared Noisy Student
+settings live in `../common/`. A and B import the shared model and input-noise
+presets directly. Local `base.yaml` and `noisy_student.yaml` inherit the common
+configs and contain only A-specific paths and the W&B project.
+A4 model schedules also use `/ablation/common/model_<size>_<noise>`
+paths. Model-field overrides such as `model.attention_dropout_rate=0.1` still apply.
+
 ## Defaults
 
 - Frozen pre_a–pre_c settings and data splits: 3 labeled, 7 unlabeled, 3 validation segments.

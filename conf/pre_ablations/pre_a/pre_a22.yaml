@@ -7,9 +7,9 @@ defaults:
 
 train:
   model_schedule:
-    - /ablation/pre_a/unetrpp_small_more_noise
-    - /ablation/pre_a/unetrpp_medium_more_noise
-    - /ablation/pre_a/unetrpp_large_more_noise
+    - /pre_ablations/pre_a/unetrpp_small_more_noise
+    - /pre_ablations/pre_a/unetrpp_medium_more_noise
+    - /pre_ablations/pre_a/unetrpp_large_more_noise
 
 experiment:
   name: pre_a22_top1_increasing_model_size_more_model_noise_seed_${train.seed}_${oc.env:SLURM_JOB_ID,local}

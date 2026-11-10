@@ -2,8 +2,8 @@
 
 defaults:
   - supervised
-  - model_small_low@model
-  - input_noise_low@train.aug
+  - /ablation/common/model_small_low@model
+  - /ablation/common/input_noise_low@train.aug
   - _self_
 
 ablation:
