@@ -33,3 +33,4 @@ regex
 opencv-python
 # dask[array]
 # dask-image
+pandas
