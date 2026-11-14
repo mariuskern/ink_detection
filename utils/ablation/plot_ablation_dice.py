@@ -6,6 +6,9 @@ Usage:
     python plot_wandb_dice.py wandb_export.csv --epochs-per-iteration 50 --save dice.png
 
 Requires: pandas, numpy, matplotlib
+
+Missing or incomplete iterations carry forward the last complete iteration's
+value and are marked with an x. Leading missing iterations remain empty.
 """
 
 import argparse
@@ -17,15 +20,16 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from matplotlib.patches import Patch
+from matplotlib.lines import Line2D
 
 
 # ============================================================================
 # Constants
 # ============================================================================
 
-# Example: a4_high_seed_4042_20261108_... - metrics_val/dice
+# Example: b4_high_seed_4042_20261113_... - metrics_val/dice
 DICE_COLUMN_RE = re.compile(
-    r"^(?P<id>a\d+)_(?P<noise>low|medium|high)_seed_(?P<seed>\d+)_.* - metrics_val/dice$"
+    r"^(?P<id>[ab]\d+)_(?P<noise>low|medium|high)_seed_(?P<seed>\d+)_.* - metrics_val/dice$"
 )
 NOISE_ORDER = ("low", "medium", "high")
 NOISE_LIGHTNESS = {"low": 0.75, "medium": 0.50, "high": 0.30}
@@ -133,6 +137,21 @@ def read_grouped_metrics(csv_path, epochs_per_iteration):
             "alle 50 Validation-Epochen je Iteration enthält."
         )
 
+    # Use the shared CSV horizon, including iterations absent from shorter runs.
+    last_iteration = max(int(step // epochs_per_iteration) + 1 for step in df.index if step >= 0)
+    for result in results.values():
+        per_iteration = result["per_iteration"]
+        carried_iterations = []
+        previous = None
+        for iteration in range(1, last_iteration + 1):
+            if iteration in per_iteration:
+                previous = per_iteration[iteration]
+            elif previous is not None:
+                per_iteration[iteration] = previous
+                carried_iterations.append(iteration)
+        result["per_iteration"] = dict(sorted(per_iteration.items()))
+        result["carried_iterations"] = carried_iterations
+
     return results
 
 
@@ -169,6 +188,7 @@ def plot_results(results, save_path=None):
 
     for (ablation_id, noise), result in results.items():
         per_iteration = result["per_iteration"]
+        carried = set(result.get("carried_iterations", []))
 
         ax1.plot(
             list(per_iteration),
@@ -177,15 +197,30 @@ def plot_results(results, save_path=None):
             color=colors[(ablation_id, noise)],
             linestyle=line_styles.get(ablation_id, "-"),
             marker="o",
+            markevery=[index for index, iteration in enumerate(per_iteration) if iteration not in carried],
             markersize=4,
         )
+        if carried:
+            ax1.plot(
+                sorted(carried),
+                [per_iteration[iteration] for iteration in sorted(carried)],
+                color=colors[(ablation_id, noise)],
+                linestyle="none",
+                marker="x",
+                markersize=7,
+                markeredgewidth=1.5,
+            )
 
     ax1.set_title("Best mean Dice per NST iteration")
     ax1.set_xlabel("NST iteration")
     ax1.set_ylabel("Dice")
     ax1.set_xticks(sorted({i for r in results.values() for i in r["per_iteration"]}))
     ax1.grid(alpha=0.3)
-    ax1.legend(fontsize=8, loc="best", ncol=2)
+    handles, labels = ax1.get_legend_handles_labels()
+    if any(r.get("carried_iterations") for r in results.values()):
+        handles.append(Line2D([], [], color="black", marker="x", linestyle="none", markersize=7))
+        labels.append("Carried forward (missing/incomplete iteration)")
+    ax1.legend(handles, labels, fontsize=8, loc="best", ncol=2)
 
     # ------------------------------------------------------------------------
     # Best mean Dice across all NST iterations
@@ -265,7 +300,8 @@ def main():
     for (ablation_id, noise), result in results.items():
         print(
             f"{ablation_id + ' / ' + noise:<19} {len(result['seeds']):>2}"
-            f" {len(result['per_iteration']):>11}  {result['best_overall']:.6f}"
+            f" {len(result['per_iteration']) - len(result['carried_iterations']):>11}  {result['best_overall']:.6f}"
+            f"  (+{len(result['carried_iterations'])} fortgeschrieben)"
         )
 
     # ------------------------------------------------------------------------
