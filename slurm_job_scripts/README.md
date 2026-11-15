@@ -12,7 +12,7 @@ mkdir -p logs
 Pass a config path relative to `conf/`, without the `.yaml` extension:
 
 ```bash
-sbatch slurm_job_scripts/train.sbatch ablation/a1
+sbatch slurm_job_scripts/train.sbatch ablation/a/a1_medium
 ```
 
 Without a config argument, `train.sbatch` uses `config`. Each job stages the
@@ -25,7 +25,7 @@ Use `--job-name` (or `-J`) before the script path to override the script's
 default Slurm job name:
 
 ```bash
-sbatch --job-name=a1 slurm_job_scripts/train.sbatch ablation/a1
+sbatch --job-name=a1_medium slurm_job_scripts/train.sbatch ablation/a/a1_medium
 ```
 
 The name appears in the queue and log filenames:
@@ -34,21 +34,21 @@ config or `experiment.name`.
 
 ## Multiple jobs in a loop
 
-Submit a consecutive range of configs. Bash includes both endpoints:
-`{1..5}` submits configs 1, 2, 3, 4, and 5; use `{1..4}` to stop at 4.
+Submit a consecutive range of supervised baseline configs. Bash includes
+both endpoints: `{0..2}` submits A0, A1, and A2 at medium noise.
 
 ```bash
-for i in {1..5}; do
-    config="a${i}"
-    sbatch --job-name="$config" slurm_job_scripts/train.sbatch "ablation/$config"
+for i in {0..2}; do
+    config="a${i}_medium"
+    sbatch --job-name="$config" slurm_job_scripts/train.sbatch "ablation/a/$config"
 done
 ```
 
 Or submit an explicit list:
 
 ```bash
-for config in a1 a2 a3 a4 a5; do
-    sbatch --job-name="$config" slurm_job_scripts/train.sbatch "ablation/$config"
+for config in a0_medium a1_medium a2_medium; do
+    sbatch --job-name="$config" slurm_job_scripts/train.sbatch "ablation/a/$config"
 done
 ```
 
@@ -59,7 +59,7 @@ resources and account limits.
 ## Five training runs as an array
 
 ```bash
-sbatch --job-name=a1_seeds slurm_job_scripts/train_array.sbatch ablation/a1
+sbatch --job-name=a1_medium_seeds slurm_job_scripts/train_array.sbatch ablation/a/a1_medium
 ```
 
 The array submits five independent runs of the same config, with seeds
@@ -71,19 +71,20 @@ Only `train.seed` is overridden.
 To submit five runs for each of several configs:
 
 ```bash
-for config in a1 a2 a3 a4 a5; do
-    sbatch --job-name="${config}_seeds" slurm_job_scripts/train_array.sbatch "ablation/$config"
+for config in a0_medium a1_medium a2_medium; do
+    sbatch --job-name="${config}_seeds" slurm_job_scripts/train_array.sbatch "ablation/a/$config"
 done
 ```
 
 The concurrency limit applies separately to each array; this example submits
-25 tasks in total, with up to 25 able to run concurrently.
+15 tasks in total, with up to 15 able to run concurrently.
 
 Include `${train.seed}` and `${oc.env:SLURM_JOB_ID,local}` in
 `experiment.name` for unique run names. For fresh Noisy Student runs, use
 `start_iteration: 0`, `resume_output_dir: auto`, and `resume_run: auto` under
 `train`. Concurrent experiments that write the same pseudo-label versions
-must use isolated data storage; see the repository's main README.
+must use isolated data storage; see the
+[training reference](../conf/README.md#noisy-student-training).
 
 ## Submit numbered experiments, skipping missing configs
 
@@ -131,7 +132,8 @@ The concurrency limit applies separately to each array.
 
 ```bash
 squeue -u "$USER"
-scancel <job-id>
+scancel JOB_ID
 ```
 
+Replace `JOB_ID` with the job number to cancel.
 For an array, cancelling its array job ID cancels all its tasks.

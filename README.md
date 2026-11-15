@@ -1,234 +1,175 @@
-# ink_detection
+# Ink Detection for Ancient Scrolls
 
-## Conda
+A deep learning research pipeline for detecting ink in volumetric scans of
+ancient scrolls, developed as part of a Master's thesis using Vesuvius Challenge
+data. Given a stack of image slices around a scroll surface, the model predicts
+a two-dimensional map of where ink is likely to be present.
 
-Create conda environmen
+The central question is how to make use of large amounts of **unlabeled scan
+data** when manually annotated ink examples are limited. This repository
+implements supervised baselines and **Noisy Student training**, an iterative
+method that uses model-generated labels to learn from additional data.
+
+## How it works
+
+```mermaid
+flowchart LR
+    A[Scroll image slices] --> B[Overlapping 3D tiles]
+    B --> C[Ink segmentation model]
+    C --> D[Merged 2D ink probability map]
 ```
+
+Each input tile contains both a small surface region and several slices in
+depth. The model uses this depth information to predict an ink probability
+for each surface pixel. Predictions from overlapping tiles are merged into a
+map for the full segment, making it possible to process scans larger than GPU
+memory.
+
+Noisy Student training extends this process:
+
+1. Train a **teacher** model on manually labeled segments.
+2. Use the teacher to generate **pseudo-labels**: predicted ink maps for
+   unlabeled segments. Confidence and uncertainty filters select usable regions.
+3. Train a new **student** on manual labels and pseudo-labels, with input
+   augmentation and model noise such as dropout.
+4. Use the student as the next teacher and repeat. The model can grow between
+   iterations, and multiple teacher checkpoints can be combined.
+
+Validation compares predictions with manual annotations using Dice, IoU,
+precision, recall, and F-scores. Dice and IoU measure how closely the predicted
+ink regions overlap the annotations.
+
+## What the repository includes
+
+- **Training and model comparison:** supervised and Noisy Student workflows,
+  an adapted UNETR++ architecture, Vesuvius U-Net and ResNet3D models, and a
+  TimeSformer option.
+- **Large-volume data handling:** TIFF-to-Zarr conversion, on-demand tile
+  loading, configurable sampling, and disk-backed prediction merging.
+- **Teacher selection:** individual checkpoints, ensembles, and checkpoint
+  weight averaging, with saved teacher selections for resuming experiments.
+- **Experiment management:** Hydra configuration, random seeds, mixed
+  precision, optional `torch.compile`, W&B logging, and Slurm jobs.
+- **Controlled experiments:** ablation profiles for model size, input/model
+  noise, and teacher aggregation, including runs across multiple seeds.
+
+The main stack is **Python, PyTorch, MONAI, Hydra, Zarr, and Weights & Biases**.
+The model implementations build on existing research and Vesuvius Challenge
+code; source acknowledgments are linked below.
+
+## Getting started
+
+### 1. Set up the environment
+
+From the repository root:
+
+```bash
 conda env create -f environment.yml
+conda activate ink
 ```
 
-## .env
+The environment specifies Python 3.12 and installs
+[`requirements.txt`](requirements.txt). Training is intended for a CUDA GPU;
+the supplied cluster scripts request A100 or A40 GPUs. Memory requirements
+depend on the model, tile size, depth, and batch size. The requirements include
+a CUDA-specific PyTorch package index; adapt the PyTorch installation to your
+machine if needed.
 
-```
-DATA_DIR=<data_dir>
-CODE_DIR=<code_dir>
-OUTPUT_DIR=<output_dir>
-TMP_DIR=<tmp_dir>
-```
+### 2. Configure paths and prepare data
 
-## Prepare data
+Create a `.env` file at the repository root:
 
-Call the following command in data/utils
-```
-./prepare_data.sh $TMPDIR/data/
-```
-
-## Supervised training
-
-For cluster submission, job names, loops, and seed arrays, see
-[Submitting Slurm jobs](slurm_job_scripts/README.md).
-
-Run `python train.py --config-name=<config_name> train=supervised`.
-Training uses `train.labeled`; validation uses `train.val`.
-
-To include fixed pseudo labels from `train.unlabeled`, set both
-`train.pseudo_label_version` and `train.pseudo_data_dir`; choose hard or soft
-targets with `train.pseudo_target`. With both source fields set to null,
-`unlabeled` is ignored. Pseudo labels remain fixed throughout the run.
-
-For pseudo-only training, use `train.labeled=[]`, `sampler.real_fraction=null`
-and `sampler.limit_pseudo_tiles=false`.
-
-## Noisy Student training
-
-Set these options in `conf/train/noisy_student.yaml` or an inherited variant.
-For CLI overrides, prefix them with `train.`, e.g. `train.start_iteration=2`.
-Run `python train.py --config-name=<config_name>` with your training profile.
-
-| Goal | Set explicitly | Leave on `auto` |
-| --- | --- | --- |
-| Start from scratch | `start_iteration: 0` (default) | `teacher_checkpoint`, `resume_output_dir`, `resume_run` |
-| Resume an existing experiment | `resume_output_dir` and `start_iteration` | `teacher_checkpoint`, `resume_run` |
-| Start a new experiment from teachers | `teacher_checkpoint` and `start_iteration` | `resume_output_dir`, `resume_run` |
-
-### Options
-
-| Option | Default | Meaning |
-| --- | --- | --- |
-| `start_iteration` | `0` | First iteration to train from the beginning. For `N > 0`, supply a teacher from `N - 1`. |
-| `iterations` | `5` | Exclusive upper bound: start `2`, end `5` trains `2`, `3`, `4`. |
-| `teacher_checkpoint` | `auto` | Read teachers from an explicit `resume_output_dir`; alternatively supply a file, list, or teacher folder. |
-| `resume_output_dir` | `auto` | Select the output folder; see below. |
-| `resume_run` | `auto` | Select the W&B run; see below. |
-
-| Option | Value | Effect |
-| --- | --- | --- |
-| `teacher_checkpoint` | `auto` | At iteration `0`: no teacher. At `N > 0`: select teachers from iteration `N - 1` in an explicitly supplied `resume_output_dir`. |
-| | `null` | No explicit teacher; at `N > 0`, also falls back to an explicit `resume_output_dir`. |
-| | `"path/model.pt"` | Use this checkpoint to generate pseudo-labels. |
-| | `["path/a.pt", "path/b.pt"]` | Use these checkpoints as the teacher ensemble. |
-| | `"outputs/source_run"` | Select teachers from iteration `N - 1`; an iteration/checkpoint folder can also be supplied directly. |
-| `resume_output_dir` | `auto` | Create a new folder based on `experiment.name`, including when checkpoints are supplied. |
-| | `null` | Same as `auto`; accepted for compatibility. Prefer `auto` in new configs. |
-| | `checkpoint` | Infer the run folder from the teacher; requires `<run>/iteration/<number>/checkpoints/<file>`. |
-| | `"outputs/old_run"` | Resume in this folder; automatic teachers come from its iteration `N - 1`, and automatic W&B selection uses its saved run. |
-| `resume_run` | `auto` | Resume the saved W&B run for an explicit output folder (or `checkpoint`); `auto`/`null` output creates a new run. |
-| | `null` | New experiments only; rejected for continuations. |
-| | `"entity/project/run_id"` | Continuations only: specify the same saved run, or supply the identity for a legacy run. |
-
-**How `auto` works:**
-
-1. `resume_output_dir: auto` chooses the regular folder using `experiment.name`;
-   it does not infer an old folder from supplied checkpoints. `null` has exactly
-   the same behavior and is retained as a compatibility alias.
-2. `teacher_checkpoint: auto` uses no teacher at iteration `0`. For `N > 0`,
-   provide an existing run as `resume_output_dir`, or supply explicit teachers.
-   If neither is available, startup fails.
-3. `resume_run: auto` creates a new W&B run when `resume_output_dir` is `auto` or
-   `null`. For an existing run folder, it reads the saved W&B identity there.
-   Missing identities require an explicit run ID; they are not guessed.
-
-An explicit teacher overrides automatic selection. A continuation must reuse
-both the old output folder and its W&B run; logging always appends. New output
-folders always start new W&B runs. Contradictory combinations raise an error. Hydra and training share the output
-folder; `path.tmp_dir` is independent. Use a unique `experiment.name` or its timestamp default for a
-new experiment.
-
-### Examples
-
-Each example lists **all five options** above. Other training/model settings
-are inherited from the selected profile.
-
-#### 1. Start a normal run from iteration 0
-
-Train iterations `0` through `4` in a new output folder and W&B run. Iteration
-`0` trains without pseudo-labels, then generates them for iteration `1`.
-
-```yaml
-start_iteration: 0
-iterations: 5
-teacher_checkpoint: auto
-resume_output_dir: auto
-resume_run: auto
+```dotenv
+DATA_DIR=/absolute/path/to/data
+CODE_DIR=/absolute/path/to/ink_detection
+OUTPUT_DIR=/absolute/path/to/outputs
+TMP_DIR=/absolute/path/to/scratch
 ```
 
-These are the defaults. Remove conflicting overrides in inherited/debug configs.
-No teacher or previous logging state is loaded; metric counters start at zero.
+Supply scan data and annotations separately; datasets and trained checkpoints
+are not bundled with the repository. Follow the [data preparation guide](data/README.md)
+to organize TIFF stacks and convert them into `${DATA_DIR}/data_zarr`.
 
-#### 2. Resume an existing run at iteration N
+Before training, set `train.labeled`, `train.unlabeled`, and `train.val` in
+your configuration to the segment IDs you have prepared. The supplied lists
+describe research experiments and must match your local data. For online
+experiment logging, run `wandb login`; a fresh offline run can use
+`WANDB_MODE=offline`.
 
-Here `N = 2`: read the teachers from iteration `1`, regenerate their pseudo-labels,
-and train iterations `2` through `4`. Reuse the output folder and saved W&B run.
+### 3. Train a model
 
-```yaml
-start_iteration: 2
-iterations: 5
-teacher_checkpoint: auto
-resume_output_dir: "outputs/old_run"
-resume_run: auto
+Start with a supervised UNETR++ baseline:
+
+```bash
+python train.py --config-name=config path=local train=supervised
 ```
 
-Teacher selection is restored exactly from `iteration/1/checkpoints/teacher_checkpoints.json`,
-including saved weight averages. Missing/invalid selections or missing files raise
-an error; resume does not rebuild the ensemble from Top-k/SWA catalogs.
-The W&B identity is stored as `wandb.run_path` in `.hydra/config.yaml`.
-Explicit checkpoints can override the automatic teacher selection. For older
-runs without `wandb.run_path`, automatic resume raises an error; set
-`resume_run: "entity/project/run_id"` once. There is no fallback to the old
-config's `train.resume_run`. A missing config also prevents automatic W&B resume.
-W&B login and access are required.
+Or run Noisy Student training from scratch:
 
-#### 3. Start Noisy Student training from a supervised checkpoint
-
-Generate pseudo-label version `0` from the supervised teacher, then train five
-student iterations (`1` through `5`) in a new folder and W&B run.
-
-```yaml
-start_iteration: 1
-iterations: 6
-teacher_checkpoint: "outputs/supervised/baseline/checkpoints/best.pt"
-resume_output_dir: auto
-resume_run: auto
+```bash
+python train.py --config-name=config path=local
 ```
 
-`resume_output_dir: auto` or `null` selects a new experiment. Replace `best.pt`
-with your actual checkpoint and use a unique experiment name per ablation.
-**The checkpoint only generates pseudo-labels;
-it does not initialize student weights.** Students use the configured
-`build_model(cfg)` initialization. Model/data settings must match the teacher.
+The latter trains a supervised teacher at iteration 0, then generates
+pseudo-labels for subsequent student iterations. By default, it runs five
+iterations in total (0–4). For other model families, use
+`--config-name=config_unet` or `--config-name=config_resnet3d` with their
+associated presets.
 
-#### 4. Start a new experiment with several teacher checkpoints
+`path=local` reads prepared Zarr data directly. The default training path
+profile targets a cluster and stages tar archives into scratch storage.
+Standard local runs save checkpoints and configuration snapshots beneath
+`${OUTPUT_DIR}/<training_mode>/<model>/<experiment_name>` and log metrics to W&B.
 
-Use the supplied ensemble to generate pseudo-label version `1`, then train
-iterations `2` through `4`. Setting `resume_output_dir: auto` creates a new
-folder and, with `resume_run: auto`, a new W&B run.
+See the [configuration and training reference](conf/README.md) for CLI
+overrides, fixed pseudo-label training, teacher checkpoints, and resuming at
+iteration boundaries. For cluster execution, see
+[submitting Slurm jobs](slurm_job_scripts/README.md); adapt its cluster-specific
+modules, proxy settings, and resource requests to your environment.
 
-```yaml
-start_iteration: 2
-iterations: 5
-teacher_checkpoint:
-  - "outputs/source/iteration/1/checkpoints/top_k_average.pt"
-  - "outputs/source/iteration/1/checkpoints/swa_average.pt"
-resume_output_dir: auto
-resume_run: auto
+### 4. Generate ink predictions
+
+For a checkpoint trained with the default UNETR++ model and dataset settings:
+
+```bash
+python predict.py checkpoint=/absolute/path/to/model.pt model=unetrpp_large 'train.segments=["0172_20241025145341"]'
 ```
 
-Explicit checkpoint-file lists are used as given for the initial pseudo-label generation.
-After each newly trained student iteration, its own checkpoints are selected using
-`train.teacher` and `train.checkpoint`. Folder lists, mixed folder/file lists and
-explicit JSON manifest paths are rejected. A single folder supplied as `teacher_checkpoint`
-also starts a new experiment when `resume_output_dir` is `auto` or `null`.
-To resume instead, set `resume_output_dir` to the old run folder and leave
-`teacher_checkpoint: auto`, as in example 2. Alternatively, `resume_output_dir:
-checkpoint` infers the common source run from explicit checkpoints. Files from
-different runs can be combined when starting a new experiment if their resolved
-filenames are distinct. Repeated paths to the same checkpoint remain allowed.
+Replace the checkpoint and segment ID with your own. Match the model and
+dataset configuration to the training run, including any architecture overrides,
+tile size, input depth, and normalization. The prediction defaults are in
+[`conf/predict.yaml`](conf/predict.yaml).
 
-> NOTE
-> - **Teacher selection:** Supply one folder or explicit checkpoint files. Folder
->   input for a new experiment uses `train.teacher`/`train.checkpoint` and the available
->   Top-k/SWA catalogs, then writes a new `teacher_checkpoints.json` in the new run.
->   Fewer than k entries require `checkpoint_potential_maximum_k.json` confirming a short
->   training run (Top-k) or an early best epoch (SWA); insufficient retention raises an error.
->   `save_top_k: -1` requires availability metadata confirming that all eligible
->   checkpoints are listed; a truncated or unverified catalog raises an error.
->   Resume instead reuses the saved `teacher_checkpoints.json` exactly. For legacy
->   runs without the required manifest/catalogs, supply checkpoint files explicitly.
->   An iteration/checkpoint folder selects that iteration directly.
-> - **Imported weight averages and BatchNorm:** Starting at iteration 1 from a
->   supervised baseline calibrates newly computed averages on labeled training data,
->   matching the baseline. Resuming in the same output folder restores saved averages
->   unchanged. Neither workflow is affected by the following limitation: a new
->   experiment starting at `start_iteration > 1` from a folder with `top_k_mode: average`
->   or `swa_mode: average` currently recalibrates BatchNorm using only labeled data,
->   omitting the source student's pseudo-labeled training data. This can change
->   predictions; the effect depends on the model and data. To preserve existing
->   averages in that case, supply their checkpoint files explicitly.
-> - **Logging:** Continuations always append; old points and duplicate X values
->   remain. There is no rewind or continuation into a different W&B run.
->   Counters are reconstructed exclusively from the same W&B run at the requested
->   iteration boundary. New experiments start at zero. History must already be
->   synced and accessible through the W&B API; no local counter fallback exists.
-> - **Backups:** Existing output/temp iteration folders are renamed to
->   `<iteration>_backup_<timestamp>` before reuse, including `N - 1` before
->   pseudo-label generation. Teacher paths are adjusted; later folders are backed
->   up when reached. Backups are not deleted automatically.
-> - **Config checks:** Only continuations compare configs, and only the old
->   config in the same output folder is read. Its `.hydra` is copied to
->   `.hydra_backup_<timestamp>` before replacement. Changed common settings abort;
->   added/removed keys warn. Resume fields, experiment metadata, and output/temp
->   paths may change. Legacy configs without resolved snapshots are compared
->   as expressions, so historical environment values cannot be verified.
-> - **New experiments:** Save only their current config; teacher-run configs
->   are not read or copied. Occupied output folders are rejected to prevent
->   accidental overwrites. Use a unique experiment name.
-> - **Config records:** A continuation requires `.hydra/config.yaml`. Automatic
->   W&B lookup also requires `wandb.run_path`; legacy runs can supply the actual
->   ID explicitly. A conflicting saved ID is rejected. Successful starts save
->   Hydra metadata and `config.resolved.yaml`; rejected config changes leave the
->   old config active and save the attempted config in the backup.
-> - **Resume boundary:** Only whole iterations can be restarted; optimizer and
->   scheduler state are not restored.
-> - **Shared data:** Pseudo-label versions under `path.data_dir` are rewritten and
->   are not included in folder backups. Isolate data storage for concurrent
->   experiments that write the same versions.
+Prediction exports PNG ink probability, confidence, and uncertainty maps to
+`${OUTPUT_DIR}/predict/<model>/<experiment_name>`. Where annotations are
+available, it also prints per-segment and aggregate metrics.
+
+## Repository guide
+
+| Location | Purpose |
+| --- | --- |
+| [`train.py`](train.py), [`predict.py`](predict.py) | Training and inference entry points. |
+| [`training/`](training/) | Training loops, checkpoints, precision, and logging. |
+| [`models/`](models/) | Model implementations, adapters, and model builder. |
+| [`data/`](data/README.md) | Dataset, augmentations, sampling, and preparation tools. |
+| [`conf/`](conf/README.md) | Configuration profiles and detailed training reference. |
+| [`utils/`](utils/) | Prediction merging, evaluation, pseudo-label refinement, and export. |
+| [`slurm_job_scripts/`](slurm_job_scripts/README.md) | Cluster training and preprocessing jobs. |
+
+To explore the experiment design, start with [ablation A](conf/ablation/a/README.md)
+for model size and noise, then [ablation B](conf/ablation/b/README.md) for teacher
+checkpoint selection and aggregation. Earlier exploratory sweeps are documented
+in [pre-ablations](conf/pre_ablations/README.md). The
+[ablation plotting utility](utils/ablation/README.md) summarizes validation Dice
+from exported W&B logs.
+
+## Acknowledgments and licenses
+
+This project uses Vesuvius Challenge / ScrollPrize data and model code, and
+builds on UNETR++. The UNETR++ implementation was adapted from a version used
+in an earlier Master's thesis at FAU's Chair for Pattern Recognition and
+modified further for this thesis.
+
+See the [Vesuvius model source notes](models/vesuvius_models/README.md) for
+upstream references and adaptation details, and [LICENSE](LICENSE) for the
+third-party license notices, including MIT and Apache 2.0 terms.
