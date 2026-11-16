@@ -1,0 +1,16 @@
+# @package _global_
+
+# Resume the existing B run from the saved teacher at iteration 5.
+# All B runs finish at iteration 6 (baseline 0 + six student iterations).
+# Submit with slurm_job_scripts/train.sbatch; this config fixes its own seed.
+defaults:
+  - /ablation/b/b4_low
+  - _self_
+
+train:
+  seed: 1042
+  iterations: 7
+  start_iteration: 6
+  teacher_checkpoint: auto
+  resume_output_dir: outputs_ws/ablation_b/noisy_student/b4_low/seed_1042_time_20261113_081858_079017_job_id_4993305_task_1
+  resume_run: auto

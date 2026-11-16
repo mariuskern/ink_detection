@@ -96,3 +96,8 @@ an iteration boundary, retain the config and seed and set
 `train.start_iteration=<next_iteration>`, `train.teacher_checkpoint=auto`,
 `train.resume_output_dir=/path/to/existing/b_run`, and `train.resume_run=auto`.
 Each array seed requires its own resume folder.
+
+For the 75 existing runs, use the seed-specific configs and runtime budget
+in [resume/README.md](resume/README.md). Their common final student iteration
+is 6 (`train.iterations: 7`), accounting for W&B startup and the slower
+individual-teacher variants.
