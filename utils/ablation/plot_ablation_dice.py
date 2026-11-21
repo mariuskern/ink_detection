@@ -2,13 +2,16 @@
 """Plot W&B validation Dice by ablation ID and noise, averaging seeds first.
 
 Usage:
-    python plot_wandb_dice.py wandb_export.csv
-    python plot_wandb_dice.py wandb_export.csv --epochs-per-iteration 50 --save dice.png
+    python utils/ablation/plot_ablation_dice.py wandb_export.csv
+    python utils/ablation/plot_ablation_dice.py wandb_export.csv --show-counts --save dice.png
 
 Requires: pandas, numpy, matplotlib
 
-Missing or incomplete iterations carry forward the last complete iteration's
+Each iteration averages only runs with values for every expected epoch.
+Iterations without complete runs carry forward the last available iteration's
 value and are marked with an x. Leading missing iterations remain empty.
+With --show-counts, each point is labeled with the number of complete runs in
+that iteration. Carried points have n=0.
 """
 
 import argparse
@@ -98,28 +101,31 @@ def read_grouped_metrics(csv_path, epochs_per_iteration):
     ):
         run_df = pd.DataFrame(seed_series)
 
-        # Average Dice across seeds at *the same epoch*.
-        # Only average epochs for which ALL seeds have values.
-        mean_dice = run_df.mean(axis=1).where(run_df.notna().all(axis=1))
-
         iteration_max = {}
+        iteration_counts = {}
         iterations = sorted(set(int(step // epochs_per_iteration) for step in run_df.index if step >= 0))
 
         for idx in iterations:
             expected_steps = np.arange(
                 idx * epochs_per_iteration, (idx + 1) * epochs_per_iteration
             )
-            block = mean_dice.reindex(expected_steps)
+            block = run_df.reindex(expected_steps)
+            complete_runs = block.notna().all(axis=0)
+            count = int(complete_runs.sum())
+            iteration_counts[idx + 1] = count
 
-            if block.isna().any():
+            if count < len(seed_series):
                 print(
                     f"WARNUNG: {key[0]} / {key[1]}: Iteration {idx + 1} "
-                    f"übersprungen ({block.notna().sum()}/{epochs_per_iteration} "
-                    "vollständige Epochen über alle Seeds)."
+                    f"hat {count}/{len(seed_series)} vollständige Runs."
                 )
+
+            if count == 0:
                 continue
 
-            iteration_max[idx + 1] = float(block.max())
+            # Use the same complete runs at every epoch of this iteration.
+            mean_dice = block.loc[:, complete_runs].mean(axis=1)
+            iteration_max[idx + 1] = float(mean_dice.max())
 
         if not iteration_max:
             print(f"WARNUNG: Keine vollständige Iteration für {key[0]} / {key[1]}.")
@@ -127,6 +133,7 @@ def read_grouped_metrics(csv_path, epochs_per_iteration):
 
         results[key] = {
             "per_iteration": iteration_max,
+            "per_iteration_counts": iteration_counts,
             "best_overall": max(iteration_max.values()),
             "seeds": sorted(seed_series),
         }
@@ -144,6 +151,7 @@ def read_grouped_metrics(csv_path, epochs_per_iteration):
         carried_iterations = []
         previous = None
         for iteration in range(1, last_iteration + 1):
+            result["per_iteration_counts"].setdefault(iteration, 0)
             if iteration in per_iteration:
                 previous = per_iteration[iteration]
             elif previous is not None:
@@ -159,7 +167,7 @@ def read_grouped_metrics(csv_path, epochs_per_iteration):
 # Plot results
 # ============================================================================
 
-def plot_results(results, save_path=None):
+def plot_results(results, save_path=None, show_counts=False):
     # ------------------------------------------------------------------------
     # Figure / colors / line styles
     # ------------------------------------------------------------------------
@@ -193,7 +201,7 @@ def plot_results(results, save_path=None):
         ax1.plot(
             list(per_iteration),
             list(per_iteration.values()),
-            label=f"{ablation_id} / {noise} (n={len(result['seeds'])})",
+            label=f"{ablation_id} / {noise} (total seeds={len(result['seeds'])})",
             color=colors[(ablation_id, noise)],
             linestyle=line_styles.get(ablation_id, "-"),
             marker="o",
@@ -210,6 +218,17 @@ def plot_results(results, save_path=None):
                 markersize=7,
                 markeredgewidth=1.5,
             )
+
+        if show_counts:
+            for iteration, dice in per_iteration.items():
+                ax1.annotate(
+                    f"n={result['per_iteration_counts'][iteration]}",
+                    xy=(iteration, dice),
+                    xytext=(5, 5),
+                    textcoords="offset points",
+                    fontsize=8,
+                    color=colors[(ablation_id, noise)],
+                )
 
     ax1.set_title("Best mean Dice per NST iteration")
     ax1.set_xlabel("NST iteration")
@@ -282,6 +301,11 @@ def main():
     parser.add_argument("csv", help="W&B CSV export path")
     parser.add_argument("--epochs-per-iteration", type=int, default=50)
     parser.add_argument("--save", help="Optional output PNG/PDF/SVG filename")
+    parser.add_argument(
+        "--show-counts",
+        action="store_true",
+        help="Show the number of complete runs in each iteration next to each point",
+    )
 
     args = parser.parse_args()
 
@@ -308,7 +332,7 @@ def main():
     # Plot
     # ------------------------------------------------------------------------
 
-    plot_results(results, args.save)
+    plot_results(results, args.save, show_counts=args.show_counts)
 
 
 if __name__ == "__main__":
