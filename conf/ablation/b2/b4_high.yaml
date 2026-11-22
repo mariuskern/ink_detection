@@ -1,0 +1,26 @@
+# @package _global_
+
+defaults:
+  - noisy_student
+  - /ablation/common/model_small_high@model
+  - /ablation/common/input_noise_high@train.student.aug
+  - _self_
+
+ablation:
+  id: b4
+  noise: high
+  baseline_id: a0
+
+train:
+  teacher:
+    use_top_k: true
+    top_k_mode: average
+    use_swa: true
+    swa_mode: average
+  # Index 0 restores the S teacher; students use M, L, L, L at 1..4.
+  model_schedule:
+    - /ablation/common/model_small_high
+    - /ablation/common/model_medium_high
+    - /ablation/common/model_large_high
+    - /ablation/common/model_large_high
+    - /ablation/common/model_large_high

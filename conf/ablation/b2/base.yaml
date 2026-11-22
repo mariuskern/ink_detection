@@ -1,0 +1,20 @@
+# @package _global_
+
+defaults:
+  - /ablation/common/base
+  - _self_
+
+path:
+  tmp_dir: ${oc.env:TMP_DIR}/ablation_b2/${train.name}/${ablation.id}_${ablation.noise}/seed_${train.seed}_time_${now:%Y%m%d_%H%M%S_%f}_job_id_${oc.env:SLURM_JOB_ID,local}_task_${oc.env:SLURM_ARRAY_TASK_ID,none}
+
+wandb:
+  project: ink_ablation_b2
+
+train:
+  checkpoint:
+    save_top_k: ${ablation.k}
+    swa_save_k: ${ablation.k}
+
+ablation:
+  group: ${ablation.id}_${ablation.noise}
+  k: 5

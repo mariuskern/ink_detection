@@ -1,0 +1,16 @@
+# @package _global_
+
+defaults:
+  - base
+  - /ablation/common/noisy_student
+  - _self_
+
+path:
+  output_dir: ${training_output_dir:${oc.select:train.resume_output_dir,null},${oc.env:OUTPUT_DIR}/ablation_b2/noisy_student/${ablation.id}_${ablation.noise}/seed_${train.seed},${oc.select:train.teacher_checkpoint,null},${oc.select:train.start_iteration,0}}
+
+train:
+  # Iteration 0 reuses A0; train four students at iterations 1..4.
+  iterations: 5
+
+ablation:
+  teacher_root: ${oc.env:OUTPUT_DIR}/ablation_a/supervised
