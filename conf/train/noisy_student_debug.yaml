@@ -12,21 +12,21 @@ checkpoint:
   save_top_k: 2
   swa_save_k: 2
 
-iterations: 6
+iterations: 4
 model_schedule: null # [unetrpp_small, unetrpp_small, unetrpp_medium, unetrpp_large] null
 
 
 # Start new run
 
-# start_iteration: 0
-# teacher_checkpoint: auto
-# resume_output_dir: auto
-# resume_run: auto
+start_iteration: 0
+teacher_checkpoint: auto
+resume_output_dir: auto
+resume_run: auto
 
 
-# start_iteration: 2
+# start_iteration: 1
 # teacher_checkpoint: auto
-# resume_output_dir: outputs\noisy_student\unetrpp\2026-10-16_23-23-50
+# resume_output_dir: outputs\noisy_student\unetrpp\2026-11-21_17-18-22_local_debug
 # resume_run: auto
 
 # start_iteration: 1
@@ -45,13 +45,13 @@ model_schedule: null # [unetrpp_small, unetrpp_small, unetrpp_medium, unetrpp_la
 
 # Test resume from previous run
 
-start_iteration: 4
-teacher_checkpoint: auto
-resume_output_dir: outputs_ws/noisy_student/unetrpp/2026-11-05_16-45-20_4928064_debug
-resume_run: auto
+# start_iteration: 4
+# teacher_checkpoint: auto
+# resume_output_dir: outputs_ws/noisy_student/unetrpp/2026-11-05_16-45-20_4928064_debug
+# resume_run: auto
 
 
-seed: 42
+seed: null
 compile: true
 # compile_mode: default
 benchmark: false
@@ -84,7 +84,7 @@ val:
   # - "0172_20241025145701"
   - "0172_20241113090990"
 predict:
-  - "0172_20241025145341"
+  # - "0172_20241025145341"
 
 # segment_crops:
 #   "0172_20241025145341": [500, 1000, 500, 5000]

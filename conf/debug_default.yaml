@@ -4,7 +4,7 @@ defaults:
   - data/dataloader@dataloader: debug
   - model: unetrpp_large # timesformer unetrpp vesuvius_unet vesuvius_resnet3d
   - loss: dice_bce
-  - path: alex
+  - path: local
   - wandb: debug
   - train: noisy_student_debug # supervised_debug noisy_student_debug noisy_student_debug_resnet3d noisy_student_debug_unet unimatch_debug
   - _self_

@@ -1,8 +1,13 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from datetime import datetime
+import json
+from pathlib import Path
 import re
+import shutil
 from typing import Any
+import warnings
 
 import torch
 import wandb
@@ -39,21 +44,85 @@ class WandbLogger:
 
         self._steps: dict[str, int] = defaultdict(int)
         self._defined_metrics: set[str] = set()
+        output_dir = (config or {}).get("path", {}).get("output_dir")
+        self._state_path = Path(output_dir) / "wandb_steps.json" if output_dir else None
+        self._iteration_steps: dict[str, dict[str, int]] = {}
 
         resume_options = {}
 
         if resume_run:
             entity, project, run_id = resume_run.split("/")
 
-            previous_run = wandb.Api().run(resume_run)
+            if self._state_path is not None and self._state_path.exists():
+                backup = self._state_path.with_name(f"wandb_steps_backup_{datetime.now():%Y%m%d_%H%M%S_%f}.json")
+                shutil.copy2(self._state_path, backup)
+                print(f"  Backup:    {backup}")
 
-            self._steps.update(self._restore_history(previous_run.scan_history(), start_iteration))
+            steps = self._restore_steps(resume_run, start_iteration)
+            if steps is None:
+                print(f"No local W&B counters for iteration {start_iteration}; scanning run history")
+                previous_run = wandb.Api().run(resume_run)
+                steps = self._restore_history(previous_run.scan_history(), start_iteration)
+            self._steps.update(steps)
 
             resume_options = dict(entity=entity, id=run_id, resume="must")
 
             print(f"Appending to W&B run {resume_run} at iteration {start_iteration}; old points are retained")
         
         self.run = wandb.init(project=project, name=name, config=config, **resume_options)
+        self._run_path = resume_run or f"{self.run.entity}/{self.run.project}/{self.run.id}"
+        self.save_iteration(start_iteration)
+
+    def _restore_steps(self, run_path: str, iteration: int) -> dict[str, int] | None:
+        """Load counters at an iteration boundary, or use history as fallback."""
+
+        if self._state_path is None:
+            return None
+
+        try:
+            state = json.loads(self._state_path.read_text(encoding="utf-8"))
+
+            if state["run_path"] != run_path:
+                return None
+
+            snapshots = state["iterations"]
+
+            self._iteration_steps = {key: value for key, value in snapshots.items() if int(key) <= iteration}
+            steps = snapshots[str(iteration)]
+
+            if not isinstance(steps, dict) or any(not isinstance(key, str) or type(value) is not int or value < 0 for key, value in steps.items()):
+                raise ValueError("Invalid metric step counters")
+
+            return steps
+        except (FileNotFoundError, KeyError):
+            return None
+        except (OSError, ValueError, TypeError, AttributeError) as error:
+            warnings.warn(f"Cannot restore local W&B counters; scanning history instead: {error}")
+            return None
+
+    def save_iteration(self, iteration: int) -> None:
+        """Atomically save next counters before an iteration starts.
+
+        Keep earlier boundaries for restarts, and discard later snapshots from
+        a previous attempt. Store outside iteration folders, which are backed up
+        on resume. Also cache counters recovered by the legacy history scan.
+        """
+
+        if self._state_path is None:
+            return
+
+        self._iteration_steps = {key: value for key, value in self._iteration_steps.items() if int(key) < iteration}
+        self._iteration_steps[str(iteration)] = dict(self._steps)
+        state = {"run_path": self._run_path, "iterations": self._iteration_steps}
+
+        temporary_path = self._state_path.with_suffix(".json.tmp")
+
+        try:
+            self._state_path.parent.mkdir(parents=True, exist_ok=True)
+            temporary_path.write_text(json.dumps(state), encoding="utf-8")
+            temporary_path.replace(self._state_path)
+        except OSError as error:
+            warnings.warn(f"Cannot save local W&B counters; resume may require scanning history: {error}")
 
     @classmethod
     def _restore_history(cls, history, start_iteration):

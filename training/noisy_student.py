@@ -159,6 +159,10 @@ def train_noisy_student(cfg, logger):
                 save_predictions(cfg_iteration, checkpoint_paths, output_dir_iteration, tmp_dir_iteration, device, logger=logger)
 
             generate_pseudo_labels(cfg_iteration, checkpoint_paths, iteration, output_dir_iteration, tmp_dir_iteration, device, pseudo_data_dir, logger=logger)
+
+            if logger is not None:
+                logger.save_iteration(iteration + 1)
+
             print(f"  Iteration {iteration} complete.")
 
 
