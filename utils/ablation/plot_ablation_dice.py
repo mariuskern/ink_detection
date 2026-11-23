@@ -4,6 +4,7 @@
 Usage:
     python utils/ablation/plot_ablation_dice.py wandb_export.csv
     python utils/ablation/plot_ablation_dice.py wandb_export.csv --show-counts --save dice.png
+    python utils/ablation/plot_ablation_dice.py wandb_export.csv --show-values --max-iteration 3
 
 Requires: pandas, numpy, matplotlib
 
@@ -12,6 +13,9 @@ Iterations without complete runs carry forward the last available iteration's
 value and are marked with an x. Leading missing iterations remain empty.
 With --show-counts, each point is labeled with the number of complete runs in
 that iteration. Carried points have n=0.
+With --show-values, each point is labeled with its Dice value (six decimals).
+With --max-iteration N, only iterations 1 through N contribute to the results,
+including the overall best values.
 """
 
 import argparse
@@ -42,10 +46,13 @@ NOISE_LIGHTNESS = {"low": 0.75, "medium": 0.50, "high": 0.30}
 # Read and aggregate metrics
 # ============================================================================
 
-def read_grouped_metrics(csv_path, epochs_per_iteration):
+def read_grouped_metrics(csv_path, epochs_per_iteration, max_iteration=None):
     # ------------------------------------------------------------------------
     # CSV input / validation
     # ------------------------------------------------------------------------
+
+    if max_iteration is not None and max_iteration <= 0:
+        raise ValueError("max_iteration muss positiv sein.")
 
     df = pd.read_csv(csv_path)
     step_column = "steps/metrics_val_dice_step"
@@ -64,6 +71,13 @@ def read_grouped_metrics(csv_path, epochs_per_iteration):
     # Index by the validation step rather than trusting the row order.
     df.index = steps.astype(int)
     df = df.sort_index()
+
+    if max_iteration is not None:
+        df = df.loc[df.index < max_iteration * epochs_per_iteration]
+        if not (df.index >= 0).any():
+            raise ValueError(
+                f"Keine Epochen bis einschließlich Iteration {max_iteration} gefunden."
+            )
 
     # ------------------------------------------------------------------------
     # Group runs by ablation ID and noise
@@ -167,7 +181,7 @@ def read_grouped_metrics(csv_path, epochs_per_iteration):
 # Plot results
 # ============================================================================
 
-def plot_results(results, save_path=None, show_counts=False):
+def plot_results(results, save_path=None, show_counts=False, show_values=False):
     # ------------------------------------------------------------------------
     # Figure / colors / line styles
     # ------------------------------------------------------------------------
@@ -219,10 +233,15 @@ def plot_results(results, save_path=None, show_counts=False):
                 markeredgewidth=1.5,
             )
 
-        if show_counts:
+        if show_counts or show_values:
             for iteration, dice in per_iteration.items():
+                labels = []
+                if show_values:
+                    labels.append(f"{dice:.6f}")
+                if show_counts:
+                    labels.append(f"n={result['per_iteration_counts'][iteration]}")
                 ax1.annotate(
-                    f"n={result['per_iteration_counts'][iteration]}",
+                    "\n".join(labels),
                     xy=(iteration, dice),
                     xytext=(5, 5),
                     textcoords="offset points",
@@ -306,17 +325,31 @@ def main():
         action="store_true",
         help="Show the number of complete runs in each iteration next to each point",
     )
+    parser.add_argument(
+        "--show-values",
+        action="store_true",
+        help="Show the Dice value (six decimals) next to each point",
+    )
+    parser.add_argument(
+        "--max-iteration",
+        type=int,
+        help="Include only NST iterations up to this number (inclusive, starting at 1)",
+    )
 
     args = parser.parse_args()
 
     if args.epochs_per_iteration <= 0:
         parser.error("--epochs-per-iteration muss positiv sein")
+    if args.max_iteration is not None and args.max_iteration <= 0:
+        parser.error("--max-iteration muss positiv sein")
 
     # ------------------------------------------------------------------------
     # Read metrics / print summary
     # ------------------------------------------------------------------------
 
-    results = read_grouped_metrics(args.csv, args.epochs_per_iteration)
+    results = read_grouped_metrics(
+        args.csv, args.epochs_per_iteration, max_iteration=args.max_iteration
+    )
 
     print("\nGruppe             Seeds  Iterationen  Best mean Dice")
     print("-" * 57)
@@ -332,7 +365,9 @@ def main():
     # Plot
     # ------------------------------------------------------------------------
 
-    plot_results(results, args.save, show_counts=args.show_counts)
+    plot_results(
+        results, args.save, show_counts=args.show_counts, show_values=args.show_values
+    )
 
 
 if __name__ == "__main__":

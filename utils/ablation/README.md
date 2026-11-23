@@ -18,3 +18,16 @@ The count is the number of runs that completed every expected epoch in that
 iteration, so it can vary between iterations. If no run is complete, the point
 carries forward the last available iteration's value, is marked with an `x`, and
 shows `n=0`. Leading iterations without complete runs remain empty.
+
+Add `--show-values` to label each point with its Dice value (six decimal places).
+It can be combined with `--show-counts`; the value and count then appear on
+separate lines next to each point, including carried points.
+
+Use `--max-iteration N` to include only NST iterations 1 through N (inclusive).
+This limits the iteration plot, the printed summary, and the overall best values
+in the bar plot. Later iterations do not contribute to any result. The default
+includes all available iterations.
+
+```bash
+python utils/ablation/plot_ablation_dice.py wandb_export.csv --show-values --show-counts --max-iteration 3 --save dice.png
+```
