@@ -47,6 +47,9 @@ There is no single weight average over both groups.
   iteration 1, and uses L for iterations 2–4, matching A4's model choices.
 - A4 settings: 50 epochs per iteration, batch size 15, prediction batch size 80,
   and the same 3 labeled, 7 unlabeled, and 3 validation segments.
+- B2 uses 12 DataLoader workers per loader (`dataloader.num_workers: 12`)
+  for training, validation, and prediction with 16 requested CPUs per task.
+  `prefetch_factor: 1` and `persistent_workers: true` remain unchanged.
 - Low, medium, and high input/model noise match the corresponding A4 variants.
 - Refinement settings match A4: mask refinement is enabled for real labels
   and validation masks with margin factor 0.25 and closing factor 0.4. Label
@@ -56,10 +59,15 @@ There is no single weight average over both groups.
 - Pseudo-label refinement uses only threshold 0.5, confidence 0.8, and uncertainty
   0.15. No additional postprocessing, such as removing small components, is used.
 - TTA is disabled (`tta_num: 1`, `aug.variants: []`).
-- W&B project: `ink_ablation_b2`. Outputs use the stable path
-  `${OUTPUT_DIR}/ablation_b2/noisy_student/${ablation.id}_${ablation.noise}/seed_${train.seed}`.
-  Temporary paths also use `ablation_b2` and retain timestamps and Slurm IDs
-  to isolate job caches.
+- W&B project: `ink_ablation_b2`. Outputs are stored below
+  `${OUTPUT_DIR}/ablation_b2/noisy_student/${ablation.id}_${ablation.noise}/`
+  in run folders named
+  `seed_<seed>_time_<YYYYMMDD_HHMMSS_microseconds>_job_id_<job-id>_task_<task-id>`.
+  Temporary paths use the same naming scheme below
+  `${TMP_DIR}/ablation_b2/${train.name}/${ablation.id}_${ablation.noise}/`.
+  This matches the Noisy Student folder structure in A and B, with a separate
+  `ablation_b2` root. Local runs use `local` for the job ID and `none` for the
+  array task ID.
 
 ## Run
 
@@ -82,7 +90,7 @@ or `train.teacher_checkpoint` to use a specific checkpoint source.
 mkdir -p logs
 for id in b0 b1 b2 b3 b4; do
     for noise in low medium high; do
-        sbatch --job-name="${id}_${noise}" slurm_job_scripts/train_array.sbatch "ablation/b2/${id}_${noise}"
+        sbatch --job-name="b2_${id}_${noise}" slurm_job_scripts/train_array.sbatch "ablation/b2/${id}_${noise}"
     done
 done
 ```
@@ -98,18 +106,11 @@ python train.py --config-name ablation/b2/b4_medium --cfg job --resolve
 
 To change k for a local run, append `ablation.k=3`, for example.
 
-## Continue or restart one run
+## Resume and rerun notes
 
-No per-seed resume files are needed when passing overrides to `train.py`.
-For example, after completing iterations 1–4, continue B4 medium / seed 42
-for another four students (5–8):
-
-```bash
-python train.py --config-name ablation/b2/b4_medium \
-    train.seed=42 train.start_iteration=5 train.iterations=9 \
-    train.teacher_checkpoint=auto train.resume_run=auto \
-    'train.resume_output_dir=${oc.env:OUTPUT_DIR}/ablation_b2/noisy_student/${ablation.id}_${ablation.noise}/seed_${train.seed}'
-```
+To resume, set `train.resume_output_dir` to the full existing run folder,
+including its timestamp, job ID, and task ID, and set
+`train.teacher_checkpoint=auto` and `train.resume_run=auto`.
 
 For an interrupted iteration, set `train.start_iteration` to that iteration;
 it restarts from its beginning using the preceding completed teacher. Keep
