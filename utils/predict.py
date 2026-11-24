@@ -82,6 +82,16 @@ def predict(cfg, checkpoint_paths, dataloader, device, transforms=None, tta_num=
 
                     tile = tile.to(device=device, dtype=model_dtype, non_blocking=True)
 
+                    # A smaller last batch would make torch.compile recompile the whole model
+                    # (minutes). Pad it to the full batch size; the padded outputs are dropped below.
+
+                    n_tiles = tile.shape[0]
+                    full_batch = dataloader.batch_size
+                    
+                    if cfg.train.compile and full_batch is not None and n_tiles < full_batch:
+                        # print(f"  Pad last batch from {n_tiles} to {full_batch} tiles for torch.compile.")
+                        tile = torch.cat([tile, tile.new_zeros((full_batch - n_tiles, *tile.shape[1:]))])
+
                     # -------------------------------------------------
                     # Apply transform
                     # -------------------------------------------------
@@ -119,9 +129,8 @@ def predict(cfg, checkpoint_paths, dataloader, device, transforms=None, tta_num=
                     # Probability
                     # -------------------------------------------------
 
-                    # probs = torch.sigmoid(output).squeeze(1).cpu().numpy()
-                    # probs = torch.sigmoid(output).squeeze(1).float().cpu().numpy()
-                    probs = torch.sigmoid(output.float()).squeeze(1).cpu().numpy()
+                    # probs = torch.sigmoid(output.float()).squeeze(1).cpu().numpy()
+                    probs = torch.sigmoid(output[:n_tiles].float()).squeeze(1).cpu().numpy()
 
                     # -------------------------------------------------
                     # Prediction merger
