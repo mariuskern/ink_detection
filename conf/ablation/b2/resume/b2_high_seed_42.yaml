@@ -1,0 +1,16 @@
+# @package _global_
+
+# Continue the existing B2 run with exactly one additional student iteration (5).
+# Restore the saved teacher from iteration 4; iterations is an exclusive upper bound.
+# Submit with slurm_job_scripts/train.sbatch; this config fixes its own seed.
+defaults:
+  - /ablation/b2/b2_high
+  - _self_
+
+train:
+  seed: 42
+  iterations: 6
+  start_iteration: 5
+  teacher_checkpoint: auto
+  resume_output_dir: outputs_ws/ablation_b2/noisy_student/b2_high/seed_42_time_20261125_020242_177661_job_id_5070336_task_0
+  resume_run: auto
