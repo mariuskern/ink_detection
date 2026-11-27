@@ -1,0 +1,13 @@
+# @package _global_
+
+defaults:
+  - b1_low_dice
+  - _self_
+
+experiment:
+  checkpoint_selection: f0_5
+
+train:
+  checkpoint:
+    monitor: metrics_val/f0_5
+    mode: max

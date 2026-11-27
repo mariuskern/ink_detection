@@ -1,0 +1,6 @@
+# @package _global_
+
+defaults:
+  - /ablation/a/a4_low
+  - base
+  - _self_

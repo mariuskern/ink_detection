@@ -1,0 +1,6 @@
+# @package _global_
+
+defaults:
+  - /ablation/a/a3_medium
+  - base
+  - _self_

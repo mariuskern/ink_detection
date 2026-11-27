@@ -1,0 +1,9 @@
+# @package _global_
+
+defaults:
+  - /ablation/b2/b0_low
+  - base
+  - _self_
+
+train:
+  iterations: 6

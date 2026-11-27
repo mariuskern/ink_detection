@@ -1,0 +1,10 @@
+# @package _global_
+
+defaults:
+  - /ablation/b2/b1_low
+  - base
+  - _self_
+
+train:
+  # Five individual teachers; four training iterations in total (0..3).
+  iterations: 4

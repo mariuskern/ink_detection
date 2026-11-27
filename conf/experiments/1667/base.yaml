@@ -1,0 +1,27 @@
+# @package _global_
+
+defaults:
+  - data@train
+  - _self_
+
+dataloader:
+  num_workers: 12
+
+train:
+  start_iteration: 0
+  teacher_checkpoint: null
+  resume_output_dir: auto
+  resume_run: auto
+
+path:
+  tmp_dir: ${oc.env:TMP_DIR}/experiments/1667/${experiment.variant}/seed_${train.seed}
+  output_dir: ${training_output_dir:${oc.select:train.resume_output_dir,null},${oc.env:OUTPUT_DIR}/experiments/1667/${experiment.variant}/seed_${train.seed},${oc.select:train.teacher_checkpoint,null},${oc.select:train.start_iteration,0}}
+
+wandb:
+  project: ink_1667
+  group: 1667_${experiment.variant}
+
+experiment:
+  checkpoint_selection: dice
+  variant: ${ablation.id}_${ablation.noise}_${experiment.checkpoint_selection}
+  name: ${wandb.group}_seed_${train.seed}
